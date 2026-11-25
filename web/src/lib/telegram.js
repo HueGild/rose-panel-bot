@@ -78,12 +78,51 @@ export function haptic(type = 'light') {
   try {
     if (type === 'success' || type === 'warning' || type === 'error') {
       tg?.HapticFeedback?.notificationOccurred?.(type);
+    } else if (type === 'selection') {
+      tg?.HapticFeedback?.selectionChanged?.();
     } else {
       tg?.HapticFeedback?.impactOccurred?.(type);
     }
   } catch {
     // No-op outside Telegram
   }
+}
+
+// While a horizontal drag gesture is active, stop Telegram from treating vertical finger drift
+// as "swipe down to minimize/close the Mini App" (Bot API 7.7+). Restores only what we changed.
+let verticalSwipesLockedByUs = false;
+export function lockVerticalSwipes(locked) {
+  const tg = getTelegramWebApp();
+  if (!tg) return;
+  try {
+    if (locked) {
+      if (!verticalSwipesLockedByUs && tg.isVerticalSwipesEnabled !== false && typeof tg.disableVerticalSwipes === 'function') {
+        tg.disableVerticalSwipes();
+        verticalSwipesLockedByUs = true;
+      }
+    } else if (verticalSwipesLockedByUs) {
+      verticalSwipesLockedByUs = false;
+      tg.enableVerticalSwipes?.();
+    }
+  } catch {
+    // Older Telegram clients do not support swipe control
+  }
+}
+
+// Subscribe to Telegram theme changes (falls back to prefers-color-scheme in browsers).
+export function onColorSchemeChange(callback) {
+  const tg = getTelegramWebApp();
+  const handler = () => callback(getTelegramColorScheme());
+  if (tg && typeof tg.onEvent === 'function') {
+    tg.onEvent('themeChanged', handler);
+    return () => tg.offEvent?.('themeChanged', handler);
+  }
+  const mq = typeof window !== 'undefined' ? window.matchMedia?.('(prefers-color-scheme: dark)') : null;
+  if (mq?.addEventListener) {
+    mq.addEventListener('change', handler);
+    return () => mq.removeEventListener('change', handler);
+  }
+  return () => {};
 }
 
 export function openExternalUrl(url) {

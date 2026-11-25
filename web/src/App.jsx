@@ -1,16 +1,16 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import { flushSync } from 'react-dom';
 import {
   Globe,
   IdCard,
-  Moon,
   RefreshCw,
   Server,
   Settings,
-  Sun,
   Ticket,
   Trophy,
   Users,
 } from 'lucide-react';
+import DayNightSlider, { THEME_MODES } from './components/DayNightSlider.jsx';
 import { TicketEmblem } from './components/Emblems.jsx';
 import LeaderboardTab from './components/LeaderboardTab.jsx';
 import ProbeTab from './components/ProbeTab.jsx';
@@ -26,10 +26,22 @@ import {
   getTelegramUserId,
   haptic,
   initTelegramWebApp,
+  onColorSchemeChange,
   syncTelegramChrome,
 } from './lib/telegram.js';
 
 const BOOT_CACHE_PREFIX = 'rose_panel_boot_v1:';
+const THEME_MODE_STORAGE_KEY = 'rose_panel_theme_mode';
+
+function readThemeMode() {
+  try {
+    const saved = localStorage.getItem(THEME_MODE_STORAGE_KEY);
+    if (THEME_MODES.includes(saved)) return saved;
+  } catch {
+    // Storage may be unavailable in some WebViews
+  }
+  return 'auto';
+}
 const BOOT_CACHE_MAX_AGE_MS = 12 * 60 * 60 * 1000;
 
 function readSplashMeta() {
@@ -140,7 +152,9 @@ function SplashScreen({ splash }) {
 }
 
 export default function App() {
-  const [theme, setTheme] = useState(() => getTelegramColorScheme());
+  const [themeMode, setThemeMode] = useState(readThemeMode);
+  const [systemTheme, setSystemTheme] = useState(() => getTelegramColorScheme());
+  const theme = themeMode === 'auto' ? systemTheme : themeMode;
   const [bootstrap, setBootstrap] = useState(() => loadCachedBootstrap());
   const [loading, setLoading] = useState(() => !loadCachedBootstrap());
   const [error, setError] = useState('');
@@ -168,6 +182,47 @@ export default function App() {
     document.documentElement.setAttribute('data-theme', theme);
     syncTelegramChrome(theme);
   }, [theme]);
+
+  useEffect(() => onColorSchemeChange(setSystemTheme), []);
+
+  // Switch theme mode; when the visible theme flips, reveal it as a circle growing out of the slider bubble.
+  const changeThemeMode = useCallback(
+    (nextMode, origin) => {
+      try {
+        localStorage.setItem(THEME_MODE_STORAGE_KEY, nextMode);
+      } catch {
+        // Ignore storage failures
+      }
+      const nextTheme = nextMode === 'auto' ? systemTheme : nextMode;
+      const canAnimate =
+        nextTheme !== theme &&
+        origin &&
+        typeof document !== 'undefined' &&
+        typeof document.startViewTransition === 'function' &&
+        !window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+      if (!canAnimate) {
+        setThemeMode(nextMode);
+        return;
+      }
+      const transition = document.startViewTransition(() => {
+        flushSync(() => setThemeMode(nextMode));
+        document.documentElement.setAttribute('data-theme', nextTheme);
+      });
+      transition.ready
+        .then(() => {
+          const radius = Math.hypot(
+            Math.max(origin.x, window.innerWidth - origin.x),
+            Math.max(origin.y, window.innerHeight - origin.y),
+          );
+          document.documentElement.animate(
+            { clipPath: [`circle(16px at ${origin.x}px ${origin.y}px)`, `circle(${radius}px at ${origin.x}px ${origin.y}px)`] },
+            { duration: 560, easing: 'cubic-bezier(0.22, 0.8, 0.2, 1)', pseudoElement: '::view-transition-new(root)' },
+          );
+        })
+        .catch(() => {});
+    },
+    [systemTheme, theme],
+  );
 
   const loadBootstrap = useCallback(async ({ silent = false } = {}) => {
     try {
@@ -331,16 +386,7 @@ export default function App() {
         </div>
 
         <div className="top-actions">
-          <button
-            className="icon-btn"
-            title="切换深浅色主题"
-            onClick={() => {
-              haptic('light');
-              setTheme((t) => (t === 'dark' ? 'light' : 'dark'));
-            }}
-          >
-            {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
-          </button>
+          <DayNightSlider mode={themeMode} onChange={changeThemeMode} />
           {isAdmin && (
             <button
               className="icon-btn accent"
