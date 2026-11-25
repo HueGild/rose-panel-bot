@@ -32,6 +32,71 @@ export default function SettingsDrawer({
   const [loadingPack, setLoadingPack] = useState(false);
   const [loadedPack, setLoadedPack] = useState(null);
 
+  // In-panel Sticker Quiz adder state
+  const [showQuizAdder, setShowQuizAdder] = useState(false);
+  const [quizPackInput, setQuizPackInput] = useState('');
+  const [quizPackLoading, setQuizPackLoading] = useState(false);
+  const [quizLoadedPack, setQuizLoadedPack] = useState(null);
+  const [quizSelectedSticker, setQuizSelectedSticker] = useState(null);
+  const [quizQuestion, setQuizQuestion] = useState('');
+  const [quizAnswer, setQuizAnswer] = useState('');
+  const [quizWrongText, setQuizWrongText] = useState('');
+
+  const handleFetchQuizPack = async () => {
+    if (!quizPackInput.trim()) {
+      onToast('请粘贴 t.me/addstickers/... 贴纸包链接');
+      return;
+    }
+    try {
+      setQuizPackLoading(true);
+      const res = await apiRequest('/api/admin/stickers/pack', {
+        method: 'POST',
+        body: { input: quizPackInput.trim() },
+      });
+      setQuizLoadedPack(res);
+      onToast(`已加载「${res.title}」（共 ${res.stickers?.length || 0} 张贴纸）`);
+    } catch (err) {
+      onToast(err.message);
+    } finally {
+      setQuizPackLoading(false);
+    }
+  };
+
+  const handleAddStickerQuiz = () => {
+    if (!quizSelectedSticker?.fileId) {
+      onToast('请先从贴纸包或收藏中点选一张贴纸');
+      return;
+    }
+    const q = quizQuestion.trim();
+    const a = quizAnswer.trim();
+    const wrong = quizWrongText
+      .split(/[,，|｜\n]+/)
+      .map((s) => s.trim())
+      .filter((s) => s && s !== a)
+      .slice(0, 3);
+    if (!q || !a || wrong.length === 0) {
+      onToast('请填写题目、正确答案和至少 1 个干扰项');
+      return;
+    }
+    const nextList = [
+      {
+        id: `sq_${Date.now()}`,
+        ...quizSelectedSticker,
+        question: q,
+        answer: a,
+        wrong,
+      },
+      ...(draft.pmBot.stickerChallenges || []),
+    ].slice(0, 40);
+    updateField('pmBot', 'stickerChallenges', nextList);
+    setQuizSelectedSticker(null);
+    setQuizQuestion('');
+    setQuizAnswer('');
+    setQuizWrongText('');
+    setShowQuizAdder(false);
+    onToast('🎉 已加入题库！记得点击底部「保存全部设置」');
+  };
+
   const updateField = (group, key, value) => {
     setDraft((prev) => ({
       ...prev,
@@ -801,12 +866,132 @@ export default function SettingsDrawer({
                     <span style={{ fontSize: 12, fontWeight: 700 }}>
                       🎭 我的表情包验证题库（{(draft.pmBot.stickerChallenges || []).length} 题）
                     </span>
+                    <button
+                      type="button"
+                      className="btn btn-soft btn-sm"
+                      onClick={() => setShowQuizAdder((v) => !v)}
+                    >
+                      <Plus size={13} /> {showQuizAdder ? '收起' : '面板添加'}
+                    </button>
                   </div>
                   <div style={{ fontSize: 11, color: 'var(--accent)', marginBottom: 8, lineHeight: 1.5 }}>
-                    💡 私聊机器人发送 <code>/addverify</code>，发一张收藏贴纸 + 题目与选项即可 3 秒添加！
+                    💡 既可点右上角「面板添加」拉贴纸包选图出题，也可直接私聊机器人发 <code>/addverify</code> 3 秒直录！
                     {(draft.pmBot.stickerChallenges || []).length === 0 &&
                       '（当前题库为空时会自动回退到 Emoji 模式）'}
                   </div>
+
+                  {showQuizAdder && (
+                    <div
+                      style={{
+                        background: 'var(--bg-elevated)',
+                        borderRadius: 14,
+                        padding: 10,
+                        marginBottom: 10,
+                        border: '1px solid var(--accent-line)',
+                      }}
+                    >
+                      <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+                        <input
+                          className="input"
+                          value={quizPackInput}
+                          onChange={(e) => setQuizPackInput(e.target.value)}
+                          placeholder="粘贴贴纸包链接（如 t.me/addstickers/cclovely）"
+                        />
+                        <button
+                          type="button"
+                          className="btn btn-soft"
+                          style={{ flexShrink: 0 }}
+                          disabled={quizPackLoading}
+                          onClick={handleFetchQuizPack}
+                        >
+                          {quizPackLoading ? <RefreshCw size={14} className="spin" /> : '拉取'}
+                        </button>
+                      </div>
+
+                      {quizLoadedPack?.stickers?.length > 0 && (
+                        <div style={{ marginBottom: 8 }}>
+                          <div className="field-label">点击选用一张贴纸：</div>
+                          <div className="sticker-grid" style={{ maxHeight: 160 }}>
+                            {quizLoadedPack.stickers.map((st) => (
+                              <button
+                                key={st.fileId}
+                                type="button"
+                                className={`sticker-cell ${quizSelectedSticker?.fileId === st.fileId ? 'selected' : ''}`}
+                                onClick={() => setQuizSelectedSticker(st)}
+                              >
+                                <TgStickerMedia
+                                  fileId={st.thumbFileId || st.fileId}
+                                  format={st.thumbFileId ? 'webp' : st.format}
+                                  emoji={st.emoji}
+                                  size={40}
+                                  previewOnly
+                                />
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {quizSelectedSticker && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+                          <TgStickerMedia
+                            fileId={quizSelectedSticker.thumbFileId || quizSelectedSticker.fileId}
+                            format={quizSelectedSticker.thumbFileId ? 'webp' : quizSelectedSticker.format}
+                            emoji={quizSelectedSticker.emoji}
+                            size={44}
+                            previewOnly
+                          />
+                          <span className="pill green">已选中贴纸</span>
+                        </div>
+                      )}
+
+                      <div className="field" style={{ marginBottom: 6 }}>
+                        <input
+                          className="input"
+                          value={quizQuestion}
+                          onChange={(e) => setQuizQuestion(e.target.value)}
+                          placeholder="问题（如：上面这个画面在干嘛？）"
+                        />
+                      </div>
+                      <div className="field" style={{ marginBottom: 6 }}>
+                        <input
+                          className="input"
+                          value={quizAnswer}
+                          onChange={(e) => setQuizAnswer(e.target.value)}
+                          placeholder="正确答案（如：两条腿在晃）"
+                        />
+                      </div>
+                      <div className="field" style={{ marginBottom: 8 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                          <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
+                            3 个干扰项（逗号分隔）
+                          </span>
+                          <button
+                            type="button"
+                            className="pill rose"
+                            style={{ cursor: 'pointer', fontSize: 10, padding: '2px 7px' }}
+                            onClick={() => setQuizWrongText('在开挖掘机, 在写微积分, 在修宇宙飞船')}
+                          >
+                            🎲 填离谱干扰项
+                          </button>
+                        </div>
+                        <input
+                          className="input"
+                          value={quizWrongText}
+                          onChange={(e) => setQuizWrongText(e.target.value)}
+                          placeholder="例如：在开挖掘机, 在写微积分, 在修宇宙飞船"
+                        />
+                      </div>
+
+                      <button
+                        type="button"
+                        className="btn btn-primary btn-block"
+                        onClick={handleAddStickerQuiz}
+                      >
+                        加入题库
+                      </button>
+                    </div>
+                  )}
 
                   {(draft.pmBot.stickerChallenges || []).map((item, idx) => (
                     <div
