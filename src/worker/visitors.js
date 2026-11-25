@@ -9,9 +9,21 @@
 import { safeGetJSON, safePutJSON } from './config.js';
 
 const VISITOR_INDEX_KEY = 'visitors:index';
+const VISITOR_MIGRATED_KEY = 'visitors:migrated';
+const VISITOR_SUMMARY_CACHE_KEY = 'cache:visitor_summary';
+const VISITOR_SUMMARY_TTL_MS = 10 * 60 * 1000;
 const MAX_PHOTOS = 150;
 const MAX_LINKS = 200;
 const MAX_PM_IDS = 200;
+
+export async function invalidateVisitorSummaryCache(env) {
+  if (!env?.TOPIC_MAP) return;
+  try {
+    await env.TOPIC_MAP.delete(VISITOR_SUMMARY_CACHE_KEY);
+  } catch {
+    // Ignore cache invalidation errors
+  }
+}
 
 export function formatDisplayName(rec = {}) {
   const full = [rec.first_name, rec.last_name].filter(Boolean).join(' ').trim();
@@ -119,6 +131,7 @@ export async function upsertVisitorProfile(env, tgUser, extra = {}) {
 
   await safePutJSON(env.TOPIC_MAP, key, updated);
   await addToVisitorIndex(env, uid);
+  await invalidateVisitorSummaryCache(env);
   return updated;
 }
 
@@ -212,6 +225,7 @@ export async function recordVisitorExchange(env, userId, msg, options = {}) {
 
   await safePutJSON(env.TOPIC_MAP, userKey, rec);
   await addToVisitorIndex(env, uid);
+  await invalidateVisitorSummaryCache(env);
 
   return {
     photoAdded: Boolean(photo),
@@ -313,6 +327,7 @@ export async function clearVisitorHistory(env, userId, mode = 'archive', tgCallF
   rec.link_count = 0;
   rec.last_preview = '';
   await safePutJSON(env.TOPIC_MAP, userKey, rec);
+  await invalidateVisitorSummaryCache(env);
 
   const visitor = await getVisitorDetail(env, uid);
   return { visitor, deletedTopic, deletedPmCount };
@@ -396,16 +411,29 @@ export async function listVisitors(env, options = {}) {
     return { stats: { total: 0, active: 0, trusted: 0, banned: 0, closed: 0 }, items: [] };
   }
 
-  const indexed = (await safeGetJSON(env.TOPIC_MAP, VISITOR_INDEX_KEY, [])) || [];
+  const [indexedRaw, migrated] = await Promise.all([
+    safeGetJSON(env.TOPIC_MAP, VISITOR_INDEX_KEY, []),
+    env.TOPIC_MAP.get(VISITOR_MIGRATED_KEY),
+  ]);
+  const indexed = Array.isArray(indexedRaw) ? indexedRaw : [];
   const idSet = new Set(indexed.map(String));
 
-  if (idSet.size < 100 && typeof env.TOPIC_MAP.list === 'function') {
+  // Run one-time legacy `user:*` discovery only until migrated, avoiding recurring KV.list quota burn
+  if (!migrated && typeof env.TOPIC_MAP.list === 'function') {
     try {
-      const listed = await env.TOPIC_MAP.list({ prefix: 'user:', limit: 100 });
+      const listed = await env.TOPIC_MAP.list({ prefix: 'user:', limit: 200 });
+      let discovered = 0;
       for (const k of listed.keys || []) {
         const uid = k.name.slice(5);
-        if (/^\d+$/.test(uid)) idSet.add(uid);
+        if (/^\d+$/.test(uid) && !idSet.has(uid)) {
+          idSet.add(uid);
+          discovered += 1;
+        }
       }
+      if (discovered > 0) {
+        await safePutJSON(env.TOPIC_MAP, VISITOR_INDEX_KEY, Array.from(idSet).slice(0, 500));
+      }
+      await env.TOPIC_MAP.put(VISITOR_MIGRATED_KEY, '1');
     } catch {
       // Ignore list failure
     }
@@ -428,6 +456,16 @@ export async function listVisitors(env, options = {}) {
     closed: details.filter((v) => v.isClosed && !v.isBanned).length,
   };
 
+  // Opportunistically refresh single-key summary cache whenever full listing runs
+  if (!search && filter === 'all') {
+    await safePutJSON(
+      env.TOPIC_MAP,
+      VISITOR_SUMMARY_CACHE_KEY,
+      { stats, recent: details.slice(0, 5), cachedAt: Date.now() },
+      { expirationTtl: 600 }
+    ).catch(() => {});
+  }
+
   const q = String(search || '').trim().toLowerCase();
   const filtered = details.filter((v) => {
     if (filter === 'banned' && !v.isBanned) return false;
@@ -444,6 +482,30 @@ export async function listVisitors(env, options = {}) {
   return {
     stats,
     items: filtered.slice(0, limit),
+  };
+}
+
+/**
+ * Ultra-fast single-KV-read overview for Admin bootstrap (replaces 100+ per-open KV reads).
+ * Automatically invalidated whenever a visitor chats or admin moderates a visitor.
+ */
+export async function getVisitorOverview(env) {
+  if (!env.TOPIC_MAP) {
+    return { stats: { total: 0, active: 0, trusted: 0, banned: 0, closed: 0 }, recent: [], cached: false };
+  }
+  const cached = await safeGetJSON(env.TOPIC_MAP, VISITOR_SUMMARY_CACHE_KEY, null);
+  if (cached && cached.stats && Date.now() - Number(cached.cachedAt || 0) < VISITOR_SUMMARY_TTL_MS) {
+    return {
+      stats: cached.stats,
+      recent: Array.isArray(cached.recent) ? cached.recent : [],
+      cached: true,
+    };
+  }
+  const listed = await listVisitors(env, { limit: 5 });
+  return {
+    stats: listed.stats,
+    recent: listed.items,
+    cached: false,
   };
 }
 
@@ -489,5 +551,6 @@ export async function applyVisitorAction(env, userId, action, payload = {}) {
   }
 
   await addToVisitorIndex(env, uid);
+  await invalidateVisitorSummaryCache(env);
   return await getVisitorDetail(env, uid);
 }

@@ -11,6 +11,7 @@ import {
   Trophy,
   Users,
 } from 'lucide-react';
+import { TicketEmblem } from './components/Emblems.jsx';
 import LeaderboardTab from './components/LeaderboardTab.jsx';
 import ProbeTab from './components/ProbeTab.jsx';
 import SettingsDrawer from './components/SettingsDrawer.jsx';
@@ -21,14 +22,126 @@ import { apiRequest, getDevRole, setDevRole } from './lib/api.js';
 import {
   getLaunchTarget,
   getTelegramColorScheme,
+  getTelegramUserId,
   haptic,
   initTelegramWebApp,
+  syncTelegramChrome,
 } from './lib/telegram.js';
+
+const BOOT_CACHE_PREFIX = 'rose_panel_boot_v1:';
+const BOOT_CACHE_MAX_AGE_MS = 12 * 60 * 60 * 1000;
+
+function readSplashMeta() {
+  if (typeof window !== 'undefined' && window.__ROSE_SPLASH__) {
+    return window.__ROSE_SPLASH__;
+  }
+  return {
+    displayName: 'RosePanel',
+    style: 'emblem',
+    text: '正在打开个人面板…',
+    emoji: '🌹',
+    emblem: { type: 'builtin', variant: 'owner' },
+  };
+}
+
+function getBootCacheKey() {
+  const uid = getTelegramUserId();
+  return `${BOOT_CACHE_PREFIX}${uid || `dev_${getDevRole()}`}`;
+}
+
+function loadCachedBootstrap() {
+  try {
+    const raw = localStorage.getItem(getBootCacheKey());
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed?.data?.ok || Date.now() - Number(parsed.savedAt || 0) > BOOT_CACHE_MAX_AGE_MS) {
+      return null;
+    }
+    return parsed.data;
+  } catch {
+    return null;
+  }
+}
+
+function saveCachedBootstrap(data) {
+  try {
+    if (!data?.ok) return;
+    localStorage.setItem(getBootCacheKey(), JSON.stringify({ savedAt: Date.now(), data }));
+  } catch {
+    // Ignore storage quota / private mode errors
+  }
+}
+
+function SplashScreen({ splash }) {
+  const style = splash?.style || 'emblem';
+  const text = splash?.text || '正在打开个人面板…';
+  const displayName = splash?.displayName || 'RosePanel';
+
+  if (style === 'skeleton') {
+    return (
+      <div className="app-shell">
+        <div className="top-bar" style={{ marginBottom: 14 }}>
+          <div className="skeleton-pill" style={{ width: 120, height: 22 }} />
+          <div style={{ display: 'flex', gap: 8 }}>
+            <div className="skeleton-circle" style={{ width: 34, height: 34 }} />
+          </div>
+        </div>
+        <div className="card skeleton-card" style={{ height: 196, padding: 18 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div className="skeleton-circle" style={{ width: 46, height: 46 }} />
+            <div style={{ flex: 1 }}>
+              <div className="skeleton-line" style={{ width: '52%', height: 16 }} />
+              <div className="skeleton-line" style={{ width: '34%', height: 11, marginTop: 8 }} />
+            </div>
+          </div>
+          <div className="skeleton-pill" style={{ width: 92, height: 22, marginTop: 16 }} />
+          <div className="skeleton-line" style={{ width: '88%', height: 12, marginTop: 14 }} />
+          <div className="skeleton-line" style={{ width: '64%', height: 12, marginTop: 8 }} />
+        </div>
+        <div className="card skeleton-card" style={{ padding: 16 }}>
+          <div className="skeleton-line" style={{ width: '32%', height: 13, marginBottom: 14 }} />
+          <div className="skeleton-line" style={{ width: '78%', height: 14, marginBottom: 12 }} />
+          <div className="skeleton-line" style={{ width: '68%', height: 14 }} />
+        </div>
+        <div className="splash-caption" style={{ textAlign: 'center', marginTop: 8 }}>
+          {text}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="app-shell splash-shell">
+      <div className="splash-stage">
+        <div className="splash-halo">
+          <div className="splash-core">
+            {style === 'emoji' ? (
+              <span className="splash-emoji" aria-hidden="true">
+                {splash?.emoji || '🌹'}
+              </span>
+            ) : (
+              <TicketEmblem emblem={splash?.emblem} size={62} />
+            )}
+          </div>
+        </div>
+
+        <div className="splash-brand">{displayName}</div>
+        <div className="splash-caption">{text}</div>
+
+        <div className="splash-dots" aria-hidden="true">
+          <span />
+          <span />
+          <span />
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function App() {
   const [theme, setTheme] = useState(() => getTelegramColorScheme());
-  const [bootstrap, setBootstrap] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [bootstrap, setBootstrap] = useState(() => loadCachedBootstrap());
+  const [loading, setLoading] = useState(() => !loadCachedBootstrap());
   const [error, setError] = useState('');
   const [activeTab, setActiveTab] = useState('profile');
   const [deepVisitorId, setDeepVisitorId] = useState('');
@@ -36,6 +149,7 @@ export default function App() {
   const [checkinLoading, setCheckinLoading] = useState(false);
   const [toast, setToast] = useState('');
   const [previewRole, setPreviewRole] = useState(() => getDevRole());
+  const splashMeta = readSplashMeta();
 
   const showToast = useCallback((msg) => {
     setToast(msg);
@@ -46,14 +160,16 @@ export default function App() {
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
+    syncTelegramChrome(theme);
   }, [theme]);
 
-  const loadBootstrap = useCallback(async () => {
+  const loadBootstrap = useCallback(async ({ silent = false } = {}) => {
     try {
-      setLoading(true);
+      if (!silent) setLoading(true);
       setError('');
       const res = await apiRequest('/api/bootstrap');
       setBootstrap(res);
+      saveCachedBootstrap(res);
 
       // Handle Telegram start_param / query deep links (e.g. visitor_123456 or settings=modes)
       const target = getLaunchTarget();
@@ -75,7 +191,8 @@ export default function App() {
 
   useEffect(() => {
     initTelegramWebApp();
-    loadBootstrap();
+    const hasWarmCache = Boolean(loadCachedBootstrap());
+    loadBootstrap({ silent: hasWarmCache });
   }, [loadBootstrap]);
 
   const handleCheckin = async () => {
@@ -113,14 +230,7 @@ export default function App() {
   };
 
   if (loading && !bootstrap) {
-    return (
-      <div className="app-shell" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <div className="empty-state">
-          <RefreshCw size={24} className="spin" color="var(--accent)" />
-          <div style={{ marginTop: 10 }}>正在打开个人面板…</div>
-        </div>
-      </div>
-    );
+    return <SplashScreen splash={splashMeta} />;
   }
 
   if (error && !bootstrap) {

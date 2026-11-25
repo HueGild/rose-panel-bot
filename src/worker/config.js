@@ -32,6 +32,12 @@ export const DEFAULT_EMBLEM = {
   savedStickers: [],
 };
 
+export const DEFAULT_SPLASH = {
+  style: 'emblem', // emblem | emoji | skeleton
+  text: '正在打开个人面板…',
+  emoji: '🌹',
+};
+
 export const DEFAULT_CONFIG = {
   profile: {
     displayName: 'RosePanel',
@@ -49,6 +55,7 @@ export const DEFAULT_CONFIG = {
     noteLines:
       '初次私聊请直接说明来意，不用只发「在吗」\n欢迎技术交流、友链与合作，谢绝广告推销\n看到消息后会尽快回复，请稍作等待 🌙',
     emblem: { ...DEFAULT_EMBLEM },
+    splash: { ...DEFAULT_SPLASH },
     socials: [
       { id: 'tg', label: 'Telegram 私聊', value: '直接发送消息即可联系我', url: '', icon: 'message' },
       { id: 'github', label: 'GitHub', value: 'github.com/mango0114', url: 'https://github.com/mango0114', icon: 'github' },
@@ -85,6 +92,7 @@ export const DEFAULT_CONFIG = {
     subtitle: '实时节点监控与负载一览',
     cacheTtlSeconds: 15,
     demoMode: false,
+    visibility: 'public', // public | private
   },
   community: {
     enableCheckin: false, // 个人名片模式默认关闭；群社区部署时可一键开启
@@ -161,28 +169,47 @@ export function normalizeEmblem(baseEmblem = DEFAULT_EMBLEM, override = null) {
   return merged;
 }
 
+export function normalizeSplash(baseSplash = DEFAULT_SPLASH, override = null) {
+  const merged = {
+    ...DEFAULT_SPLASH,
+    ...(baseSplash || {}),
+    ...(override || {}),
+  };
+  if (!['emblem', 'emoji', 'skeleton'].includes(merged.style)) {
+    merged.style = 'emblem';
+  }
+  merged.text = String(merged.text || '').trim().slice(0, 48) || DEFAULT_SPLASH.text;
+  merged.emoji = String(merged.emoji || '').trim().slice(0, 8) || DEFAULT_SPLASH.emoji;
+  return merged;
+}
+
 export function mergeConfig(base, override) {
   if (!override || typeof override !== 'object') {
     const cloned = structuredClone(base);
     cloned.sites = cloned.sites.map(normalizeSite);
     cloned.profile.emblem = normalizeEmblem(cloned.profile.emblem);
+    cloned.profile.splash = normalizeSplash(cloned.profile.splash);
+    cloned.probe.visibility = cloned.probe.visibility === 'private' ? 'private' : 'public';
     return cloned;
   }
   const rawSites = Array.isArray(override.sites) ? override.sites : base.sites;
+  const mergedProbe = {
+    ...base.probe,
+    ...(override.probe || {}),
+  };
+  mergedProbe.visibility = mergedProbe.visibility === 'private' ? 'private' : 'public';
   return {
     profile: {
       ...base.profile,
       ...(override.profile || {}),
       emblem: normalizeEmblem(base.profile?.emblem, override.profile?.emblem),
+      splash: normalizeSplash(base.profile?.splash, override.profile?.splash),
       socials: Array.isArray(override.profile?.socials)
         ? override.profile.socials
         : structuredClone(base.profile.socials),
     },
     sites: rawSites.map(normalizeSite),
-    probe: {
-      ...base.probe,
-      ...(override.probe || {}),
-    },
+    probe: mergedProbe,
     community: {
       ...base.community,
       ...(override.community || {}),
@@ -272,20 +299,34 @@ export function sanitizePublicConfig(config, env, isAdmin = false) {
     url: config.profile.emblem?.url || '',
   };
 
+  const probePrivateHidden = config.probe.visibility === 'private' && !isAdmin;
+
   return {
     profile: {
       ...config.profile,
       emblem: activeEmblem,
+      splash: normalizeSplash(config.profile.splash),
     },
     sites: visibleSites,
-    probe: {
-      provider: config.probe.provider,
-      configured: Boolean(config.probe.url || config.probe.demoMode),
-      publicUrl: config.probe.publicUrl || config.probe.url || '',
-      title: config.probe.title,
-      subtitle: config.probe.subtitle,
-      demoMode: Boolean(config.probe.demoMode),
-    },
+    probe: probePrivateHidden
+      ? {
+          provider: config.probe.provider,
+          configured: false,
+          publicUrl: '',
+          title: '',
+          subtitle: '',
+          demoMode: false,
+          visibility: 'private',
+        }
+      : {
+          provider: config.probe.provider,
+          configured: Boolean(config.probe.url || config.probe.demoMode),
+          publicUrl: config.probe.publicUrl || config.probe.url || '',
+          title: config.probe.title,
+          subtitle: config.probe.subtitle,
+          demoMode: Boolean(config.probe.demoMode),
+          visibility: config.probe.visibility === 'private' ? 'private' : 'public',
+        },
     community: {
       enableCheckin: Boolean(config.community.enableCheckin),
       currencyName: config.community.currencyName,

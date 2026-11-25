@@ -25,6 +25,7 @@ import {
   clearVisitorHistory,
   getVisitorDetail,
   getVisitorHistory,
+  getVisitorOverview,
   listVisitors,
 } from './visitors.js';
 
@@ -94,12 +95,12 @@ export async function handleApiRequest(request, env, url) {
     let recentVisitors = [];
     let blockedSpamCount = 0;
     if (auth.isAdmin) {
-      const [listed, spamCount] = await Promise.all([
-        listVisitors(env, { limit: 5 }),
+      const [overview, spamCount] = await Promise.all([
+        getVisitorOverview(env),
         getBlockedSpamCount(env),
       ]);
-      visitorSummary = listed.stats;
-      recentVisitors = (listed.items || []).slice(0, 5);
+      visitorSummary = overview.stats;
+      recentVisitors = overview.recent;
       blockedSpamCount = spamCount;
     }
 
@@ -143,6 +144,9 @@ export async function handleApiRequest(request, env, url) {
 
   // GET /api/probe
   if (path === '/api/probe' && method === 'GET') {
+    if (config.probe.visibility === 'private' && !auth.isAdmin) {
+      return json({ ok: false, error: '探针已设为仅站长可见' }, 403);
+    }
     const force = url.searchParams.get('force') === '1' && auth.isAdmin;
     const probeData = await fetchKomariStatus(env, config.probe, { forceRefresh: force });
     return json({ ok: true, ...probeData });

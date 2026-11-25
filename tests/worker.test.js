@@ -19,6 +19,7 @@ import {
   extractPhotoFromMessage,
   getVisitorDetail,
   getVisitorHistory,
+  getVisitorOverview,
   listVisitors,
   recordVisitorExchange,
   upsertVisitorProfile,
@@ -219,6 +220,23 @@ describe('Visitor profiles & moderation (telegram_private_chatbot KV compatibili
     expect(trustedBob.isBanned).toBe(false);
     expect(trustedBob.isTrusted).toBe(true);
     expect(await kv.get('verified:88802')).toBe('trusted');
+
+    // Single-key visitor overview cache hit & auto-invalidation on mutation
+    const listSpy = vi.spyOn(kv, 'list');
+    const ov1 = await getVisitorOverview(env);
+    expect(ov1.stats.total).toBe(2);
+    expect(ov1.cached).toBe(false);
+    // Migration flag prevents future KV.list calls
+    expect(listSpy).toHaveBeenCalledTimes(0);
+
+    const ov2 = await getVisitorOverview(env);
+    expect(ov2.cached).toBe(true);
+    expect(ov2.stats.total).toBe(2);
+
+    await applyVisitorAction(env, '88802', 'ban');
+    const ov3 = await getVisitorOverview(env);
+    expect(ov3.cached).toBe(false);
+    expect(ov3.stats.banned).toBe(1);
   });
 });
 
@@ -515,6 +533,52 @@ describe('Worker API authorization & config masking', () => {
       )
     ).json();
     expect(guestBootAfter.config.sites).toHaveLength(0);
+
+    // Private probe visibility hides probe from guest and blocks /api/probe with 403
+    await savePanelConfig(env, {
+      probe: { url: 'https://komari.internal', visibility: 'private' },
+      profile: { splash: { style: 'emoji', emoji: '✨', text: '欢迎光临' } },
+    });
+    const guestPrivProbeBoot = await (
+      await worker.fetch(
+        new Request('https://example.workers.dev/api/bootstrap', {
+          headers: { 'X-Telegram-Init-Data': guestInit },
+        }),
+        env
+      )
+    ).json();
+    expect(guestPrivProbeBoot.config.probe.configured).toBe(false);
+    expect(guestPrivProbeBoot.config.probe.publicUrl).toBe('');
+    expect(guestPrivProbeBoot.config.profile.splash).toEqual({
+      style: 'emoji',
+      emoji: '✨',
+      text: '欢迎光临',
+    });
+
+    const guestProbeDenied = await worker.fetch(
+      new Request('https://example.workers.dev/api/probe', {
+        headers: { 'X-Telegram-Init-Data': guestInit },
+      }),
+      env
+    );
+    expect(guestProbeDenied.status).toBe(403);
+
+    // Worker injects safe __ROSE_SPLASH__ payload into HTML responses on /
+    const envWithAssets = {
+      ...env,
+      ASSETS: {
+        async fetch() {
+          return new Response('<!doctype html><html><head><title>App</title></head><body></body></html>', {
+            status: 200,
+            headers: { 'Content-Type': 'text/html; charset=utf-8' },
+          });
+        },
+      },
+    };
+    const htmlRes = await worker.fetch(new Request('https://example.workers.dev/'), envWithAssets);
+    const htmlBody = await htmlRes.text();
+    expect(htmlBody).toContain('window.__ROSE_SPLASH__=');
+    expect(htmlBody).toContain('欢迎光临');
   });
 });
 

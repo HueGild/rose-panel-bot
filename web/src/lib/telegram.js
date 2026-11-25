@@ -4,16 +4,36 @@ export function getTelegramWebApp() {
   return typeof window !== 'undefined' ? window.Telegram?.WebApp || null : null;
 }
 
+export function syncTelegramChrome(theme = 'light') {
+  const tg = getTelegramWebApp();
+  if (!tg) return;
+  const bg = theme === 'dark' ? '#141012' : '#faf4f5';
+  try {
+    tg.setHeaderColor?.(bg);
+    tg.setBackgroundColor?.(bg);
+    tg.setBottomBarColor?.(bg);
+  } catch {
+    // Ignore on older Telegram clients
+  }
+}
+
 export function initTelegramWebApp() {
   const tg = getTelegramWebApp();
   if (!tg) return null;
   try {
     tg.ready();
     tg.expand();
+    syncTelegramChrome(getTelegramColorScheme());
   } catch {
     // Ignore outside Telegram
   }
   return tg;
+}
+
+export function getTelegramUserId() {
+  const tg = getTelegramWebApp();
+  const id = tg?.initDataUnsafe?.user?.id;
+  return id ? String(id) : '';
 }
 
 export function getTelegramInitData() {

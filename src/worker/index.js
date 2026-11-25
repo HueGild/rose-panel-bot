@@ -135,6 +135,45 @@ async function handleSetup(request, env, url) {
   });
 }
 
+function serializeSafeInlineJson(obj) {
+  return JSON.stringify(obj)
+    .replace(/</g, '\\u003c')
+    .replace(/>/g, '\\u003e')
+    .replace(/&/g, '\\u0026')
+    .replace(/\u2028/g, '\\u2028')
+    .replace(/\u2029/g, '\\u2029');
+}
+
+async function injectSplashIntoHtml(response, env) {
+  const ct = response.headers.get('content-type') || '';
+  if (!ct.includes('text/html') || !response.ok) return response;
+  try {
+    const config = await loadPanelConfig(env);
+    const splashPayload = {
+      displayName: config.profile?.displayName || 'RosePanel',
+      style: config.profile?.splash?.style || 'emblem',
+      text: config.profile?.splash?.text || '正在打开个人面板…',
+      emoji: config.profile?.splash?.emoji || '🌹',
+      emblem: {
+        type: config.profile?.emblem?.type || 'builtin',
+        variant: config.profile?.emblem?.variant || 'owner',
+        fileId: config.profile?.emblem?.fileId || '',
+        format: config.profile?.emblem?.format || 'webp',
+        url: config.profile?.emblem?.url || '',
+      },
+    };
+    const html = await response.text();
+    const tag = `<script>window.__ROSE_SPLASH__=${serializeSafeInlineJson(splashPayload)};</script></head>`;
+    const injected = html.includes('</head>') ? html.replace('</head>', tag) : html;
+    const headers = new Headers(response.headers);
+    headers.set('Cache-Control', 'no-cache');
+    headers.delete('content-length');
+    return new Response(injected, { status: response.status, headers });
+  } catch {
+    return response;
+  }
+}
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
@@ -244,12 +283,21 @@ export default {
 
     // Static Mini App frontend served via Cloudflare Workers Assets binding
     if (env.ASSETS) {
-      return env.ASSETS.fetch(request);
+      const assetRes = await env.ASSETS.fetch(request);
+      if (request.method === 'GET' && (url.pathname === '/' || url.pathname === '/index.html')) {
+        return injectSplashIntoHtml(assetRes, env);
+      }
+      return assetRes;
     }
 
     // Fallback: embedded static assets (used for single-module Cloudflare API uploads)
     const embedded = serveEmbeddedAsset(url.pathname);
-    if (embedded) return embedded;
+    if (embedded) {
+      if (request.method === 'GET' && (url.pathname === '/' || url.pathname === '/index.html')) {
+        return injectSplashIntoHtml(embedded, env);
+      }
+      return embedded;
+    }
 
     return new Response('Not Found', { status: 404 });
   },

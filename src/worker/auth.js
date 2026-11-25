@@ -125,7 +125,10 @@ export async function isUserAdmin(env, userId, tgCallFn = null) {
   if (!userId) return false;
   const uid = String(userId);
   const configuredAdmins = parseAdminIds(env);
-  if (configuredAdmins.has(uid)) return true;
+  // Fast path: when ADMIN_IDS is explicitly configured, verify in-memory (<0.1ms, 0 KV / 0 TG API calls)
+  if (configuredAdmins.size > 0) {
+    return configuredAdmins.has(uid);
+  }
 
   // Fallback: check supergroup administrator status if SUPERGROUP_ID & BOT_TOKEN exist
   if (!env.SUPERGROUP_ID || !env.BOT_TOKEN || !tgCallFn) return false;

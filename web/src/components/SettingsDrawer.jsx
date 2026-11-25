@@ -117,6 +117,22 @@ export default function SettingsDrawer({
     }));
   };
 
+  const updateSplash = (patch) => {
+    setDraft((prev) => ({
+      ...prev,
+      profile: {
+        ...prev.profile,
+        splash: {
+          style: 'emblem',
+          text: '正在打开个人面板…',
+          emoji: '🌹',
+          ...(prev.profile?.splash || {}),
+          ...patch,
+        },
+      },
+    }));
+  };
+
   const handleSelectSticker = (sticker) => {
     const existingSaved = Array.isArray(draft.profile?.emblem?.savedStickers)
       ? draft.profile.emblem.savedStickers
@@ -542,6 +558,46 @@ export default function SettingsDrawer({
               </div>
 
               <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--border)' }}>
+                <div className="field-label" style={{ marginBottom: 8 }}>
+                  开屏加载页风格（新访客首次打开 0ms 即显）
+                </div>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
+                  {[
+                    { id: 'emblem', label: '✨ 徽章呼吸' },
+                    { id: 'emoji', label: '🌹 表情跳动' },
+                    { id: 'skeleton', label: '🪄 卡片骨架屏' },
+                  ].map((opt) => (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      className={`pill ${(draft.profile?.splash?.style || 'emblem') === opt.id ? 'rose' : ''}`}
+                      style={{ cursor: 'pointer' }}
+                      onClick={() => updateSplash({ style: opt.id })}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  {(draft.profile?.splash?.style || 'emblem') === 'emoji' && (
+                    <input
+                      className="input"
+                      style={{ width: 64, textAlign: 'center' }}
+                      value={draft.profile?.splash?.emoji ?? '🌹'}
+                      onChange={(e) => updateSplash({ emoji: e.target.value })}
+                      placeholder="🌹"
+                    />
+                  )}
+                  <input
+                    className="input"
+                    value={draft.profile?.splash?.text ?? '正在打开个人面板…'}
+                    onChange={(e) => updateSplash({ text: e.target.value })}
+                    placeholder="加载提示文案，如：正在打开个人面板…"
+                  />
+                </div>
+              </div>
+
+              <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--border)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                   <span className="field-label" style={{ margin: 0 }}>社交与联系方式</span>
                   <button className="btn btn-soft btn-sm" onClick={handleAddSocial}>
@@ -735,6 +791,22 @@ export default function SettingsDrawer({
                 onChange={(e) => updateField('probe', 'apiKey', e.target.value)}
                 placeholder="公开探针无需填写；私有站点可填 Bearer Token 或 session_token=..."
               />
+            </div>
+
+            <div className="list-row">
+              <div className="row-main">
+                <div className="row-title" style={{ fontSize: 14 }}>仅自己可见（对访客隐藏探针）</div>
+                <div className="row-desc wrap">开启后访客看不到「探针」菜单，且服务端会拦截非站长探针请求</div>
+              </div>
+              <button
+                type="button"
+                className={`switch ${draft.probe.visibility === 'private' ? 'on' : ''}`}
+                onClick={() =>
+                  updateField('probe', 'visibility', draft.probe.visibility === 'private' ? 'public' : 'private')
+                }
+              >
+                <span className="switch-knob" />
+              </button>
             </div>
 
             <div className="list-row">
