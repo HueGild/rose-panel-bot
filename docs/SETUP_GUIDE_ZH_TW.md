@@ -150,16 +150,21 @@ https://你的網域/setup?secret=你剛填的WEBHOOK_SECRET
 這是因為該網域在 Cloudflare 的全域 SSL/TLS 為 **Flexible**，Worker 存取同網域子站時會被降級為 HTTP，而源站又強制跳 HTTPS。  
 **解決**：Cloudflare 控制台 → 你的網域 → **Rules → Configuration Rules** 新建規則，條件符合探針網域和面板網域，把 **SSL** 單獨改為 **Full** 即可，不影響同網域下其他子站。
 
-### Q3：後續專案發布新版本，怎麼更新？
-你的 KV 資料、訪客紀錄與環境變數在任何更新方式下都會 **100% 保留**，依你的部署來源二選一：
-- **情況 A · 透過 GitHub Fork 部署的倉庫（最省心）**：
+### Q3：後續專案發布新版本，怎麼更新？需要改 Cloudflare KV 嗎？
+**完全不需要去 Cloudflare KV 裡改任何東西！** 你的 KV 資料（名片、小站、探針、訪客紀錄、通知群綁定）與環境變數在任何更新方式下都會 **100% 保留**，新選項升級後直接在面板 **⚙️ 設定** 裡調整即可：
+- **方式 A · 直接交給 AI 一鍵覆蓋更新（最省事）**：
+  - 直接對你的 AI 助手（Antigravity / Claude Code / Codex / Cursor）說：
+    ```text
+    請閱讀 https://github.com/mango0114/rose-panel-bot 的 AGENTS.md，幫我把之前部署的 RosePanel Bot 升級到最新版：拉取最新程式碼原地覆蓋部署到我原來的 Cloudflare Worker，務必使用 --keep-vars 保留原有的 KV 綁定和環境變數，不要重建 KV 和 Telegram Bot。
+    ```
+- **方式 B · 透過 GitHub Fork 部署的倉庫**：
   - 站長開啟面板 → **⚙️ 設定 → 版本更新** 自動查看新版，點「前往我的 Fork」在 GitHub 頁面點擊 **`Sync fork → Update branch`**（或在設定裡選填單倉庫 GitHub Token 站內一鍵同步），Cloudflare 約 30 秒自動完成重建上線。
-- **情況 B · 透過 Deploy to Cloudflare 一鍵按鈕建立的獨立副本（沒有 `Sync fork` 按鈕）**：
-  - **推薦（一勞永逸）**：先到 [官方倉庫](https://github.com/mango0114/rose-panel-bot) 點一次右上角 **Fork**，再進 Cloudflare Worker → **Settings → Build** 斷開舊副本、重新連接到剛 Fork 出來的倉庫，之後即可永久享有 `Sync fork` 與站內一鍵同步；
-  - **或本機 Git 手動同步**：
+- **方式 C · 透過 Deploy to Cloudflare 一鍵按鈕建立的獨立副本（沒有 `Sync fork` 按鈕）**：
+  - 既可以直接用上面的 **方式 A（交給 AI 原地覆蓋）**，也可以到 [官方倉庫](https://github.com/mango0114/rose-panel-bot) 點一次右上角 **Fork**，再進 Cloudflare Worker → **Settings → Build** 斷開舊副本、重新連接到剛 Fork 出來的倉庫，之後即可永久享有 `Sync fork` 與站內一鍵同步；
+  - 或本機 Git 手動同步：
     ```bash
     git clone https://github.com/<你的帳號>/<你的倉庫名>.git && cd <你的倉庫名>
     git remote add upstream https://github.com/mango0114/rose-panel-bot.git
     git fetch upstream && git merge upstream/main --allow-unrelated-histories && git push origin main
     ```
-- **情況 C · 本機 CLI 部署**：執行 `git pull && npm install && npm run deploy`。
+- **方式 D · 本機 CLI 部署**：執行 `git pull && npm install && npm run build && npx wrangler deploy --keep-vars`。

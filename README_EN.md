@@ -82,14 +82,18 @@
   4. **Layer 4 · De-Obfuscated Keyword Filter & Edit Guard**: Strips zero-width characters, full-width Unicode (NFKC), and Cyrillic homoglyphs; monitors `edited_message` to catch "send normal text then edit into spam" bypasses.
 - **⚡ 0-Second Personal Mini App Panel & Animated Sticker Emblems**
   - Edge-injected customizable splash screen (`emblem` breathing halo / `emoji` bounce / `skeleton` shimmer) + local SWR cache + single-key admin overview cache (50× fewer KV reads) + automatic Telegram native dark/light chrome sync.
-  - Send `/set` with any `.webp` / `.webm` / 60fps `.tgs` sticker or Custom Emoji to instantly update your main emblem and save it to your collection library.
-  - Admin-only **Owner Overview** card on the home tab (blocked spam count, active visitors, recent contacts) + optional 1-click **Group Check-in, Points & Badges System**.
+  - Send `/set` with any `.webp` / `.webm` / 60fps `.tgs` sticker or Custom Emoji to instantly update your main emblem; 3-way privacy card avatar (`bot` default / server-proxied `owner` TG avatar / `custom` URL) + fully editable & hideable ticket stub labels.
+  - Admin-only **Owner Overview** card on the home tab, built-in **In-App Version Checker & optional 1-click Fork Sync**, plus optional 1-click **Group Check-in, Points & Badges System**.
 - **🌐 Public / Private Site Directory & 📡 Pluggable Server Probe**
   - Categories, search, drag-free reordering, and 1-tap **`Public` vs `🔒 Private`** visibility toggle (private sites are strictly omitted server-side for non-admins).
   - Pluggable probe registry supporting **Komari (v2/v1)**, **Nezha (v1 public WebSocket / v1 REST / v0 REST)**, **NodeGet (NodeSeek official probe)**, and **Generic JSON** probes, with built-in connection testing, redirect-loop protection, 15s edge caching, and **`🔒 Private (Admin Only)`** visibility toggle.
-- **💬 In-Group `/bind` Setup + Bidirectional Photo Album & Link Archive**
+- **🤖 Auto-Reply, Keyword Replies & Configurable `/start` Welcome Card**
+  - **Busy/Offline Auto-Reply**: Customizable auto-receipt with per-visitor KV cooldown (prevents spammy duplicate receipts), triggered only after verification passes.
+  - **Keyword Auto-Reply Engine (up to 50 rules)**: Comma/newline/pipe-separated keywords, case-insensitive **contains** or **exact** matching, with per-rule toggle between **forward to admin (with silent topic note)** or **silent direct reply without disturbing your group**.
+  - **Configurable `/start` Welcome Card**: Toggle off `/start` auto-welcome completely, or keep text-only welcome without the inline panel button (`/panel`, `/me`, and the menu button always remain available).
+- **💬 In-Group `/bind` Setup + Visitor Profile Cards & Media Archive**
   - Create a private Telegram group with **Topics** enabled, make the bot an admin, and send **`/bind`** — **no `-100...` group ID lookup or manual `SUPERGROUP_ID` editing required!**
-  - Tracks bidirectional message counts, auto-archives exchanged photos (30-min HMAC-signed private proxy + lightbox) & links, with notes, 1-tap Ban/Trust/Close, and two-tier chat history clearing.
+  - Topic visitor cards link the visitor's display name (`tg://user?id=`) for 1-tap profile lookup and support an optional **visitor avatar photo card** toggle; auto-archives exchanged photos (HMAC-signed private proxy + lightbox) & links with 1-tap Ban/Trust/Close.
 
 ---
 
@@ -246,9 +250,14 @@ The panel recognized you as a regular guest — almost always because `ADMIN_IDS
 2. Open Cloudflare Worker → **Settings → Variables & Bindings** → check `ADMIN_IDS` (**Text** type). If 1-click deploy created it as a hidden **Secret** (so you can't inspect it, or it held the old placeholder `123456789`), delete it and re-add `ADMIN_IDS` as a **Text** variable with your real numeric UID.
 3. Save & redeploy, then close and reopen the Mini App **inside Telegram** (if you rely on forum-group admin detection without `ADMIN_IDS`, make sure you ran `/bind` inside your Topics group).
 
-**Q: How do I update to a new release?**  
-- **GitHub Fork**: Open Mini App → **⚙️ Settings → 版本更新**, or click **Sync fork → Update branch** on your fork (Cloudflare rebuilds automatically; all KV data is preserved).
-- **Standalone copy created by the Deploy to Cloudflare button** (no `Sync fork` button): either **Fork** the upstream repo once and reconnect Cloudflare Build to your fork, or sync via Git: `git remote add upstream https://github.com/mango0114/rose-panel-bot.git && git fetch upstream && git merge upstream/main --allow-unrelated-histories && git push origin main`.
+**Q: How do I update an existing deployment? Do I need to edit Cloudflare KV?**  
+**No — you never need to touch Cloudflare KV!** All profile data, sites, probe settings, visitor history, and verification state are **100% preserved** across upgrades:
+- **Let an AI Assistant upgrade in-place (easiest for CLI / Deploy-button users)**: Send this prompt to Antigravity / Claude Code / Codex / Cursor:
+  ```text
+  Read AGENTS.md in https://github.com/mango0114/rose-panel-bot and upgrade my existing RosePanel Bot deployment to the latest release. Pull upstream changes and deploy in-place to my existing Cloudflare Worker using --keep-vars so all KV bindings and secrets stay intact — do not recreate KV or the Telegram Bot.
+  ```
+- **GitHub Fork**: Open Mini App → **⚙️ Settings → 版本更新**, or click **Sync fork → Update branch** on your fork (Cloudflare rebuilds automatically).
+- **Standalone copy (Deploy button) / Local CLI**: Either Fork the upstream repo once and reconnect Cloudflare Build to your fork, or sync via Git (`git fetch upstream && git merge upstream/main --allow-unrelated-histories`) and run `npm run build && npx wrangler deploy --keep-vars`.
 
 ---
 

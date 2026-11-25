@@ -12,10 +12,10 @@ Before configuring environment variables or deploying, ask the user to choose:
 
 | Module | Default | Required Env / Config | Notes |
 | :--- | :---: | :--- | :--- |
-| **1. Core Personal Card (`名片`)** | Always ON | `BOT_TOKEN`, `WEBHOOK_SECRET`, `ADMIN_IDS`, `TOPIC_MAP` KV | Rose-porcelain profile card, social links, personal tags, contact etiquette, customizable 0ms splash screen, custom TG Sticker/Emoji emblem via `/set`. |
+| **1. Core Personal Card (`名片`)** | Always ON | `BOT_TOKEN`, `WEBHOOK_SECRET`, `ADMIN_IDS`, `TOPIC_MAP` KV | Rose-porcelain profile card, 3-way privacy avatar (`bot` / server-proxied `owner` / `custom`), editable/hideable ticket stub labels, social links, personal tags, contact etiquette, customizable 0ms splash screen, custom TG Sticker/Emoji emblem via `/set`, and in-app version checker (`⚙️ 设置 → 版本更新`). |
 | **2. Personal Sites & Private Bookmarks (`小站`)** | Always ON | Managed live in Mini App Settings | Supports Public sites + server-side isolated `🔒 Private` owner-only bookmarks. |
 | **3. Server Probe Module (`探针`)** | Optional (Lightweight OFF) | `PROBE_PROVIDER` + `PROBE_URL` (+ optional `PROBE_API_KEY`; legacy `KOMARI_URL` / `KOMARI_API_KEY` still work) or set in Mini App UI | **Ask the user which probe they use** (see Step 1b). Built-in providers: `komari` (v2 `/api/rpc2` + v1 `/api/nodes`), `nezha` (v1 public WS `/api/v1/ws/server` + v1 REST `/api/v1/server` + v0 `/api/v1/server/details`), `nodeget` (NodeSeek official probe WebSocket JSON-RPC 2.0), `json` (generic JSON node list for 极简探针 / CF Workers 探针 / ServerStatus). Hides the `探针` tab for non-admin visitors when unconfigured or set to `private`. |
-| **4. Bidirectional PM Bot & 4-Layer Anti-Spam Shield (`访客`)** | Optional | Send `/bind` in your Forum Group (or set `SUPERGROUP_ID`) | Enables isolated Forum Topics, bidirectional message counter, Photo Gallery, Links Archive, Quick Clear, owner overview card, and 4-layer shield (`Emoji` / `Custom Sticker Quiz via /add` / `Quiz` / `CF Turnstile` + CAS blacklist + unverified media flyer block + honeypot + edit guard). |
+| **4. Bidirectional PM Bot, Auto-Reply & 4-Layer Anti-Spam Shield (`访客`)** | Optional | Send `/bind` in your Forum Group (or set `SUPERGROUP_ID`) | Isolated Forum Topics with clickable visitor nickname + optional avatar photo card, configurable `/start` welcome card & panel button toggles, busy/offline auto-reply with per-visitor KV cooldown, up to 50 keyword auto-reply rules (contains/exact, forward or silent), Photo Gallery, Links Archive, Quick Clear, and 4-layer shield (`Emoji` / `Custom Sticker Quiz via /add` / `Quiz` / `CF Turnstile` + CAS + media flyer block + honeypot + edit guard). |
 | **5. Cloudflare Turnstile Strict Verification** | Optional | `TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET` | Upgrades high-risk spam (forwarded ads, unsolicited first-message photos, links, zero-width tricks) or manual strict mode into in-Telegram Turnstile WebApp verification. |
 | **6. Group Check-in, Points, Levels & Badges (`群社区模式`)** | Optional (`false`) | `ENABLE_CHECKIN="true"` (or 1-click toggle inside Mini App Settings) | Enables `/me`, `/panel`, `/checkin`, `/rank` in Telegram groups with daily streaks, 7-tier progression, 8 auto-unlocked badges, and leaderboard. |
 | **7. Custom Optional Extensions (Not installed by default — keep core lightweight!)** | Opt-in on request | Code extension | Only implement if the user explicitly asks during setup: e.g., **extra probe adapters such as Uptime Kuma** (register in `PROBE_PROVIDERS` in `src/worker/komari.js`), **Channel Discussion Comment Guard** (add group message moderation in `src/worker/bot.js` reusing `src/worker/antispam.js`), or **AI Group Q&A** (OpenAI-compatible `/ask` command). |
@@ -49,6 +49,19 @@ After deploying, remind or assist the user with these 3 final steps:
 1. **Bind `TOPIC_MAP` KV**, set secrets (`BOT_TOKEN`, `WEBHOOK_SECRET`, and optional `TURNSTILE_SECRET` / `KOMARI_API_KEY`) and the required text var `ADMIN_IDS` (owner numeric UID). **Never set `DEV_PREVIEW="true"` in production**, and **never commit real tokens, group IDs, or KV IDs to a public repository.**
 2. **Run `/setup`** once in a browser: `https://<your-domain>/setup?secret=<YOUR_WEBHOOK_SECRET>` to register Telegram webhook (`message`, `edited_message`, `callback_query`), bot commands, and the bottom-left Mini App menu button.
 3. **Register Direct-Link Mini App in `@BotFather`** (`/newapp` → URL `https://<your-domain>/` → short name matching `APP_SHORT_NAME`, e.g., `panel`) so the panel opens cleanly from groups and admin topic buttons.
+
+---
+
+## Upgrading an Existing Deployment (Safe In-Place Update — Zero KV Changes)
+
+When a user asks you to **upgrade / overwrite an existing RosePanel Bot deployment** to the latest upstream release (`https://github.com/mango0114/rose-panel-bot`):
+
+1. **NEVER recreate or wipe `TOPIC_MAP` KV, NEVER recreate the Telegram Bot, and NEVER overwrite existing Secrets (`BOT_TOKEN`, `WEBHOOK_SECRET`, etc.).** All existing profile settings, sites, probe config, visitor history, and verification records live in `TOPIC_MAP` KV and are 100% preserved across code upgrades.
+2. **Identify how the user deployed**:
+   - **GitHub Fork + Cloudflare Workers Builds**: Sync the user's fork with `upstream/main` (via `gh repo sync` / GitHub `merge-upstream` / `git fetch upstream && git merge upstream/main && git push origin main`) and let Cloudflare auto-build & deploy.
+   - **Standalone Copy (Deploy button) or Local CLI**: Pull latest upstream code (`git remote add upstream https://github.com/mango0114/rose-panel-bot.git` if missing, `git fetch upstream && git merge upstream/main --allow-unrelated-histories`), keep the user's existing Worker `name` and `TOPIC_MAP` KV `id`, run `npm install && npm run build`, and deploy in-place with **`npx wrangler deploy --keep-vars`** so Dashboard variables & Secrets are preserved untouched.
+3. **Never ask the user to manually edit Cloudflare KV** for new settings: every option added in `v1.4.0+` / `v1.5.x` (avatar source, ticket stub labels, `/start` welcome toggles, auto-reply & keyword rules, topic card avatar) is backward-compatible and editable live inside Telegram Mini App **⚙️ Settings**.
+4. Only re-run `/setup?secret=<WEBHOOK_SECRET>` if upgrading from a pre-`v1.2.2` deployment whose Telegram Webhook still pointed to root `/` without the secret header.
 
 ---
 
