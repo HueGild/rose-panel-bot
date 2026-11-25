@@ -119,14 +119,16 @@ flowchart LR
   TS -- "Verified" --> INBOX
 ```
 
-Switch anytime among **4 verification modes** inside **⚙️ Settings → 防骚扰验证 (Anti-Spam Verification)**:
+Switch anytime among **4 human-verification modes** inside **⚙️ Settings → 防骚扰验证 (Anti-Spam Verification)**:
 
 | Mode | Experience & Mechanism | Anti-Abuse Protection |
 | :--- | :--- | :--- |
-| **🎭 Custom Sticker Quiz (Recommended)** | Use `/add` (or the in-panel sticker pack builder) to turn your collected animated/static stickers into custom visual quizzes — **1s for humans, high barrier for spam scripts** | Auto-rotates stickers on retry, cleans up after passing + honeypot & cooldown |
+| **🎭 Custom Sticker Quiz (Recommended)** | Use `/add` (or the in-panel sticker pack builder) to turn your collected animated/static stickers into custom visual quizzes — **1s for humans, high barrier for spam scripts** | Reshuffle on error: with several quizzes it switches to a different sticker; with a single quiz it reorders the correct answer and decoys. Cleans up after passing + honeypot & cooldown |
 | **🎯 Emoji Odd-One-Out / Pick (Default)** | 3×3 pure-icon inline grid alternating odd-one-out and semantic pick — **zero latency, ~0.5s for humans** | Reshuffles on first mistake; 2 consecutive failures trigger silent 10-min cooldown (configurable) |
-| **📝 Local Quiz** | 2×2 local commonsense buttons, zero external calls | Reshuffle-on-error + honeypot + silent cooldown |
+| **📝 Local Quiz** | 2×2 local commonsense buttons, zero external calls | New question with reshuffled options on error + honeypot + silent cooldown |
 | **🛡️ CF Turnstile Strict Mode** | 1-tap escalation during targeted raids; native Cloudflare Turnstile inside Telegram WebApp with server-side `siteverify` | Auto-falls back to Emoji mode if Turnstile keys aren't set |
+
+- **🔀 Reshuffle on every mistake (no answer memorizing)**: For all three button modes (Sticker Quiz / Emoji / Local Quiz), one wrong tap instantly brings a new challenge with the correct answer and decoys reshuffled. **Even if the same question comes up again, the correct answer's button position is re-randomized**, so scripts can't reliably pass by remembering a button position; hitting the failure limit (default 2) triggers a silent cooldown.
 
 ---
 
