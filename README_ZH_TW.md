@@ -68,6 +68,8 @@
   <img src="docs/assets/preview-row1.png" alt="1 名片與來信禮儀 · 2 公開與私密雙層小站" width="94%" />
   <br /><br />
   <img src="docs/assets/preview-row2.png" alt="3 Komari 節點探針 · 4 訪客與四層防廣告管理" width="94%" />
+  <br /><br />
+  <img src="docs/assets/preview-row3.png" alt="暗黑玫瑰瓷主題 · 訪客資料卡與一鍵管控" width="94%" />
 </div>
 
 ---

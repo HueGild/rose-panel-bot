@@ -139,10 +139,17 @@ https://你的域名/setup?secret=你刚填的WEBHOOK_SECRET
 
 ## ❓ 常见问题排错 (FAQ)
 
-### Q1：我的 Komari 探针和面板在同一个 Cloudflare 域名下，测试连接报「重定向循环」怎么办？
+### Q1：打开小程序后，右上角没有 ⚙️ 设置按钮、底部也没有「访客」菜单怎么办？
+这说明服务端把当前账号识别成了**普通访客**，99% 是 `ADMIN_IDS` 没有配置正确，按下面 3 步检查即可解决：
+1. 在 Telegram 找 **[@userinfobot](https://t.me/userinfobot)** 获取**你自己个人账号的纯数字 UID**（注意：**不是** `@用户名`，也**不是**机器人的 ID，也不能留着示例值 `123456789`）；
+2. 进入 Cloudflare Worker → **Settings → Variables & Bindings** → 确认已添加 **`ADMIN_IDS`**（类型为 Text，多个管理员用英文逗号分隔）并点击 **Deploy / Save** 保存生效；
+3. 务必在 **Telegram 内**点机器人左下角菜单或 `/panel` 打开（外部浏览器直接访问链接不带 Telegram 身份签名，会被当成访客）；关闭小程序重新点开后，右上角 ⚙️ 设置与底部「访客」管理就会立刻出现！
+*(注：如果确实不想填 `ADMIN_IDS`，则需要先在话题通知群里发 `/bind` 绑定成功，系统才会自动按通知群管理员鉴权。)*
+
+### Q2：我的 Komari 探针和面板在同一个 Cloudflare 域名下，测试连接报「重定向循环」怎么办？
 这是因为该域名在 Cloudflare 的全局 SSL/TLS 为 **Flexible**，Worker 访问同域名子站时会被降级为 HTTP，而源站又强制跳 HTTPS。  
 **解决**：Cloudflare 控制台 → 你的域名 → **Rules → Configuration Rules** 新建规则，条件匹配探针域名和面板域名，把 **SSL** 单独改为 **Full** 即可，不影响同域名下其他子站。
 
-### Q2：后续项目发布新版本，怎么更新？
+### Q3：后续项目发布新版本，怎么更新？
 - **Cloudflare Git 自动部署**：在自己 Fork 的仓库点 **`Sync fork → Update branch`**，Cloudflare 自动构建上线，你的 KV 数据和访客记录 **100% 保留**。
 - **本地 CLI 部署**：执行 `git pull && npm install && npm run deploy`。
