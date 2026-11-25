@@ -124,6 +124,31 @@ export const DEFAULT_CONFIG = {
 };
 
 const CONFIG_KV_KEY = 'config:panel';
+export const SUPERGROUP_KV_KEY = 'config:supergroup_id';
+
+export async function resolveSupergroupId(env) {
+  if (env?.TOPIC_MAP) {
+    try {
+      const bound = await env.TOPIC_MAP.get(SUPERGROUP_KV_KEY);
+      if (bound && /^-?\d+$/.test(String(bound).trim())) {
+        return String(bound).trim();
+      }
+    } catch {
+      // Ignore KV read failures
+    }
+  }
+  return String(env?.SUPERGROUP_ID || '').trim();
+}
+
+export async function saveBoundSupergroupId(env, chatId) {
+  if (!env?.TOPIC_MAP) return;
+  await env.TOPIC_MAP.put(SUPERGROUP_KV_KEY, String(chatId));
+}
+
+export async function clearBoundSupergroupId(env) {
+  if (!env?.TOPIC_MAP) return;
+  await env.TOPIC_MAP.delete(SUPERGROUP_KV_KEY);
+}
 
 export async function safeGetJSON(kv, key, fallback = null) {
   if (!kv) return fallback;

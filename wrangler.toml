@@ -16,9 +16,9 @@ binding = "TOPIC_MAP"
 
 # 可选环境变量（敏感信息请使用 wrangler secret put 或在 Cloudflare 后台作为 Secret 添加）：
 # - BOT_TOKEN          (必填 Secret) Telegram Bot Token
-# - BOT_USERNAME       (推荐) Bot 用户名（不含 @，例如 Rose202_bot）
+# - BOT_USERNAME       (推荐) Bot 用户名（不含 @，例如 my_panel_bot）
 # - APP_SHORT_NAME     (推荐) BotFather 中创建的 Mini App 短名（例如 panel）
-# - SUPERGROUP_ID      (私聊转发必填) 开启了话题功能的管理员群组 ID（例如 -1001234567890）
+# - SUPERGROUP_ID      (可选) 管理员话题群 ID（推荐部署后直接在话题群内发 /bind 一键绑定）
 # - ADMIN_IDS          (必填) 管理员 Telegram UID，多个用英文逗号分隔
 # - WEBHOOK_SECRET     (推荐 Secret) Webhook 校验密钥，也可用于保护 /setup
 # - KOMARI_URL         (可选) Komari 探针地址（也可部署后在小程序后台直接填写）

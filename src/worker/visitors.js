@@ -6,7 +6,7 @@
 //   verified:<uid> -> "trusted" | "turnstile:v1" | "quiz:v1"
 //   history:<uid>  -> JSON { photos: [], links: [], pmMessageIds: [] }
 
-import { safeGetJSON, safePutJSON } from './config.js';
+import { resolveSupergroupId, safeGetJSON, safePutJSON } from './config.js';
 
 const VISITOR_INDEX_KEY = 'visitors:index';
 const VISITOR_MIGRATED_KEY = 'visitors:migrated';
@@ -302,11 +302,12 @@ export async function clearVisitorHistory(env, userId, mode = 'archive', tgCallF
     }
 
     // 2. Delete the visitor's entire Forum Topic in admin supergroup (no 48h limit!)
-    if (rec.thread_id && env.SUPERGROUP_ID) {
+    const supergroupId = await resolveSupergroupId(env);
+    if (rec.thread_id && supergroupId) {
       const oldThreadId = rec.thread_id;
       try {
         await tgCallFn(env, 'deleteForumTopic', {
-          chat_id: env.SUPERGROUP_ID,
+          chat_id: supergroupId,
           message_thread_id: Number(oldThreadId),
         });
         deletedTopic = true;
@@ -342,14 +343,15 @@ async function addToVisitorIndex(env, uid) {
   await safePutJSON(env.TOPIC_MAP, VISITOR_INDEX_KEY, filtered.slice(0, 500));
 }
 
-export async function getVisitorDetail(env, userId) {
+export async function getVisitorDetail(env, userId, knownSupergroupId = null) {
   const uid = String(userId);
   if (!env.TOPIC_MAP) return null;
 
-  const [rec, bannedVal, verifiedVal] = await Promise.all([
+  const [rec, bannedVal, verifiedVal, resolvedGroupId] = await Promise.all([
     safeGetJSON(env.TOPIC_MAP, `user:${uid}`, null),
     env.TOPIC_MAP.get(`banned:${uid}`),
     env.TOPIC_MAP.get(`verified:${uid}`),
+    knownSupergroupId !== null ? Promise.resolve(knownSupergroupId) : resolveSupergroupId(env),
   ]);
 
   if (!rec && !bannedVal && !verifiedVal) {
@@ -368,7 +370,7 @@ export async function getVisitorDetail(env, userId) {
   else if (isTrusted) status = 'trusted';
   else if (isVerified) status = 'verified';
 
-  const supergroupClean = String(env.SUPERGROUP_ID || '').replace(/^-100/, '');
+  const supergroupClean = String(resolvedGroupId || '').replace(/^-100/, '');
   const topicLink =
     supergroupClean && base.thread_id
       ? `https://t.me/c/${supergroupClean}/${base.thread_id}`
@@ -440,7 +442,8 @@ export async function listVisitors(env, options = {}) {
   }
 
   const allIds = Array.from(idSet).slice(0, 120);
-  const details = (await Promise.all(allIds.map((uid) => getVisitorDetail(env, uid)))).filter(Boolean);
+  const supergroupId = await resolveSupergroupId(env);
+  const details = (await Promise.all(allIds.map((uid) => getVisitorDetail(env, uid, supergroupId)))).filter(Boolean);
 
   details.sort((a, b) => {
     const ta = a.last_seen_at ? Date.parse(a.last_seen_at) : 0;

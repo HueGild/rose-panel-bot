@@ -5,7 +5,9 @@
 [![Release](https://img.shields.io/github/v/release/mango0114/rose-panel-bot?color=A32952&label=Release)](https://github.com/mango0114/rose-panel-bot/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-A32952.svg)](LICENSE)
 
-🇨🇳 **简体中文** | [🇺🇸 English](README_EN.md) | [📋 更新日志](CHANGELOG.md)
+🇨🇳 **简体中文** | [🇺🇸 English](README_EN.md) | [🐣 零基础保姆教程](docs/SETUP_GUIDE.md) | [📋 更新日志](CHANGELOG.md)
+
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/mango0114/rose-panel-bot)
 
 基于 **Cloudflare Workers** 的一体化 **Telegram Mini App 个人面板 + 公开/私密小站导航 + Komari 服务器探针 + 双向私聊防骚扰与媒体归档机器人 + 可选群签到积分系统**。
 
@@ -83,18 +85,19 @@
 
 ## 🚀 极简部署指南（4 种方式任选）
 
-> **通用前提**：先找 [@BotFather](https://t.me/BotFather) 拿 `BOT_TOKEN`；如需私聊转发，建一个开启 **话题 (Topics)** 的群组把机器人设为管理员（给管理话题、删消息权限）并记下 `-100` 开头的 `SUPERGROUP_ID`。
+> **🐣 从零开始？** 没申请过机器人也没部署过 Cloudflare？直接看 **[零基础 5 分钟保姆教程](docs/SETUP_GUIDE.md)**，照图点几下即可上线！  
+> **✨ 免查群 ID 黑科技**：建好开启「话题 (Topics)」的私密群、拉机器人当管理员后，直接在群里发一句 **`/bind`** 即可秒绑定为私聊通知群，完全不用查 `-100` 群 ID 或回 Cloudflare 填 `SUPERGROUP_ID`！
 
-### 方式一：Cloudflare 网页一键连接 GitHub（最方便 ★，免装本地环境）
+### 方式一：一键点击 Deploy to Cloudflare（最傻瓜 ★，免装本地环境）
 
-1. Fork 本仓库到你的 GitHub 账号。
-2. 登录 [Cloudflare Dashboard](https://dash.cloudflare.com/) → **Workers & Pages** → **Create** → **Workers** → **Import a repository**，选择 `rose-panel-bot`：
+1. 直接点击页面顶部的 **Deploy to Cloudflare** 按钮（或 Fork 后在 [Cloudflare Dashboard](https://dash.cloudflare.com/) → **Workers & Pages → Create → Workers → Import a repository** 选择 `rose-panel-bot`）：
    - **Build command**：`npm run build`
    - **Deploy command**：`npx wrangler deploy`
    - 点击 **Save and Deploy**。
-3. 进入 Worker 的 **Settings → Variables & Bindings**：
+2. 进入 Worker 的 **Settings → Variables & Bindings**：
    - 确认已绑定名为 `TOPIC_MAP` 的 KV Namespace（Wrangler v4 会自动创建，也可绑定已有 KV）。
-   - 添加环境变量（见下表）。
+   - 添加核心变量：`BOT_TOKEN`、`WEBHOOK_SECRET`、`ADMIN_IDS`、`BOT_USERNAME`（详见下表）。
+3. 浏览器访问一次 `https://<你的域名>/setup?secret=<WEBHOOK_SECRET>`，再在你的话题群里发一句 `/bind` 即全部就绪！
 
 ### 方式二：Windows 电脑部署（PowerShell）
 
@@ -176,7 +179,7 @@ npx wrangler dev --ip 127.0.0.1 --port 8787 --persist-to ./.wrangler/state --sho
 | :--- | :--- | :---: | :--- |
 | `TOPIC_MAP` | KV Binding | ✅ | 持久化面板配置、小站、访客与媒体归档、签到数据 |
 | `BOT_TOKEN` | Secret | ✅ | Telegram Bot Token |
-| `SUPERGROUP_ID` | Text | 私聊必填 | 开启话题功能的管理员群组 ID（`-100` 开头） |
+| `SUPERGROUP_ID` | Text | 可选 | 管理员话题群 ID（**推荐部署后直接在群里发 `/bind` 一键绑定，免手填**） |
 | `ADMIN_IDS` | Text | 推荐 | 管理员数字 UID（不填则自动识别管理员群的群主/管理员） |
 | `BOT_USERNAME` | Text | 推荐 | 机器人用户名，不含 `@` |
 | `APP_SHORT_NAME` | Text | 推荐 | BotFather `/newapp` 设置的短名（如 `panel`） |
@@ -195,7 +198,7 @@ npx wrangler dev --ip 127.0.0.1 --port 8787 --persist-to ./.wrangler/state --sho
 
 - **通用**：`/start`、`/panel`、`/me`、`/checkin`（群社区模式）、`/rank`（群社区模式）
 - **站长私聊**：`/set`（跟贴纸链接或发贴纸秒设动态徽章，兼容 `/setbadge`）、`/add`（录入收藏表情包看图验证题，兼容 `/addverify`）、`/resetbadge`、`/cancel`
-- **管理群话题内**：`/info`、`/ban`、`/unban`、`/trust`、`/reset`、`/close`、`/open`
+- **管理群话题内**：`/bind`（一键绑定通知群）、`/unbind`（解绑）、`/info`、`/ban`、`/unban`、`/trust`、`/reset`、`/close`、`/open`
 
 ---
 

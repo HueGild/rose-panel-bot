@@ -10,9 +10,17 @@ import {
   checkCasBlacklist,
   recordBlockedSpam,
 } from './antispam.js';
-import { isUserAdmin } from './auth.js';
+import { isUserAdmin, parseAdminIds } from './auth.js';
 import { getLeaderboard, getMemberTicket, performCheckin } from './checkin.js';
-import { loadPanelConfig, safeGetJSON, safePutJSON, savePanelConfig } from './config.js';
+import {
+  clearBoundSupergroupId,
+  loadPanelConfig,
+  resolveSupergroupId,
+  safeGetJSON,
+  safePutJSON,
+  saveBoundSupergroupId,
+  savePanelConfig,
+} from './config.js';
 import {
   buildPanelButton,
   escapeHtml,
@@ -412,6 +420,11 @@ async function applyCapturedStickersAsBadge(env, requestOrigin, chatId, captured
 }
 
 async function ensureVisitorTopic(env, requestOrigin, tgUser, preview = '') {
+  const supergroupId = await resolveSupergroupId(env);
+  if (!supergroupId) {
+    throw new Error('No Forum Supergroup bound');
+  }
+
   const uid = String(tgUser.id);
   const existing = await safeGetJSON(env.TOPIC_MAP, `user:${uid}`, null);
 
@@ -423,8 +436,9 @@ async function ensureVisitorTopic(env, requestOrigin, tgUser, preview = '') {
   const baseName = formatDisplayName({ ...tgUser, userId: uid }).slice(0, 32);
   const title = `${baseName} [${uid}]`.slice(0, 120);
   const created = await tgCall(env, 'createForumTopic', {
-    chat_id: env.SUPERGROUP_ID,
+    chat_id: supergroupId,
     name: title,
+    icon_color: 16478047, // 0xFB6F5F soft coral-rose topic icon color
   });
 
   const threadId = created.result.message_thread_id;
@@ -435,10 +449,10 @@ async function ensureVisitorTopic(env, requestOrigin, tgUser, preview = '') {
   });
   await env.TOPIC_MAP.put(`thread:${threadId}`, uid);
 
-  const detail = await getVisitorDetail(env, uid);
+  const detail = await getVisitorDetail(env, uid, supergroupId);
   if (detail) {
     await tgCall(env, 'sendMessage', {
-      chat_id: env.SUPERGROUP_ID,
+      chat_id: supergroupId,
       message_thread_id: threadId,
       text: buildVisitorCardText(detail),
       parse_mode: 'HTML',
@@ -450,6 +464,9 @@ async function ensureVisitorTopic(env, requestOrigin, tgUser, preview = '') {
 }
 
 async function forwardMessageToTopic(env, requestOrigin, msg) {
+  const supergroupId = await resolveSupergroupId(env);
+  if (!supergroupId) return;
+
   const user = msg.from;
   const uid = String(user.id);
   const preview = previewTextOfMessage(msg);
@@ -458,7 +475,7 @@ async function forwardMessageToTopic(env, requestOrigin, msg) {
   let { threadId } = await ensureVisitorTopic(env, requestOrigin, user, preview);
   try {
     await tgCall(env, 'copyMessage', {
-      chat_id: env.SUPERGROUP_ID,
+      chat_id: supergroupId,
       message_thread_id: threadId,
       from_chat_id: msg.chat.id,
       message_id: msg.message_id,
@@ -471,7 +488,7 @@ async function forwardMessageToTopic(env, requestOrigin, msg) {
       await env.TOPIC_MAP.delete(`thread:${threadId}`);
       ({ threadId } = await ensureVisitorTopic(env, requestOrigin, user, preview));
       await tgCall(env, 'copyMessage', {
-        chat_id: env.SUPERGROUP_ID,
+        chat_id: supergroupId,
         message_thread_id: threadId,
         from_chat_id: msg.chat.id,
         message_id: msg.message_id,
@@ -825,6 +842,29 @@ async function handleAdminSupergroupMessage(env, requestOrigin, msg, config) {
     await handleGroupPanelCommand(env, requestOrigin, msg, config);
     return;
   }
+  if (parsed?.cmd === 'unbind') {
+    await clearBoundSupergroupId(env);
+    const fallbackEnvId = String(env.SUPERGROUP_ID || '').trim();
+    const extraNote = fallbackEnvId
+      ? `\n\n<i>提示：检测到环境变量中仍配置了 SUPERGROUP_ID (<code>${escapeHtml(fallbackEnvId)}</code>)，如需彻底解绑请同步删除该环境变量。</i>`
+      : '\n\n<i>如需重新绑定，在任意已开启「话题」的群里发送 <code>/bind</code> 即可。</i>';
+    await tgCall(env, 'sendMessage', {
+      chat_id: msg.chat.id,
+      message_thread_id: threadId,
+      text: `🔓 <b>已解除通知群动态绑定</b>${extraNote}`,
+      parse_mode: 'HTML',
+    });
+    return;
+  }
+  if (parsed?.cmd === 'bind') {
+    await tgCall(env, 'sendMessage', {
+      chat_id: msg.chat.id,
+      message_thread_id: threadId,
+      text: `✅ 当前群已经是你的私聊通知群啦（群 ID：<code>${escapeHtml(String(msg.chat.id))}</code>），无需重复绑定。`,
+      parse_mode: 'HTML',
+    });
+    return;
+  }
   if (parsed?.cmd === 'cleanup') {
     await tgCall(env, 'sendMessage', {
       chat_id: msg.chat.id,
@@ -1155,6 +1195,147 @@ async function handleCallbackQuery(env, requestOrigin, cq, config) {
   }
 }
 
+/**
+ * One-click Forum Supergroup binding (`/bind`) so new deployers never need to hunt for `-100...` group IDs.
+ * Security:
+ *  - If ADMIN_IDS is configured: strictly restricted to ADMIN_IDS.
+ *  - Else if a supergroup is already bound: restricted to admins of the existing bound group (prevents hijacking).
+ *  - Else (brand-new deploy): restricted to the group `creator` (群主).
+ */
+async function handleBindInboxCommand(env, requestOrigin, msg) {
+  const uid = String(msg.from.id);
+  const chatId = String(msg.chat.id);
+  const configuredAdmins = parseAdminIds(env);
+  const existingBound = await resolveSupergroupId(env);
+
+  let authorized = false;
+  if (configuredAdmins.size > 0) {
+    authorized = configuredAdmins.has(uid);
+  } else if (existingBound && existingBound !== chatId) {
+    authorized = await isUserAdmin(env, msg.from.id, tgCall);
+  } else {
+    try {
+      const memberRes = await tgCall(env, 'getChatMember', {
+        chat_id: msg.chat.id,
+        user_id: msg.from.id,
+      });
+      authorized = memberRes?.result?.status === 'creator';
+    } catch {
+      authorized = false;
+    }
+  }
+
+  if (!authorized) {
+    return;
+  }
+
+  if (msg.chat.type !== 'supergroup') {
+    await tgCall(env, 'sendMessage', {
+      chat_id: msg.chat.id,
+      reply_to_message_id: msg.message_id,
+      text: [
+        `⚠️ <b>还差一步：请先开启群「话题 (Topics)」功能</b>`,
+        ``,
+        `1. 点击本群名称 → <b>编辑</b> → 打开 <b>话题 (Topics)</b>（开启后会自动升级为超级群）；`,
+        `2. 将机器人设为管理员，勾选 <b>管理话题</b> 与 <b>删除消息</b>；`,
+        `3. 回到群里再发一次 <code>/bind</code> 即可秒绑定！`,
+      ].join('\n'),
+      parse_mode: 'HTML',
+    });
+    return;
+  }
+
+  let chatInfo = null;
+  try {
+    chatInfo = (await tgCall(env, 'getChat', { chat_id: msg.chat.id }))?.result;
+  } catch {
+    chatInfo = null;
+  }
+
+  if (!chatInfo?.is_forum) {
+    await tgCall(env, 'sendMessage', {
+      chat_id: msg.chat.id,
+      reply_to_message_id: msg.message_id,
+      text: `⚠️ 当前群尚未开启 <b>「话题 (Topics)」</b>。\n请先在群设置中打开「话题」，然后重新发送 <code>/bind</code>！`,
+      parse_mode: 'HTML',
+    });
+    return;
+  }
+
+  // Verify the bot itself is admin with can_manage_topics
+  try {
+    const me = (await tgCall(env, 'getMe', {}))?.result;
+    if (me?.id) {
+      const botMember = (
+        await tgCall(env, 'getChatMember', {
+          chat_id: msg.chat.id,
+          user_id: me.id,
+        })
+      )?.result;
+      const isBotAdmin = botMember?.status === 'administrator' || botMember?.status === 'creator';
+      if (!isBotAdmin || botMember?.can_manage_topics === false) {
+        await tgCall(env, 'sendMessage', {
+          chat_id: msg.chat.id,
+          reply_to_message_id: msg.message_id,
+          text: `⚠️ 请先把机器人设为本群 <b>管理员</b>，并勾选 <b>「管理话题」</b>（建议同时勾选「删除消息」），再发一次 <code>/bind</code>！`,
+          parse_mode: 'HTML',
+        });
+        return;
+      }
+    }
+  } catch {
+    // Proceed gracefully if bot info check fails transiently
+  }
+
+  await saveBoundSupergroupId(env, chatId);
+
+  // Automatically register topic moderation commands in this group & admin commands in binder's private chat
+  await Promise.all([
+    tgCall(env, 'setMyCommands', {
+      commands: [
+        { command: 'info', description: '查看当前话题访客资料与媒体统计' },
+        { command: 'ban', description: '拉黑当前话题访客' },
+        { command: 'unban', description: '解除拉黑' },
+        { command: 'trust', description: '设为永久信任（免验证）' },
+        { command: 'reset', description: '重置访客验证状态' },
+        { command: 'close', description: '结束当前对话' },
+        { command: 'open', description: '重新开启对话' },
+        { command: 'unbind', description: '解绑当前通知群' },
+        { command: 'panel', description: '打开个人面板小程序' },
+      ],
+      scope: { type: 'chat_administrators', chat_id: Number(chatId) },
+    }).catch(() => {}),
+    tgCall(env, 'setMyCommands', {
+      commands: [
+        { command: 'start', description: '打开个人面板与欢迎页' },
+        { command: 'panel', description: '打开个人面板小程序' },
+        { command: 'set', description: '设动态贴纸徽章（跟贴纸链接或直接发贴纸）' },
+        { command: 'add', description: '添加表情包看图验证题（发贴纸再贴题目）' },
+        { command: 'resetbadge', description: '恢复默认玫瑰徽章' },
+        { command: 'cancel', description: '取消当前录入' },
+      ],
+      scope: { type: 'chat', chat_id: Number(uid) },
+    }).catch(() => {}),
+  ]);
+
+  await tgCall(env, 'sendMessage', {
+    chat_id: msg.chat.id,
+    message_thread_id: msg.message_thread_id,
+    text: [
+      `🎉 <b>私聊通知群绑定成功！</b>`,
+      ``,
+      `• 群名称：<b>${escapeHtml(chatInfo?.title || msg.chat.title || '通知群')}</b>`,
+      `• 群 ID：<code>${escapeHtml(chatId)}</code>（已自动保存到云端，无需手动填环境变量）`,
+      ``,
+      `现在别人给机器人发私信，通过人机验证后就会自动在本群为 TA 创建独立话题，你在对应话题里直接回复即可双向沟通 🌸`,
+    ].join('\n'),
+    parse_mode: 'HTML',
+    reply_markup: {
+      inline_keyboard: [[buildPanelButton(env, requestOrigin, '✨ 打开个人面板', { isGroup: true })]],
+    },
+  });
+}
+
 export async function handleTelegramUpdate(update, env, requestOrigin) {
   const config = await loadPanelConfig(env);
 
@@ -1175,10 +1356,11 @@ export async function handleTelegramUpdate(update, env, requestOrigin) {
       const risk = assessIncomingRisk(edited, config.pmBot);
       if (risk.isBlockedKeyword || risk.hasLink || risk.reasons.includes('zero_width_obfuscation')) {
         await recordBlockedSpam(env);
-        const detail = await getVisitorDetail(env, uid);
-        if (detail?.thread_id && env.SUPERGROUP_ID) {
+        const activeGroupId = await resolveSupergroupId(env);
+        const detail = await getVisitorDetail(env, uid, activeGroupId);
+        if (detail?.thread_id && activeGroupId) {
           await tgCall(env, 'sendMessage', {
-            chat_id: env.SUPERGROUP_ID,
+            chat_id: activeGroupId,
             message_thread_id: detail.thread_id,
             text: `⚠️ <b>拦截到编辑偷改广告行为</b>\n访客编辑了历史消息并插入可疑内容（<code>${escapeHtml(risk.reasons.join(', '))}</code>），已自动拦截。`,
             parse_mode: 'HTML',
@@ -1195,7 +1377,7 @@ export async function handleTelegramUpdate(update, env, requestOrigin) {
 
   const chatType = msg.chat?.type;
   const chatId = String(msg.chat?.id || '');
-  const supergroupId = String(env.SUPERGROUP_ID || '');
+  const supergroupId = await resolveSupergroupId(env);
 
   // A. Admin Supergroup Topics handling
   if (supergroupId && chatId === supergroupId) {
@@ -1203,14 +1385,16 @@ export async function handleTelegramUpdate(update, env, requestOrigin) {
     return;
   }
 
-  // B. Other Groups / Supergroups (Community Panel & Check-in)
+  // B. Other Groups / Supergroups (One-click /bind + Community Panel & Check-in)
   if (chatType === 'group' || chatType === 'supergroup') {
     const parsed = extractCommand(msg.text || '');
     if (!parsed) return;
     const myBot = (env.BOT_USERNAME || '').replace(/^@/, '').toLowerCase();
     if (parsed.mention && myBot && parsed.mention !== myBot) return;
 
-    if (parsed.cmd === 'panel' || parsed.cmd === 'me' || parsed.cmd === 'start') {
+    if (parsed.cmd === 'bind') {
+      await handleBindInboxCommand(env, requestOrigin, msg);
+    } else if (parsed.cmd === 'panel' || parsed.cmd === 'me' || parsed.cmd === 'start') {
       await handleGroupPanelCommand(env, requestOrigin, msg, config);
     } else if (parsed.cmd === 'checkin' || parsed.cmd === 'sign') {
       await handleCheckinCommand(env, requestOrigin, msg, config);

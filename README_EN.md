@@ -5,7 +5,9 @@
 [![Release](https://img.shields.io/github/v/release/mango0114/rose-panel-bot?color=A32952&label=Release)](https://github.com/mango0114/rose-panel-bot/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-A32952.svg)](LICENSE)
 
-[🇨🇳 简体中文](README.md) | 🇺🇸 **English** | [📋 Changelog](CHANGELOG.md)
+[🇨🇳 简体中文](README.md) | 🇺🇸 **English** | [🐣 5-Min Beginner Guide (ZH)](docs/SETUP_GUIDE.md) | [📋 Changelog](CHANGELOG.md)
+
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/mango0114/rose-panel-bot)
 
 An all-in-one **Telegram Mini App Personal Panel**, **Public/Private Site Directory**, **Komari Server Probe Monitor**, **Bidirectional Anti-Spam PM Bot with Photo/Link Archive**, and **Optional Group Check-in & Badges System** running on **Cloudflare Workers**.
 
@@ -82,16 +84,16 @@ Pick only what you need — unused modules stay cleanly out of the way:
 
 ## 🚀 Fast Deployment (4 Options)
 
-> **Prerequisites**: Get a `BOT_TOKEN` from [@BotFather](https://t.me/BotFather). For PM forwarding, create a Telegram group with **Topics** enabled, add the bot as Administrator (**Manage Topics** & **Delete Messages**), and note its `-100...` `SUPERGROUP_ID`.
+> **Prerequisites**: Get a `BOT_TOKEN` from [@BotFather](https://t.me/BotFather) and your numeric UID from [@userinfobot](https://t.me/userinfobot). For PM forwarding, simply create a Telegram group with **Topics** enabled, add the bot as Administrator (**Manage Topics** & **Delete Messages**), and send **`/bind`** inside the group — **no need to look up `-100...` group IDs or manually edit `SUPERGROUP_ID`!**
 
-### Option 1: Cloudflare Dashboard Git Deploy (Easiest ★, Zero Local Setup)
+### Option 1: One-Click Deploy to Cloudflare (Easiest ★, Zero Local Setup)
 
-1. Fork this repository to your GitHub account.
-2. Open [Cloudflare Dashboard](https://dash.cloudflare.com/) → **Workers & Pages** → **Create** → **Workers** → **Import a repository** → choose `rose-panel-bot`:
+1. Click the **Deploy to Cloudflare** button above (or fork and open [Cloudflare Dashboard](https://dash.cloudflare.com/) → **Workers & Pages → Create → Workers → Import a repository** → choose `rose-panel-bot`):
    - **Build command**: `npm run build`
    - **Deploy command**: `npx wrangler deploy`
    - Click **Save and Deploy**.
-3. In **Settings → Variables & Bindings**, confirm `TOPIC_MAP` KV is bound and add your variables below.
+2. In **Settings → Variables & Bindings**, confirm `TOPIC_MAP` KV is bound and set `BOT_TOKEN`, `WEBHOOK_SECRET`, `ADMIN_IDS`, and `BOT_USERNAME`.
+3. Open `https://<your-domain>/setup?secret=<WEBHOOK_SECRET>` once, then send `/bind` in your Forum Group!
 
 ### Option 2: Windows (PowerShell)
 
@@ -170,7 +172,7 @@ Reverse-proxy `127.0.0.1:8787` with Caddy (`reverse_proxy 127.0.0.1:8787`) for a
 | :--- | :--- | :---: | :--- |
 | `TOPIC_MAP` | KV Binding | ✅ | Stores config, sites, visitor archive, and check-ins |
 | `BOT_TOKEN` | Secret | ✅ | Telegram Bot Token |
-| `SUPERGROUP_ID` | Text | PM Bot | Admin Forum Group ID (`-100...`) |
+| `SUPERGROUP_ID` | Text | Optional | Admin Forum Group ID (**or simply run `/bind` inside your Forum Group after deploy!**) |
 | `ADMIN_IDS` | Text | Recommended | Comma-separated numeric UIDs (supergroup admins are also auto-detected) |
 | `BOT_USERNAME` | Text | Recommended | Bot username without `@` |
 | `APP_SHORT_NAME` | Text | Recommended | BotFather `/newapp` short name (e.g. `panel`) |
@@ -189,7 +191,7 @@ Reverse-proxy `127.0.0.1:8787` with Caddy (`reverse_proxy 127.0.0.1:8787`) for a
 
 - **Everyone**: `/start`, `/panel`, `/me`, `/checkin` (community mode), `/rank` (community mode)
 - **Admin Private Chat**: `/set` (set animated sticker/Custom Emoji emblem, alias `/setbadge`), `/add` (add custom sticker visual verification quiz, alias `/addverify`), `/resetbadge`, `/cancel`
-- **Admin Forum Topics**: `/info`, `/ban`, `/unban`, `/trust`, `/reset`, `/close`, `/open`
+- **Admin Forum Topics**: `/bind` (1-click inbox bind), `/unbind`, `/info`, `/ban`, `/unban`, `/trust`, `/reset`, `/close`, `/open`
 
 ---
 

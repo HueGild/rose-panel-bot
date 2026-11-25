@@ -4,10 +4,16 @@ import { signMediaToken, verifyMediaToken, verifyTelegramInitData } from '../src
 import {
   generateInlineChallenge,
   generateStickerChallenge,
+  handleTelegramUpdate,
   parseStickerQuizInput,
 } from '../src/worker/bot.js';
 import { getLeaderboard, getMemberTicket, performCheckin, resolveLevel } from '../src/worker/checkin.js';
-import { DEFAULT_CONFIG, loadPanelConfig, savePanelConfig } from '../src/worker/config.js';
+import {
+  DEFAULT_CONFIG,
+  loadPanelConfig,
+  resolveSupergroupId,
+  savePanelConfig,
+} from '../src/worker/config.js';
 import worker from '../src/worker/index.js';
 import { fetchKomariStatus, normalizeNodeMetrics } from '../src/worker/komari.js';
 import { normalizeStickerObject, parseStickerPackName } from '../src/worker/telegram.js';
@@ -776,5 +782,89 @@ describe('4-Layer Intelligent Anti-Spam Shield', () => {
     });
     const r3 = await checkCasBlacklist(env, '999002', brokenFetch);
     expect(r3.isSpammer).toBe(false);
+  });
+});
+
+describe('One-click /bind & /unbind Forum Inbox binding', () => {
+  it('allows authorized admin to bind and unbind a Forum supergroup while blocking strangers', async () => {
+    const kv = createMemoryKV();
+    const env = {
+      TOPIC_MAP: kv,
+      BOT_TOKEN: '123456:BIND_TEST_TOKEN',
+      ADMIN_IDS: '10001',
+    };
+
+    const tgCalls = [];
+    const origFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn(async (url, init) => {
+      const method = String(url).split('/').pop();
+      const body = init?.body ? JSON.parse(init.body) : {};
+      tgCalls.push({ method, body });
+      if (method === 'getChat') {
+        return new Response(JSON.stringify({ ok: true, result: { id: body.chat_id, is_forum: true, title: '通知群' } }), {
+          status: 200,
+        });
+      }
+      if (method === 'getMe') {
+        return new Response(JSON.stringify({ ok: true, result: { id: 999, is_bot: true } }), { status: 200 });
+      }
+      if (method === 'getChatMember') {
+        return new Response(
+          JSON.stringify({ ok: true, result: { status: 'administrator', can_manage_topics: true } }),
+          { status: 200 }
+        );
+      }
+      return new Response(JSON.stringify({ ok: true, result: true }), { status: 200 });
+    });
+
+    try {
+      // 1. Stranger attempting /bind is silently ignored
+      await handleTelegramUpdate(
+        {
+          message: {
+            message_id: 1,
+            from: { id: 88888, first_name: 'Stranger' },
+            chat: { id: -1005555555, type: 'supergroup', title: 'Hijack' },
+            text: '/bind',
+          },
+        },
+        env,
+        'https://panel.test'
+      );
+      expect(await resolveSupergroupId(env)).toBe('');
+
+      // 2. Admin running /bind in a Forum supergroup binds it to KV
+      await handleTelegramUpdate(
+        {
+          message: {
+            message_id: 2,
+            from: { id: 10001, first_name: 'Owner' },
+            chat: { id: -1007777888, type: 'supergroup', title: '通知群' },
+            text: '/bind',
+          },
+        },
+        env,
+        'https://panel.test'
+      );
+      expect(await resolveSupergroupId(env)).toBe('-1007777888');
+      expect(tgCalls.some((c) => c.method === 'sendMessage' && c.body.text?.includes('绑定成功'))).toBe(true);
+
+      // 3. Admin running /unbind inside the bound supergroup clears the KV binding
+      await handleTelegramUpdate(
+        {
+          message: {
+            message_id: 3,
+            from: { id: 10001, first_name: 'Owner' },
+            chat: { id: -1007777888, type: 'supergroup', title: '通知群' },
+            text: '/unbind',
+          },
+        },
+        env,
+        'https://panel.test'
+      );
+      expect(await resolveSupergroupId(env)).toBe('');
+    } finally {
+      globalThis.fetch = origFetch;
+    }
   });
 });

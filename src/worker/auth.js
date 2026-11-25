@@ -1,5 +1,7 @@
 // Official Telegram Mini App initData HMAC-SHA256 verification & Admin authorization
 
+import { resolveSupergroupId } from './config.js';
+
 const encoder = new TextEncoder();
 
 async function hmacSha256Raw(keyBytes, message) {
@@ -130,8 +132,9 @@ export async function isUserAdmin(env, userId, tgCallFn = null) {
     return configuredAdmins.has(uid);
   }
 
-  // Fallback: check supergroup administrator status if SUPERGROUP_ID & BOT_TOKEN exist
-  if (!env.SUPERGROUP_ID || !env.BOT_TOKEN || !tgCallFn) return false;
+  // Fallback: check supergroup administrator status if a Forum Supergroup is bound & BOT_TOKEN exists
+  const supergroupId = await resolveSupergroupId(env);
+  if (!supergroupId || !env.BOT_TOKEN || !tgCallFn) return false;
 
   const cacheKey = `admin_cache:${uid}`;
   if (env.TOPIC_MAP) {
@@ -142,7 +145,7 @@ export async function isUserAdmin(env, userId, tgCallFn = null) {
 
   try {
     const res = await tgCallFn(env, 'getChatMember', {
-      chat_id: env.SUPERGROUP_ID,
+      chat_id: supergroupId,
       user_id: Number(uid),
     });
     const status = res?.result?.status;

@@ -3,7 +3,7 @@
 import { handleApiRequest } from './api.js';
 import { parseAdminIds } from './auth.js';
 import { completeTurnstileVerification, handleTelegramUpdate } from './bot.js';
-import { loadPanelConfig, safeGetJSON } from './config.js';
+import { loadPanelConfig, resolveSupergroupId, safeGetJSON } from './config.js';
 import { serveEmbeddedAsset } from './embedded-assets.js';
 import { tgCall } from './telegram.js';
 import { renderTurnstileVerifyPage, verifyTurnstileToken } from './turnstile.js';
@@ -79,10 +79,11 @@ async function handleSetup(request, env, url) {
   ];
 
   const adminIdSet = parseAdminIds(env);
-  if (env.SUPERGROUP_ID) {
+  const supergroupId = await resolveSupergroupId(env);
+  if (supergroupId) {
     try {
       const adminsRes = await tgCall(env, 'getChatAdministrators', {
-        chat_id: env.SUPERGROUP_ID,
+        chat_id: supergroupId,
       });
       for (const m of adminsRes?.result || []) {
         if (m?.user?.id && !m.user.is_bot) {
@@ -103,9 +104,10 @@ async function handleSetup(request, env, url) {
         { command: 'reset', description: '重置访客验证状态' },
         { command: 'close', description: '结束当前对话' },
         { command: 'open', description: '重新开启对话' },
+        { command: 'unbind', description: '解绑当前通知群' },
         { command: 'panel', description: '打开个人面板小程序' },
       ],
-      scope: { type: 'chat_administrators', chat_id: Number(env.SUPERGROUP_ID) },
+      scope: { type: 'chat_administrators', chat_id: Number(supergroupId) },
     }).catch((e) => ({ error: e.message }));
   }
 
@@ -180,12 +182,13 @@ export default {
 
     // Health check endpoint
     if (url.pathname === '/health') {
+      const supergroupId = await resolveSupergroupId(env);
       return jsonResponse({
         ok: true,
         service: 'rose-panel-bot',
         hasToken: Boolean(env.BOT_TOKEN),
         hasKv: Boolean(env.TOPIC_MAP),
-        hasSupergroup: Boolean(env.SUPERGROUP_ID),
+        hasSupergroup: Boolean(supergroupId),
       });
     }
 
