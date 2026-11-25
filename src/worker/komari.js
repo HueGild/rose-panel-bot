@@ -776,7 +776,7 @@ async function fetchViaNodeGet(baseUrl, _headers, rawApiKey = '') {
       const dyn = dynamicMap.get(uuid) || {};
       const tsRaw = Number(dyn.timestamp || 0);
       const tsMs = tsRaw > 0 ? (tsRaw < 1e12 ? tsRaw * 1000 : tsRaw) : 0;
-      const online = tsMs > 0 ? nowMs - tsMs < 60 * 1000 : false;
+      const online = tsMs > 0 ? nowMs - tsMs < 30 * 1000 : false;
       const diskTotal = Number(dyn.total_space || 0);
       const diskAvail = dyn.available_space != null ? Number(dyn.available_space) : null;
       const diskUsed = diskTotal > 0 && diskAvail != null ? Math.max(0, diskTotal - diskAvail) : 0;

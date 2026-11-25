@@ -1091,12 +1091,13 @@ describe('Pluggable probe providers (Nezha v1 WS/REST & v0, NodeGet, generic JSO
         expect(req.params.token).toBe('ng-token');
         let result;
         if (req.method === 'nodeget-server_list_all_agent_uuid') {
-          result = { uuids: ['u-pub', 'u-hid'] };
+          result = { uuids: ['u-pub', 'u-stale', 'u-hid'] };
         } else if (req.method === 'kv_get_multi_value') {
           result = [
             { namespace: 'u-pub', key: 'metadata_name', value: 'Tokyo-NG' },
             { namespace: 'u-pub', key: 'metadata_region', value: 'jp' },
             { namespace: 'u-pub', key: 'metadata_tags', value: ['NodeSeek', 'BGP'] },
+            { namespace: 'u-stale', key: 'metadata_name', value: 'Stale-NG' },
             { namespace: 'u-hid', key: 'metadata_hidden', value: true },
           ];
         } else if (req.method === 'agent_static_data_multi_last_query') {
@@ -1122,6 +1123,12 @@ describe('Pluggable probe providers (Nezha v1 WS/REST & v0, NodeGet, generic JSO
               load_one: 0.42,
               uptime: 86400,
             },
+            {
+              uuid: 'u-stale',
+              // 45s old -> offline under NodeGet-StatusShow 30s threshold
+              timestamp: Math.floor((Date.now() - 45_000) / 1000),
+              cpu_usage: 5,
+            },
           ];
         }
         queueMicrotask(() => {
@@ -1138,7 +1145,7 @@ describe('Pluggable probe providers (Nezha v1 WS/REST & v0, NodeGet, generic JSO
         { forceRefresh: true }
       );
       expect(res.protocol).toBe('nodeget-rpc');
-      expect(res.nodes).toHaveLength(1);
+      expect(res.nodes).toHaveLength(2);
       expect(res.nodes[0]).toMatchObject({
         uuid: 'u-pub',
         name: 'Tokyo-NG',
@@ -1150,6 +1157,7 @@ describe('Pluggable probe providers (Nezha v1 WS/REST & v0, NodeGet, generic JSO
         netUp: 500,
         netDown: 300,
       });
+      expect(res.nodes[1]).toMatchObject({ uuid: 'u-stale', name: 'Stale-NG', online: false });
     } finally {
       globalThis.fetch = origFetch;
     }

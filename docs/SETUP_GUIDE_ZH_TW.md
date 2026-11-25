@@ -139,12 +139,12 @@ https://你的網域/setup?secret=你剛填的WEBHOOK_SECRET
 
 ## ❓ 常見問題排錯 (FAQ)
 
-### Q1：開啟 Mini App 後，右上角沒有 ⚙️ 設定按鈕、底部也沒有「訪客」選單怎麼辦？
-這代表伺服器將目前帳號識別為**一般訪客**，99% 是 `ADMIN_IDS` 沒有設定正確，依以下 3 步檢查即可解決：
-1. 在 Telegram 找 **[@userinfobot](https://t.me/userinfobot)** 取得**你自己個人帳號的純數字 UID**（注意：**不是** `@使用者名稱`，也**不是**機器人的 ID，也不能留著範例值 `123456789`）；
-2. 進入 Cloudflare Worker → **Settings → Variables & Bindings** → 確認已新增 **`ADMIN_IDS`**（類型為 Text，多位管理員以英文逗號分隔）並點擊 **Deploy / Save** 儲存生效；
-3. 務必在 **Telegram 內**點擊機器人左下角選單或 `/panel` 開啟（從外部瀏覽器直接開連結沒有 Telegram 身分簽章，會被視為訪客）；關閉面板重新開啟後，右上角 ⚙️ 設定與底部「訪客」管理就會立刻出現！
-*(註：若未填寫 `ADMIN_IDS`，則需先在主題通知群組內傳送 `/bind` 綁定成功，系統才會改以通知群管理員身分鑑權。)*
+### Q1：開啟 Mini App 後，右上角沒有 ⚙️ 設定按鈕、底部也沒有「訪客」欄怎麼辦？
+這代表系統將目前帳號識別為**一般訪客**，通常是 `ADMIN_IDS` 沒有配對，依以下 3 步檢查即可解決：
+1. 在 Telegram 找 **[@userinfobot](https://t.me/userinfobot)** 取得**你自己個人帳號的純數字 UID**（注意：**不是** `@使用者名稱`，也**不是**機器人的 ID）；
+2. 進入 Cloudflare Worker → **Settings → Variables & Bindings** → 檢查 **`ADMIN_IDS`**（類型為 Text，多位管理員以英文逗號分隔）。**若透過一鍵部署按鈕部署，它可能被預填成舊範例值 `123456789`，務必改成你自己的純數字 UID**；
+3. 點擊 **Deploy / Save** 儲存並重新部署後，務必在 **Telegram 內**關閉面板再重新開啟，右上角 ⚙️ 設定與底部「訪客」欄就會立刻出現！
+*(註：若未填寫 `ADMIN_IDS`、改以通知群鑑權，請確認已在主題群組內傳送 `/bind` 並綁定成功。)*
 
 ### Q2：我的 Komari 探針和面板在同一個 Cloudflare 網域下，測試連線報「重新導向循環」怎麼辦？
 這是因為該網域在 Cloudflare 的全域 SSL/TLS 為 **Flexible**，Worker 存取同網域子站時會被降級為 HTTP，而源站又強制跳 HTTPS。  

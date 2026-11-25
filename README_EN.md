@@ -238,6 +238,16 @@ Reverse-proxy `127.0.0.1:8787` with Caddy (`reverse_proxy 127.0.0.1:8787`) for a
 
 ---
 
+## ❓ FAQ
+
+**Q: No ⚙️ Settings button in the top-right corner and no "Visitors" tab at the bottom?**  
+The panel recognized you as a regular guest — almost always because `ADMIN_IDS` is missing or mismatched:
+1. Message [@userinfobot](https://t.me/userinfobot) on Telegram to get **your personal account's numeric UID** (not your `@username` and not the bot's ID).
+2. Open Cloudflare Worker → **Settings → Variables & Bindings** → check `ADMIN_IDS` (Text type). If you used the 1-click deploy button on an older version, replace any placeholder like `123456789` with your real numeric UID.
+3. Save & redeploy, then close and reopen the Mini App **inside Telegram** (if you rely on forum-group admin detection without `ADMIN_IDS`, make sure you ran `/bind` inside your Topics group).
+
+---
+
 ## 🙏 Credits & Tech Stack
 
 - Integrations & Compatibility: [Komari Monitor](https://github.com/komari-monitor/komari) · [Combot Anti-Spam (CAS)](https://cas.chat/) · [jikssha/telegram_private_chatbot](https://github.com/jikssha/telegram_private_chatbot)

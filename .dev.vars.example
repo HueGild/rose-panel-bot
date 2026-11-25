@@ -4,7 +4,8 @@ BOT_USERNAME="your_bot"
 APP_SHORT_NAME="panel"
 # 推荐部署后在话题群内发 /bind 绑定，留空即可
 SUPERGROUP_ID=""
-ADMIN_IDS="123456789"
+# 必填：你自己 Telegram 个人账号的纯数字 UID（找 @userinfobot 获取，不是 @用户名，也不是机器人 ID），多个用英文逗号分隔
+ADMIN_IDS=""
 WEBHOOK_SECRET="change-me-to-a-random-secret"
 PROBE_PROVIDER="komari"
 PROBE_URL=""
