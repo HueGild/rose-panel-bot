@@ -23,7 +23,7 @@
   </a>
 </p>
 
-<sub>基于 <b>Cloudflare Workers</b> 免费托管的一体化 <b>Telegram 个人名片小程序</b> · 公开/私密双层小站 · Komari 实时节点探针 · 四层防广告双向私聊机器人 · 可选群签到系统</sub>
+<sub>高颜值 <b>Telegram 双向防广告私聊 &amp; 个人面板小程序</b> — 表情包看图验证 + 四层反骚扰护盾，内置公开/私密小站与 Komari 探针，Cloudflare Workers 免费部署</sub>
 
 </div>
 
@@ -35,12 +35,22 @@
   <img src="docs/assets/showcase.webp" alt="RosePanel Bot 动态功能演示" width="94%" />
 </div>
 
-<br />
+---
 
-## 📱 实机界面画廊
+## 🎭 主打亮点：自定义表情包看图防广告 & 动态贴纸徽章
 
 <div align="center">
-  <img src="docs/assets/preview-gallery.png" alt="RosePanel Bot 实机四屏预览" width="100%" />
+  <img src="docs/assets/showcase-antispam.png" alt="私聊 /add 3秒录表情包验证题与题库管理" width="100%" />
+  <br /><br />
+  <img src="docs/assets/showcase-badges.png" alt="私聊 /set 换动态贴纸主徽章与收藏徽章库" width="100%" />
+</div>
+
+---
+
+## 📱 四大菜单实机画廊（名片 · 小站 · 探针 · 访客）
+
+<div align="center">
+  <img src="docs/assets/preview-gallery.png" alt="RosePanel Bot 四屏实机预览" width="100%" />
 </div>
 
 ---
@@ -83,7 +93,7 @@ flowchart LR
 
 | 验证模式 | 原理与体验 | 防刷与防绕过 |
 | :--- | :--- | :--- |
-| **🎭 表情包看图猜题（私房推荐）** | 私聊发 `/add`（或在小程序贴纸包内点选）录入你收藏的动图/静图表情包与自定义趣味选项，**全网独一无二、协议号 0 破解率** | 答错自动换下一张贴纸、通过后自动清理贴纸 + 蜜罐陷阱与静默冷却 |
+| **🎭 表情包看图猜题（私房推荐）** | 私聊发 `/add`（或在小程序贴纸包内点选）录入你收藏的动图/静图表情包与自定义趣味选项，**真人一眼秒过、大幅提高自动化协议号绕过成本** | 答错自动换下一张贴纸、通过后自动清理贴纸 + 蜜罐陷阱与静默冷却 |
 | **🎯 Emoji 找茬 / 点选（默认）** | 3×3 纯图标按钮随机交替出题（8 同 1 异找茬或中文提示点选），**0 延迟、真人 0.5 秒通过** | 错 1 次立刻换题打乱，连错 2 次静默冷却 10 分钟（次数与时长可调） |
 | **📝 常识题库** | 本地 2×2 常识问答按钮，零外部依赖 | 同样享有错 1 次换题 + 蜜罐 + 静默冷却 |
 | **🛡️ CF Turnstile 严格模式** | 遇到定向扫号攻击时一键开启，在 Telegram 内嵌 WebApp 完成 Cloudflare 服务端 `siteverify` 核验 | 未配密钥时自动回退至 Emoji 模式防卡死 |
