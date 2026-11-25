@@ -20,7 +20,7 @@ binding = "TOPIC_MAP"
 # - APP_SHORT_NAME     (推荐) BotFather 中创建的 Mini App 短名（例如 panel）
 # - SUPERGROUP_ID      (可选) 管理员话题群 ID（推荐部署后直接在话题群内发 /bind 一键绑定）
 # - ADMIN_IDS          (必填) 管理员 Telegram UID，多个用英文逗号分隔
-# - WEBHOOK_SECRET     (推荐 Secret) Webhook 校验密钥，也可用于保护 /setup
+# - WEBHOOK_SECRET     (必填 Secret) Webhook 校验密钥（保护 / 与 /webhook），同时保护 /setup（未配置时 /setup 拒绝执行）
 # - KOMARI_URL         (可选) Komari 探针地址（也可部署后在小程序后台直接填写）
 # - KOMARI_API_KEY     (可选 Secret) Komari 私有站点 Token 或 Cookie
 # - ENABLE_CHECKIN     (可选) "true" 开启群签到积分徽章模式，默认 "false"（极简个人名片）

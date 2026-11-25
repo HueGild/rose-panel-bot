@@ -159,6 +159,17 @@ export async function isUserAdmin(env, userId, tgCallFn = null) {
   }
 }
 
+const LOCAL_PREVIEW_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]', '::1']);
+
+function isLocalPreviewHost(request) {
+  try {
+    const host = new URL(request.url).hostname.toLowerCase();
+    return LOCAL_PREVIEW_HOSTS.has(host) || host.endsWith('.localhost');
+  } catch {
+    return false;
+  }
+}
+
 export async function authenticateRequest(request, env, tgCallFn = null) {
   const initData = request.headers.get('X-Telegram-Init-Data') || '';
 
@@ -178,9 +189,11 @@ export async function authenticateRequest(request, env, tgCallFn = null) {
     };
   }
 
-  // Strictly opt-in local preview mode for browser testing
-  if (String(env.DEV_PREVIEW || '').toLowerCase() === 'true') {
-    const roleHeader = request.headers.get('X-Dev-Role') || 'admin';
+  // Strictly opt-in local preview mode for browser testing.
+  // Only honoured on local hosts so an accidental DEV_PREVIEW="true" in production
+  // can never elevate anonymous browser visitors to admin.
+  if (String(env.DEV_PREVIEW || '').toLowerCase() === 'true' && isLocalPreviewHost(request)) {
+    const roleHeader = request.headers.get('X-Dev-Role') || 'guest';
     const isAdmin = roleHeader === 'admin';
     const devUser = isAdmin
       ? {

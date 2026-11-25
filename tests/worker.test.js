@@ -868,3 +868,81 @@ describe('One-click /bind & /unbind Forum Inbox binding', () => {
     }
   });
 });
+
+describe('Security hardening: webhook secret, /setup guard & DEV_PREVIEW scope', () => {
+  const baseEnv = () => ({
+    TOPIC_MAP: createMemoryKV(),
+    BOT_TOKEN: '987654:UNIT_TEST_BOT_TOKEN',
+    ADMIN_IDS: '10001',
+    WEBHOOK_SECRET: 'unit-test-secret',
+  });
+  const forgedUpdate = JSON.stringify({
+    update_id: 1,
+    message: {
+      message_id: 1,
+      date: 0,
+      chat: { id: 10001, type: 'private' },
+      from: { id: 10001, is_bot: false, first_name: 'Fake' },
+      text: '/start',
+    },
+  });
+
+  it('rejects forged updates without or with wrong secret header on BOTH /webhook and legacy root /', async () => {
+    for (const path of ['/webhook', '/']) {
+      const missingRes = await worker.fetch(
+        new Request(`https://example.workers.dev${path}`, { method: 'POST', body: forgedUpdate }),
+        baseEnv()
+      );
+      expect(missingRes.status).toBe(401);
+
+      const wrongRes = await worker.fetch(
+        new Request(`https://example.workers.dev${path}`, {
+          method: 'POST',
+          headers: { 'X-Telegram-Bot-Api-Secret-Token': 'wrong-secret' },
+          body: forgedUpdate,
+        }),
+        baseEnv()
+      );
+      expect(wrongRes.status).toBe(401);
+    }
+  });
+
+  it('refuses /setup when WEBHOOK_SECRET is missing (500) or mismatched (403)', async () => {
+    const missingEnv = baseEnv();
+    delete missingEnv.WEBHOOK_SECRET;
+    const missingRes = await worker.fetch(new Request('https://example.workers.dev/setup'), missingEnv);
+    expect(missingRes.status).toBe(500);
+    expect((await missingRes.json()).ok).toBe(false);
+
+    const wrongRes = await worker.fetch(
+      new Request('https://example.workers.dev/setup?secret=wrong'),
+      baseEnv()
+    );
+    expect(wrongRes.status).toBe(403);
+    expect((await wrongRes.json()).ok).toBe(false);
+  });
+
+  it('ignores DEV_PREVIEW on public hosts and defaults localhost preview role to guest', async () => {
+    const env = { ...baseEnv(), DEV_PREVIEW: 'true' };
+    const publicAdmin = await worker.fetch(
+      new Request('https://panel.example.com/api/admin/visitors', { headers: { 'X-Dev-Role': 'admin' } }),
+      env
+    );
+    expect(publicAdmin.status).toBe(403);
+
+    const publicBoot = await worker.fetch(
+      new Request('https://panel.example.com/api/bootstrap', { headers: { 'X-Dev-Role': 'admin' } }),
+      env
+    );
+    expect((await publicBoot.json()).isAdmin).toBe(false);
+
+    const localGuest = await worker.fetch(new Request('http://localhost:8787/api/bootstrap'), env);
+    expect((await localGuest.json()).isAdmin).toBe(false);
+
+    const localAdmin = await worker.fetch(
+      new Request('http://localhost:8787/api/bootstrap', { headers: { 'X-Dev-Role': 'admin' } }),
+      env
+    );
+    expect((await localAdmin.json()).isAdmin).toBe(true);
+  });
+});

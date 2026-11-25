@@ -15,12 +15,25 @@ function jsonResponse(data, status = 200) {
   });
 }
 
+function timingSafeEqualStr(a, b) {
+  if (typeof a !== 'string' || typeof b !== 'string' || a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i += 1) {
+    diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return diff === 0;
+}
+
 async function handleSetup(request, env, url) {
-  if (env.WEBHOOK_SECRET) {
-    const provided = url.searchParams.get('secret') || '';
-    if (provided !== env.WEBHOOK_SECRET) {
-      return jsonResponse({ ok: false, error: 'Invalid setup secret. Pass ?secret=YOUR_WEBHOOK_SECRET' }, 403);
-    }
+  if (!env.WEBHOOK_SECRET) {
+    return jsonResponse(
+      { ok: false, error: 'WEBHOOK_SECRET is not configured. Add it as a Secret first, then open /setup?secret=YOUR_WEBHOOK_SECRET' },
+      500
+    );
+  }
+  const provided = url.searchParams.get('secret') || '';
+  if (!timingSafeEqualStr(provided, env.WEBHOOK_SECRET)) {
+    return jsonResponse({ ok: false, error: 'Invalid setup secret. Pass ?secret=YOUR_WEBHOOK_SECRET' }, 403);
   }
 
   if (!env.BOT_TOKEN) {
@@ -245,9 +258,11 @@ export default {
     // Telegram Bot Webhook: supports BOTH `/webhook` and legacy root `POST /`
     // for zero-downtime upgrade from telegram_private_chatbot.
     if ((url.pathname === '/webhook' || url.pathname === '/') && request.method === 'POST') {
-      if (url.pathname === '/webhook' && env.WEBHOOK_SECRET) {
+      // Always verify the secret token on BOTH paths so legacy root `POST /`
+      // can never be abused as an unauthenticated side door for forged updates.
+      if (env.WEBHOOK_SECRET) {
         const tokenHeader = request.headers.get('X-Telegram-Bot-Api-Secret-Token') || '';
-        if (tokenHeader !== env.WEBHOOK_SECRET) {
+        if (!timingSafeEqualStr(tokenHeader, env.WEBHOOK_SECRET)) {
           return new Response('Unauthorized', { status: 401 });
         }
       }

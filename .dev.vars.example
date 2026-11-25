@@ -2,11 +2,13 @@
 BOT_TOKEN="123456:REPLACE_WITH_YOUR_BOT_TOKEN"
 BOT_USERNAME="your_bot"
 APP_SHORT_NAME="panel"
-SUPERGROUP_ID="-1001234567890"
+# 推荐部署后在话题群内发 /bind 绑定，留空即可
+SUPERGROUP_ID=""
 ADMIN_IDS="123456789"
 WEBHOOK_SECRET="change-me-to-a-random-secret"
 KOMARI_URL=""
 KOMARI_API_KEY=""
 ENABLE_CHECKIN="false"
-# 本地浏览器预览模式（生产环境切勿开启！）
-DEV_PREVIEW="true"
+# 本地浏览器预览模式：仅在 localhost / 127.0.0.1 生效，生产环境请保持 "false"
+# 本地调试时手动改为 "true" 即可在浏览器模拟预览
+DEV_PREVIEW="false"

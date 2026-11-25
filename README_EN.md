@@ -203,7 +203,7 @@ docker run --rm -it -v "$PWD":/app -w /app -e CLOUDFLARE_API_TOKEN="YOUR_API_TOK
 #### 4. Self-Host on Your Own VPS (with Caddy HTTPS)
 ```bash
 npm ci && npm run build && cp .dev.vars.example .dev.vars
-# Edit .dev.vars with real secrets (remove DEV_PREVIEW="true" in production!)
+# Edit .dev.vars with real secrets (DEV_PREVIEW only works on localhost; keep it "false" in production)
 npx wrangler dev --ip 127.0.0.1 --port 8787 --persist-to ./.wrangler/state --show-interactive-dev-session=false
 ```
 Reverse-proxy `127.0.0.1:8787` with Caddy (`reverse_proxy 127.0.0.1:8787`) for automatic HTTPS.
@@ -217,9 +217,9 @@ Reverse-proxy `127.0.0.1:8787` with Caddy (`reverse_proxy 127.0.0.1:8787`) for a
 | :--- | :--- | :---: | :--- |
 | `TOPIC_MAP` | KV Binding | ✅ | Stores panel config, sites, visitor archive, and check-ins |
 | `BOT_TOKEN` | Secret | ✅ | Telegram Bot Token from `@BotFather` |
-| `ADMIN_IDS` | Text | Recommended | Owner numeric UID (`<0.1ms` in-memory fast auth, 0 KV writes) |
+| `ADMIN_IDS` | Text | ✅ | Owner numeric UID, comma-separated (`<0.1ms` in-memory fast auth, 0 KV writes) |
+| `WEBHOOK_SECRET` | Secret | ✅ | Random secret protecting Webhook (`/` & `/webhook`) & `/setup` (`/setup` refuses to run without it) |
 | `BOT_USERNAME` | Text | Recommended | Bot username without `@` |
-| `WEBHOOK_SECRET` | Secret | Recommended | Random secret protecting Webhook & `/setup` |
 | `APP_SHORT_NAME` | Text | Recommended | BotFather `/newapp` short name (e.g. `panel`) |
 | `SUPERGROUP_ID` | Text | Optional | Forum group ID (**recommended: simply run `/bind` in your group!**) |
 | `TURNSTILE_SITE_KEY` / `TURNSTILE_SECRET` | Text / Secret | Optional | Required only for CF Turnstile strict mode |

@@ -215,7 +215,7 @@ docker run --rm -it -v "$PWD":/app -w /app -e CLOUDFLARE_API_TOKEN="你的_API_T
 #### 4. 純 VPS 自託管（搭配 Caddy 自動 HTTPS）
 ```bash
 npm ci && npm run build && cp .dev.vars.example .dev.vars
-# 編輯 .dev.vars 填入真實變數（正式環境務必刪掉 DEV_PREVIEW="true"）
+# 編輯 .dev.vars 填入真實變數（DEV_PREVIEW 僅在 localhost 生效，正式環境保持 "false"）
 npx wrangler dev --ip 127.0.0.1 --port 8787 --persist-to ./.wrangler/state --show-interactive-dev-session=false
 ```
 再用 Caddy 反向代理 `reverse_proxy 127.0.0.1:8787` 綁定 HTTPS 網域即可。
@@ -229,9 +229,9 @@ npx wrangler dev --ip 127.0.0.1 --port 8787 --persist-to ./.wrangler/state --sho
 | :--- | :--- | :---: | :--- |
 | `TOPIC_MAP` | KV Binding | ✅ | 持久化面板設定、小站、訪客與媒體歸檔、簽到資料 |
 | `BOT_TOKEN` | Secret | ✅ | `@BotFather` 核發的 Telegram Bot Token |
-| `ADMIN_IDS` | Text | 推薦 | 站長數字 UID（設定後 `<0.1ms` 記憶體極速鑑權，0 KV 寫入） |
+| `ADMIN_IDS` | Text | ✅ | 站長數字 UID，多個用英文逗號分隔（設定後 `<0.1ms` 記憶體極速鑑權，0 KV 寫入） |
+| `WEBHOOK_SECRET` | Secret | ✅ | 隨機密鑰，保護 Webhook（含 `/` 與 `/webhook`）與 `/setup`（未設定時 `/setup` 拒絕執行） |
 | `BOT_USERNAME` | Text | 推薦 | 機器人使用者名稱（不含 `@`） |
-| `WEBHOOK_SECRET` | Secret | 推薦 | 隨機密鑰，保護 Webhook 與 `/setup` |
 | `APP_SHORT_NAME` | Text | 推薦 | BotFather `/newapp` 設定的 Mini App 短名（如 `panel`） |
 | `SUPERGROUP_ID` | Text | 可選 | 主題通知群 ID（**推薦部署後直接在群內傳 `/bind` 一鍵綁定，免手填**） |
 | `TURNSTILE_SITE_KEY` / `TURNSTILE_SECRET` | Text / Secret | 可選 | 開啟 CF Turnstile 嚴格驗證模式時填寫 |

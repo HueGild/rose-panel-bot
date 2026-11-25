@@ -4,6 +4,22 @@
 
 ---
 
+## [v1.2.2] - 2026-11-25
+
+**安全加固 & 社区规范版**：修复 3 处 webhook 与预览模式高危鉴权隐患，补齐回归测试、三语文档与 GitHub CI。
+
+### 🔒 安全修复 (Security)
+- **双路径统一校验 Webhook 密钥 (`src/worker/index.js`)**：根路径 `POST /` 与 `/webhook` 现均强制校验 `X-Telegram-Bot-Api-Secret-Token`（并采用恒定时间比对），彻底堵住伪造站长指令的侧门。*(旧版仍使用根路径 `/` 接收 Webhook 的用户升级后，请重新访问一次 `/setup?secret=你的WEBHOOK_SECRET` 完成切换。)*
+- **强制 `/setup` 密钥守卫 (`src/worker/index.js`)**：未配置 `WEBHOOK_SECRET` 时 `/setup` 直接返回 `500` 拒绝执行，防止空密钥状态下被他人任意调用。
+- **锁定 `DEV_PREVIEW` 仅限本机生效且默认访客 (`src/worker/auth.js` / `.dev.vars.example`)**：`DEV_PREVIEW="true"` 仅在 `localhost` / `127.0.0.1` / `[::1]` / `*.localhost` 主机上生效且缺省角色降级为 `guest`；`.dev.vars.example` 默认值改为 `DEV_PREVIEW="false"`、`SUPERGROUP_ID=""`，防止误部署提权。
+- **新增 3 组安全回归单测 (`tests/worker.test.js`)**：覆盖双路径 Webhook 鉴权、`/setup` 空密钥拒访及 `DEV_PREVIEW` 域名隔离与默认角色约束。
+
+### 📝 文档与仓库规范 (Docs & Chore)
+- 新增繁体中文文档 (`README_ZH_TW.md`、`docs/SETUP_GUIDE_ZH_TW.md`)，全面同步 `README_EN.md`、`AGENTS.md` 与 `wrangler.toml` 必填变量说明。
+- 新增 `SECURITY.md` 安全漏洞私密反馈指南与 `.github/ISSUE_TEMPLATE/`（Bug / 功能建议模板）。
+
+---
+
 ## [v1.2.1] - 2026-11-25
 
 **GitHub 主页视觉精装版**：全面升级仓库门面颜值、动效演示与搜索曝光。
@@ -11,7 +27,7 @@
 ### 🎨 视觉与文档升级 (Docs & Showcase)
 - **定制矢量玫瑰瓷 Banner (`docs/assets/banner.svg`)** 与 **GitHub 社交分享封面图 (`docs/assets/social-preview.png`)**。
 - **15 秒聚焦打字机动态演示 (`docs/assets/showcase.webp`)**：以 100% 真实运行界面呈现 5 大核心场景（玫瑰名片 → 四层防广告护盾 → 公开/私密双层小站 → Komari 10 段探针 → 深色暗黑主题），在 GitHub 首页自动循环播放。
-- **四屏高清实机画廊 (`docs/assets/preview-gallery.png`)**：真实 2x Retina 画面搭配 iPhone 钛金属边框与状态栏呈现。
+- **四屏高清实机画廊 (`docs/assets/preview-row1.png` / `preview-row2.png`)**：真实 2x Retina 画面搭配 iPhone 钛金属边框与状态栏呈现。
 - **重排中文主页 `README.md`**：居中 Hero 头部、GitHub 原生 Mermaid 四层防广告流程图、折叠式多平台部署卡片，并补全 GitHub Topics 检索标签。
 
 ---
