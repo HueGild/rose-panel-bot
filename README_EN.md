@@ -44,7 +44,7 @@
 
 | Signature Feature | At a Glance |
 | :--- | :--- |
-| **💬 Direct In-Panel Chat & Photos** | Open **`💬 Chat`** for 60 bubbles — type, send photos from your phone album & recall in 1 tap, silently mirrored to Forum Topics |
+| **💬 Direct In-Panel Chat & Photos** | Open **`💬 聊过` (Chat)** for 60 bubbles — type, send photos from your phone album & recall in 1 tap, silently mirrored to Forum Topics |
 | **🎭 Custom Animated Sticker Quizzes** | Send `/add` + any TG sticker to build a visual quiz in 3s; **auto-switches & reshuffles on error** + honeypot + CAS blacklist |
 | **🎨 0.2s Panel + Pixel Day/Night Slider** | Original **224×84 pixel bubble-lens slider** (circular View Transition dark reveal) + `/set` animated emblems + private avatar proxy |
 | **📡 Plug-and-Play Modularity** | Optional **Komari / Nezha (v1·v0) / NodeGet / JSON** server probe & Public/Private sites — unused modules stay completely hidden |
@@ -60,7 +60,7 @@
   <img src="docs/assets/demo-chat.webp" alt="Direct in-panel chat, album photo upload, and Forum Topic sync" width="94%" />
 </div>
 
-- Tap **`💬 Chat`** on any visitor card to view the last 60 two-way message bubbles, **type text or pick any photo from your phone album (JPG / PNG / WebP / GIF, up to 10 MB) and send directly**, with **1-tap two-way recall**;
+- Tap **`💬 聊过` (Chat)** on any visitor card to view the last 60 two-way message bubbles, **type text or pick any photo from your phone album (JPG / PNG / WebP / GIF, up to 10 MB) and send directly**, with **1-tap two-way recall**;
 - Every reply silently mirrors to the visitor's Forum Topic so both surfaces stay seamlessly in sync, while photos & links auto-archive by sender (`Visitor` / `Me`).
 
 ### 2 · First-Time Stranger `/start` Sticker Quiz (Auto-Switch on Wrong Tap)
@@ -92,7 +92,7 @@
   <p><b>✨ Animated Sticker Emblems via <code>/set</code> · Saved Collection & 0ms Edge Splash</b></p>
   <img src="docs/assets/showcase-badges.png" alt="Send /set with any sticker or custom emoji to update the animated main emblem" width="96%" />
   <br /><br />
-  <p><b>🔄 Fork Deploy · In-App Release Reminder · 1-Click Hot Sync (100% Data Preserved)</b></p>
+  <p><b>🔄 Fork Deploy · In-App Release Reminder · 1-Click Fork Sync (100% Data Preserved)</b></p>
   <img src="docs/assets/showcase-updater.png" alt="In-panel release reminder and one-click Fork sync for Cloudflare deployments" width="96%" />
 </div>
 
@@ -117,7 +117,7 @@
 ## ✨ Key Features
 
 - **💬 In-Panel Direct Text/Photo Chat + Media Archive + `/bind` Forum Inbox**
-  - **Chat Right Inside the Mini App**: Tap **`💬 Chat`** on any visitor card to inspect the last 60 message bubbles, **type text or upload photos directly from the Mini App**, and **recall sent messages in 1 tap** — every reply silently mirrors to the visitor's Forum Topic so both surfaces stay in sync.
+  - **Chat Right Inside the Mini App**: Tap **`💬 聊过` (Chat)** on any visitor card to inspect the last 60 message bubbles, **type text or upload photos directly from the Mini App**, and **recall sent messages in 1 tap** — every reply silently mirrors to the visitor's Forum Topic so both surfaces stay in sync.
   - **Automatic Photo & Link Archive**: Exchanged photos (HMAC-signed private proxy + lightbox) and links are automatically archived by sender (`Visitor` / `Me`); send **`/bind`** inside a private Topics group for 1-click inbox setup (no `-100...` ID lookup), with `/del` topic recall and 1-tap Ban/Unban/Trust.
 - **🎭 1-Tap Static/Animated Sticker Visual Quizzes (`/add`)**
   - Send `/add` to your bot, drop any static or animated Telegram sticker you love + space-separated choices, and create a custom visual quiz in 3 seconds — or pick directly from sticker packs inside Settings. Humans pass in 1 second while automated spam bots hit a wall.
