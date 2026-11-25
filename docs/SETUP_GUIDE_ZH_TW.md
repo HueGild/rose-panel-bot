@@ -142,7 +142,7 @@ https://你的網域/setup?secret=你剛填的WEBHOOK_SECRET
 ### Q1：開啟 Mini App 後，右上角沒有 ⚙️ 設定按鈕、底部也沒有「訪客」欄怎麼辦？
 這代表系統將目前帳號識別為**一般訪客**，通常是 `ADMIN_IDS` 沒有配對，依以下 3 步檢查即可解決：
 1. 在 Telegram 找 **[@userinfobot](https://t.me/userinfobot)** 取得**你自己個人帳號的純數字 UID**（注意：**不是** `@使用者名稱`，也**不是**機器人的 ID）；
-2. 進入 Cloudflare Worker → **Settings → Variables & Bindings** → 檢查 **`ADMIN_IDS`**（類型為 Text，多位管理員以英文逗號分隔）。**若透過一鍵部署按鈕部署，它可能被預填成舊範例值 `123456789`，務必改成你自己的純數字 UID**；
+2. 進入 Cloudflare Worker → **Settings → Variables & Bindings** → 檢查 **`ADMIN_IDS`**（類型為 **Text / 純文字變數**，多位管理員以英文逗號分隔）。**若一鍵部署時它被預設建成了「金鑰 (Secret)」看不到內容（或預填了舊範例值 `123456789`），直接刪掉改為「Text / 純文字」重新填入你自己的純數字 UID 即可**；
 3. 點擊 **Deploy / Save** 儲存並重新部署後，務必在 **Telegram 內**關閉面板再重新開啟，右上角 ⚙️ 設定與底部「訪客」欄就會立刻出現！
 *(註：若未填寫 `ADMIN_IDS`、改以通知群鑑權，請確認已在主題群組內傳送 `/bind` 並綁定成功。)*
 

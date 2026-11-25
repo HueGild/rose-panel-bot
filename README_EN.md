@@ -243,7 +243,7 @@ Reverse-proxy `127.0.0.1:8787` with Caddy (`reverse_proxy 127.0.0.1:8787`) for a
 **Q: No ⚙️ Settings button in the top-right corner and no "Visitors" tab at the bottom?**  
 The panel recognized you as a regular guest — almost always because `ADMIN_IDS` is missing or mismatched:
 1. Message [@userinfobot](https://t.me/userinfobot) on Telegram to get **your personal account's numeric UID** (not your `@username` and not the bot's ID).
-2. Open Cloudflare Worker → **Settings → Variables & Bindings** → check `ADMIN_IDS` (Text type). If you used the 1-click deploy button on an older version, replace any placeholder like `123456789` with your real numeric UID.
+2. Open Cloudflare Worker → **Settings → Variables & Bindings** → check `ADMIN_IDS` (**Text** type). If 1-click deploy created it as a hidden **Secret** (so you can't inspect it, or it held the old placeholder `123456789`), delete it and re-add `ADMIN_IDS` as a **Text** variable with your real numeric UID.
 3. Save & redeploy, then close and reopen the Mini App **inside Telegram** (if you rely on forum-group admin detection without `ADMIN_IDS`, make sure you ran `/bind` inside your Topics group).
 
 ---
