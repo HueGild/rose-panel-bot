@@ -38,6 +38,14 @@ export const DEFAULT_SPLASH = {
   emoji: '🌹',
 };
 
+// Card labels that used to ship as defaults. Configs saved before labelsRev 2 still carry them
+// verbatim in KV, so they are cleared once on load; anything the owner typed is left untouched.
+export const PROFILE_LABELS_REV = 2;
+const LEGACY_DEFAULT_LABELS = {
+  badgeTitle: ['站长 · Owner'],
+  joinedText: ['Cloudflare Edge'],
+};
+
 export const DEFAULT_CONFIG = {
   profile: {
     displayName: 'RosePanel',
@@ -48,8 +56,10 @@ export const DEFAULT_CONFIG = {
     avatarMode: 'bot', // bot | owner | custom
     avatarUrl: '',
     ownerTag: '个人名片',
-    badgeTitle: '站长 · Owner',
+    badgeTitle: '',
     joinedText: '',
+    // Bumped when legacy default card labels are cleaned up; see loadPanelConfig
+    labelsRev: PROFILE_LABELS_REV,
     notice: '',
     tags: '',
     noteTitle: '来信礼仪',
@@ -319,6 +329,16 @@ export async function loadPanelConfig(env) {
   const saved = await safeGetJSON(env.TOPIC_MAP, CONFIG_KV_KEY, null);
   const merged = mergeConfig(DEFAULT_CONFIG, saved);
 
+  // One-time cleanup of legacy default card labels for configs saved before labelsRev 2
+  if (saved && !(Number(saved.profile?.labelsRev) >= PROFILE_LABELS_REV)) {
+    for (const [field, legacyValues] of Object.entries(LEGACY_DEFAULT_LABELS)) {
+      if (legacyValues.includes(String(merged.profile[field] ?? '').trim())) {
+        merged.profile[field] = '';
+      }
+    }
+  }
+  merged.profile.labelsRev = PROFILE_LABELS_REV;
+
   // Environment variable fallbacks when KV fields are unset
   if (!saved?.profile?.handle && env.BOT_USERNAME) {
     merged.profile.handle = `@${env.BOT_USERNAME.replace(/^@/, '')}`;
@@ -365,6 +385,7 @@ export async function savePanelConfig(env, nextConfig) {
   merged.updater.branch = String(merged.updater.branch || 'main').trim().slice(0, 64) || 'main';
   merged.updater.githubToken = String(merged.updater.githubToken || '').trim().slice(0, 256);
 
+  merged.profile.labelsRev = PROFILE_LABELS_REV;
   merged.profile.ownerTag = String(merged.profile.ownerTag ?? '').trim().slice(0, 32);
   merged.profile.badgeTitle = String(merged.profile.badgeTitle ?? '').trim().slice(0, 32);
   merged.profile.joinedText = String(merged.profile.joinedText ?? '').trim().slice(0, 48);

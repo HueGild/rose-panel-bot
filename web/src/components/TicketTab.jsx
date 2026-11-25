@@ -41,6 +41,11 @@ export default function TicketTab({
   } = data;
   const { profile, community, bot } = config;
   const enableCheckin = Boolean(community.enableCheckin);
+  // The top bar already shows displayName, so the card leads with the @handle instead of repeating it.
+  // Falls back to displayName when the handle is empty or still the template placeholder.
+  const rawHandle = String(profile.handle || '').trim();
+  const cardTitle =
+    (rawHandle && rawHandle !== '@your_bot' ? rawHandle : '') || String(profile.displayName || '').trim();
   const avatarMode = profile.avatarMode || (profile.avatarUrl ? 'custom' : 'bot');
   const ownerAvatarSrc =
     avatarMode === 'custom' && profile.avatarUrl
@@ -293,9 +298,9 @@ export default function TicketTab({
 
         {/* Compact Owner Card */}
         <div className="card" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <Avatar src={ownerAvatarSrc} name={profile.displayName} size="sm" />
+          <Avatar src={ownerAvatarSrc} name={cardTitle} size="sm" />
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 14, fontWeight: 700 }}>{profile.displayName}</div>
+            <div style={{ fontSize: 14, fontWeight: 700 }}>{cardTitle}</div>
             <div className="row-desc">{profile.tagline}</div>
           </div>
           <button className="btn btn-soft btn-sm" onClick={() => onNavigate('sites')}>
@@ -348,16 +353,16 @@ export default function TicketTab({
   }
 
   // --- Mode A: Clean Personal Card Ticket Stub (Default for @Rose202_bot) ---
+
   return (
     <>
       <div className="ticket-card">
         <div className="ticket-left">
           <div>
             <div className="ticket-user-row">
-              <Avatar src={ownerAvatarSrc} name={profile.displayName} />
+              <Avatar src={ownerAvatarSrc} name={cardTitle} />
               <div style={{ minWidth: 0 }}>
-                <div className="ticket-name">{profile.displayName}</div>
-                <div className="ticket-handle">{profile.handle}</div>
+                <div className="ticket-name">{cardTitle}</div>
               </div>
             </div>
 

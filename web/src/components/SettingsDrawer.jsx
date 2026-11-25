@@ -639,7 +639,7 @@ export default function SettingsDrawer({
 
             <div className="card">
               <div className="field">
-                <label className="field-label">显示昵称</label>
+                <label className="field-label">显示昵称（顶栏标题）</label>
                 <input
                   className="input"
                   value={draft.profile.displayName}
@@ -647,7 +647,7 @@ export default function SettingsDrawer({
                 />
               </div>
               <div className="field">
-                <label className="field-label">Bot / 个人账号标识</label>
+                <label className="field-label">Bot / 个人账号标识（名片主标题，留空则显示昵称）</label>
                 <input
                   className="input"
                   value={draft.profile.handle}
