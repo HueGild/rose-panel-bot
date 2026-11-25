@@ -1,21 +1,20 @@
-import React, { useCallback, useEffect, useId, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { haptic, lockVerticalSwipes } from '../lib/telegram.js';
 
 // Bubble-lens day/night slider: 0 = night (dark), 0.5 = dusk (follow Telegram), 1 = day (light).
-// The scene (sky, moon/sun, bunny) is a pure function of the continuous position, so dragging
-// left/right scrubs every animation smoothly in both directions.
+// Rendered on a fine 224x84 Retina micro-pixel grid (2x Retina native on the 112x42 track, exact
+// 1:1 CSS px inside the ZOOM = 2 crystal bubble magnifier) using a curated 19-color Rose-Porcelain
+// lineless flat-pixel palette. Completely alive when idle and continuously scrubbed when dragged.
 
-// Rendered size (CSS px) of the control and its bubble lens.
 const W = 112;
 const H = 42;
 const PAD = 2;
 const D = 38;
 const TRAVEL = W - PAD * 2 - D;
-const ZOOM = 1.65;
-// The illustrated world is drawn in a fixed 96x36 viewBox and scaled to W x H.
-const VW = 96;
-const VH = 36;
-const GROUND = 29;
+const ZOOM = 2;
+const VW = 224;
+const VH = 84;
+const GROUND = 68;
 
 export const THEME_MODES = ['dark', 'auto', 'light'];
 const MODE_LABEL = { dark: '夜晚 · 深色', auto: '黄昏 · 跟随 Telegram', light: '白天 · 浅色' };
@@ -28,6 +27,29 @@ const smooth = (e0, e1, x) => {
 };
 const tri = (p) => clamp(1 - Math.abs(p - 0.5) * 2, 0, 1);
 
+// 19-Color Curated Rose-Porcelain Palette (<= 20 colors, lineless soft shading, zero harsh primaries)
+const C = {
+  ink: '#1b0f24',       // 1  deep night zenith / bunny eye
+  plum: '#2c1736',      // 2  night sky mid / dark wood
+  mulberry: '#442248',  // 3  night horizon / soft shadow
+  wine: '#642c54',      // 4  dusk zenith / roof shade
+  crimson: '#87294d',   // 5  crimson trim / deep roof
+  accent: '#a32952',    // 6  signature RosePanel rose
+  carmine: '#c64b74',   // 7  rose carmine / roof highlight
+  coral: '#e27699',     // 8  soft rose coral / dusk sky
+  blush: '#f3a4be',     // 9  blush pink / inner ear
+  petal: '#fad0df',     // 10 pale rose petal / soft fur shade
+  mist: '#fce9f0',      // 11 rose porcelain mist
+  white: '#fff8fa',     // 12 porcelain snow white
+  peach: '#f7b398',     // 13 sunset warm peach-rose
+  honey: '#f6c87e',     // 14 candlelight honey gold
+  cream: '#fff0c4',     // 15 warm starlight cream
+  slate: '#322b3a',     // 16 night bush shadow
+  sageDark: '#52685b',  // 17 dusty sage deep leaf
+  sageMid: '#6e917b',   // 18 soft sage mid leaf
+  sageLight: '#93b99f', // 19 celadon leaf highlight
+};
+
 function hexToRgb(h) {
   return [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
 }
@@ -37,268 +59,1012 @@ function mixHex(a, b, t) {
   return `rgb(${A.map((v, i) => Math.round(lerp(v, B[i], t))).join(',')})`;
 }
 function mix3(night, dusk, day, p) {
-  return p <= 0.5 ? mixHex(night, dusk, p * 2) : mixHex(dusk, day, (p - 0.5) * 2);
+  const qp = Math.round(clamp(p, 0, 1) * 24) / 24;
+  return qp <= 0.5 ? mixHex(night, dusk, qp * 2) : mixHex(dusk, day, (qp - 0.5) * 2);
 }
 
 function prefersReducedMotion() {
   return typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 }
 
-const STARS = [
-  [8, 6, 0.7],
-  [19, 12, 0.5],
-  [29, 5, 0.6],
-  [41, 10, 0.45],
-  [63, 5, 0.65],
-  [74, 13, 0.5],
-  [85, 7, 0.6],
-  [91, 15, 0.4],
-  [35, 16, 0.4],
-];
-const BULBS = [8, 20, 32, 44, 56, 68, 80, 90];
+// Shared discrete pixel frame clock (~7fps retro animation) synced across track & bubble magnifier
+let sharedTick = 0;
+let sharedTimer = null;
+const tickListeners = new Set();
 
-function Bunny({ p, motion, facing }) {
-  const wake = smooth(0.12, 0.42, p); // 0 asleep → 1 awake
-  const day = smooth(0.72, 1, p);
-  const earAngle = lerp(72, -6, wake);
-  const headY = lerp(-5.6, -9.4, wake);
-  const headX = lerp(4.6, 3.6, wake);
-  const eyeOpen = smooth(0.18, 0.38, p);
-  const lookUp = tri(p) * 1.2; // at dusk the bunny gazes up at the sunset
-  const bodyRy = lerp(3.6, 4.6, wake);
-  const walkHop = -Math.abs(Math.sin(p * Math.PI * 7)) * 2.4 * motion;
+function usePixelTick() {
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    if (prefersReducedMotion()) return undefined;
+    tickListeners.add(setTick);
+    if (!sharedTimer) {
+      sharedTimer = setInterval(() => {
+        sharedTick = (sharedTick + 1) % 720;
+        tickListeners.forEach((fn) => fn(sharedTick));
+      }, 145);
+    }
+    return () => {
+      tickListeners.delete(setTick);
+      if (tickListeners.size === 0 && sharedTimer) {
+        clearInterval(sharedTimer);
+        sharedTimer = null;
+      }
+    };
+  }, []);
+  return prefersReducedMotion() ? 0 : tick;
+}
+
+// Run-length merges an ASCII pixel matrix into 1 integer SVG <path> per color (supports 1x or 2x scale)
+function renderSprite(rows, palette, ox = 0, oy = 0, flipX = false, scale = 1) {
+  const paths = new Map();
+  const h = rows.length;
+  for (let r = 0; r < h; r += 1) {
+    const line = rows[r];
+    const w = line.length;
+    let c = 0;
+    while (c < w) {
+      const idx = flipX ? w - 1 - c : c;
+      const ch = line[idx];
+      if (ch === '.' || ch === ' ' || !palette[ch]) {
+        c += 1;
+        continue;
+      }
+      let run = 1;
+      while (c + run < w) {
+        const nextIdx = flipX ? w - 1 - (c + run) : c + run;
+        if (line[nextIdx] !== ch) break;
+        run += 1;
+      }
+      const x = ox + c * scale;
+      const y = oy + r * scale;
+      const rw = run * scale;
+      const d = `M${x} ${y}h${rw}v${scale}h-${rw}Z`;
+      paths.set(ch, (paths.get(ch) || '') + d);
+      c += run;
+    }
+  }
+  const out = [];
+  paths.forEach((d, ch) => {
+    out.push(<path key={ch} d={d} fill={palette[ch]} />);
+  });
+  return out;
+}
+
+function rectsPath(rects) {
+  return rects.map(([x, y, w, h]) => `M${x} ${y}h${w}v${h}h-${w}Z`).join('');
+}
+
+// --- Fine Lineless Micro-Pixel Sprites (drawn clean shape-on-shape, zero muddy black borders!) ---
+
+// 24x24 Lineless Expressive Rose Bunny (base faces +x right; integer-flipped when walking left)
+// Keys: B = pure snow fur, s = blush belly/limb shade, p = soft pink inner ear/cheek,
+//       e = deep plum eye, w = crisp 1px eye sparkle, n = tiny rose nose
+const BUNNY_SIT = [
+  '........BB...BB.........',
+  '.......BBBB.BBBB........',
+  '.......BBpp.BBpp........',
+  '.......BBpp.BBpp........',
+  '.......BBpp.BBpp........',
+  '.......BBpp.BBpp........',
+  '........BBp.BBp.........',
+  '........BBBBBBBB........',
+  '.......BBBBBBBBBB.......',
+  '......BBBBBBBBBBBB......',
+  '......BBBBBBBBewBB......',
+  '......BBBBBBBBeeBB......',
+  '......BBBBBBBBeeBBn.....',
+  '......BBBBBBBpppBB......',
+  '.....BBBBBBBBBBBB.......',
+  '..BB.BBBBBBBBBBBss......',
+  '.BBBBBBBBBBBBBBBss......',
+  '.BBBBBBBBBBBBBBsss......',
+  '.BBsBBBBBBBBBBBsss......',
+  '..ssBBBBBBBBBBssBB......',
+  '....sBBBBBBBBBssBB......',
+  '.....sssssssssBBBB......',
+  '.....ssBBBBss..ss.......',
+  '......ssssss............',
+];
+
+const BUNNY_SIT_BLINK = BUNNY_SIT.map((row, idx) =>
+  idx === 10 || idx === 11 ? '......BBBBBBBBBBBB......' : idx === 12 ? '......BBBBBBBBssBBn.....' : row
+);
+
+const BUNNY_SIT_TWITCH = BUNNY_SIT.map((row, idx) => {
+  if (idx === 0) return '........BB....BB........';
+  if (idx === 1) return '.......BBBB..BBBB.......';
+  if (idx === 2) return '.......BBpp..BBpp.......';
+  if (idx === 3) return '.......BBpp.BBpp........';
+  return row;
+});
+
+const BUNNY_SLEEP_0 = [
+  '........................',
+  '........................',
+  '........................',
+  '........................',
+  '........................',
+  '........................',
+  '........................',
+  '........................',
+  '........................',
+  '........................',
+  '........................',
+  '......BBBBBBBB..........',
+  '.....BBppppBBBB.........',
+  '....BBBBBBBBBBBB........',
+  '...BBBBBBBBBBBBBB.......',
+  '..BBBBBBBBBBBBBBBB......',
+  '.BBBBBBBBBBBBBBBBBB.....',
+  'BBBBsBBBBBBBBBBBBBBB....',
+  'BBBBssBBBBBBBBeeBBBB....',
+  'BBsssBBBBBBBBBBpppBBn...',
+  '.ssssBBBBBBBBBBBBBBB....',
+  '..ssssBBBBBBBBBBBBss....',
+  '...ssssssssssssssss.....',
+  '....ssssssssssssss......',
+];
+
+const BUNNY_SLEEP_1 = [
+  '........................',
+  '........................',
+  '........................',
+  '........................',
+  '........................',
+  '........................',
+  '........................',
+  '........................',
+  '........................',
+  '........................',
+  '......BBBBBBBB..........',
+  '.....BBppppBBBB.........',
+  '....BBBBBBBBBBBB........',
+  '...BBBBBBBBBBBBBB.......',
+  '..BBBBBBBBBBBBBBBB......',
+  '..BBBBBBBBBBBBBBBB......',
+  '.BBBBBBBBBBBBBBBBBB.....',
+  'BBBBsBBBBBBBBBBBBBBB....',
+  'BBBBssBBBBBBBBeeBBBB....',
+  'BBsssBBBBBBBBBBpppBBn...',
+  '.ssssBBBBBBBBBBBBBBB....',
+  '..ssssBBBBBBBBBBBBss....',
+  '...ssssssssssssssss.....',
+  '....ssssssssssssss......',
+];
+
+const BUNNY_WAKE = [
+  '........................',
+  '........................',
+  '............BB..........',
+  '...........BBBB.........',
+  '...........BBpp.........',
+  '....BBBB...BBpp.........',
+  '...BBpppB..BBpp.........',
+  '....BBBBBBBBBBBB........',
+  '......BBBBBBBBBBB.......',
+  '......BBBBBBBBBBBB......',
+  '......BBBBBBBBewBB......',
+  '......BBBBBBBBeeBBn.....',
+  '......BBBBBBBpppBB......',
+  '.....BBBBBBBBBBBB.......',
+  '..BB.BBBBBBBBBBBss......',
+  '.BBBBBBBBBBBBBBBss......',
+  '.BBBBBBBBBBBBBBsss......',
+  '.BBsBBBBBBBBBBBsss......',
+  '..ssBBBBBBBBBBssBB......',
+  '....sBBBBBBBBBssBB......',
+  '.....sBBBBBBBBBBBB......',
+  '.....ssBBBBssBBBB.......',
+  '......ssss....sss.......',
+  '........................',
+];
+
+const BUNNY_WALK_0 = [
+  '........................',
+  '......BB...BB...........',
+  '.....BBBB.BBBB..........',
+  '......BBpp.BBpp.........',
+  '.......BBpp.BBpp........',
+  '........BBp.BBp.........',
+  '........BBBBBBBB........',
+  '.......BBBBBBBBBB.......',
+  '......BBBBBBBBBBBB......',
+  '......BBBBBBBBewBB......',
+  '......BBBBBBBBeeBB......',
+  '......BBBBBBBBeeBBn.....',
+  '......BBBBBBBpppBB......',
+  '....BBBBBBBBBBBBB.......',
+  '.BB.BBBBBBBBBBBBss......',
+  'BBBBBBBBBBBBBBBBss......',
+  'BBBsBBBBBBBBBBBsss......',
+  '.sssBBBBBBBBBBsss.......',
+  '...sBBBBBBBBBBsBB.......',
+  '...BBBBs....ssBBBB......',
+  '..BBBB........BBBB......',
+  '..sss..........sss......',
+  '........................',
+  '........................',
+];
+
+const BUNNY_WALK_1 = [
+  '.......BB...BB..........',
+  '......BBBB.BBBB.........',
+  '......BBpp.BBpp.........',
+  '......BBpp.BBpp.........',
+  '.......BBp.BBp..........',
+  '.......BBBBBBBB.........',
+  '......BBBBBBBBBB........',
+  '.....BBBBBBBBBBBB.......',
+  '.....BBBBBBBBewBB.......',
+  '.....BBBBBBBBeeBB.......',
+  '.....BBBBBBBBeeBBn......',
+  '.....BBBBBBBpppBB.......',
+  '....BBBBBBBBBBBB........',
+  '.BB.BBBBBBBBBBBss.......',
+  'BBBBBBBBBBBBBBBss.......',
+  'BBBsBBBBBBBBBBsss.......',
+  '.sssBBBBBBBBBsss........',
+  '...sBBBBBBBBssBB........',
+  '.....sBBBBBBssBB........',
+  '......BBBB..BBBB........',
+  '......sss....sss........',
+  '........................',
+  '........................',
+  '........................',
+];
+
+// 10x9 Lush Layered Spiral Pixel Rose (lineless 4-shade petal depth!)
+const ROSE_FULL = [
+  '..pppppp..',
+  '.ppRRRRpp.',
+  'pRRccccRRp',
+  'pRcAAAAcRp',
+  'pRcAccAcRp',
+  'pRRccccRRp',
+  '.pRRRRRRp.',
+  '..ppRRpp..',
+  '...llll...',
+];
+
+const ROSE_HALF = [
+  '..pppp..',
+  '.pRRRRp.',
+  'pRcAAcRp',
+  'pRccccRp',
+  '.pRRRRp.',
+  '..llll..',
+];
+
+const ROSE_BUD = [
+  '.cc.',
+  'cAAc',
+  'cAAc',
+  '.ll.',
+];
+
+// 10x8 Delicate Lineless Pixel Butterfly (3-frame wing motion)
+const BFLY_OPEN = [
+  'KKK....KKK',
+  'KKKK..KKKK',
+  'KKPK..KPKK',
+  '.PPAAAAAPP',
+  '..PAAAAP..',
+  '.PPK..KPP.',
+  '.PPP..PPP.',
+  '..P....P..',
+];
+const BFLY_MID = [
+  '..KK..KK..',
+  '.KKK..KKK.',
+  '.KPK..KPK.',
+  '..PAAAAP..',
+  '..PAAAAP..',
+  '..PK..KP..',
+  '..PP..PP..',
+  '..........',
+];
+const BFLY_CLOSED = [
+  '...KK.....',
+  '...KKK....',
+  '...KPK....',
+  '...AAA....',
+  '...PAA....',
+  '...PP.....',
+  '..........',
+  '..........',
+];
+
+// 16x16 Smooth-Stepped Crescent Moon
+const MOON_SPRITE = [
+  '.....MMMMMM.....',
+  '...MMMMMMmm.....',
+  '..MMMMmm........',
+  '.MMMMm..........',
+  '.MMMM...........',
+  'MMMM............',
+  'MMMM............',
+  'MMMM............',
+  'MMMM............',
+  '.MMMM...........',
+  '.MMMMm..........',
+  '..MMMMmm........',
+  '...MMMMMMmm.....',
+  '.....MMMMMM.....',
+];
+
+// 18x18 Layered Pixel Sun
+const SUN_SPRITE = [
+  '......SSSSSS......',
+  '....SSccccccSS....',
+  '...SccccccccccS...',
+  '..ScccCCCCCCcccS..',
+  '.ScccCCCCCCCCcccS.',
+  '.SccCCCCCCCCCCccS.',
+  'SccCCCCCCCCCCCCccS',
+  'SccCCCCCCCCCCCCccS',
+  'SccCCCCCCCCCCCCccS',
+  'SccCCCCCCCCCCCCccS',
+  '.SccCCCCCCCCCCccS.',
+  '.ScccCCCCCCCCcccS.',
+  '..ScccCCCCCCcccS..',
+  '...SccccccccccS...',
+  '....SSccccccSS....',
+  '......SSSSSS......',
+];
+
+// Sculpted Lineless Fluffy Pixel Clouds
+const CLOUD_LG = [
+  '........CCCCCC............',
+  '......CCCCCCCCCC..........',
+  '....CCCCCCCCCCCCCC..CCCC..',
+  '..CCCCCCCCCCCCCCCCCCCCCCC.',
+  '.CCCCCCCCCCCCCCCCCCCCCCCCC',
+  'CCssssssssssssssssssssssCC',
+  '.ssssssssssssssssssssssss.',
+];
+
+const CLOUD_SM = [
+  '.....CCCCC......',
+  '...CCCCCCCCC....',
+  '.CCCCCCCCCCCCC..',
+  'CCssssssssssssC.',
+  '.sssssssssssss..',
+];
+
+// Crisp Pixel "Z" for sleeping bunny
+const Z_BIG = [
+  'zzzzzz',
+  '....zz',
+  '...zz.',
+  '..zz..',
+  '.zz...',
+  'zzzzzz',
+];
+const Z_SM = [
+  'zzzz',
+  '..z.',
+  '.z..',
+  'zzzz',
+];
+
+// Precomputed calm stepped 224-col mountain silhouettes
+const FAR_MOUNTAIN_PATH = Array.from({ length: VW }, (_, x) => {
+  const h = Math.round(
+    52 -
+      Math.sin((x / VW) * Math.PI * 2.2 + 0.4) * 7.5 -
+      Math.cos((x / VW) * Math.PI * 4.8) * 3.2
+  );
+  const y = clamp(h, 40, 62);
+  return `M${x} ${y}h1v${GROUND - y}h-1Z`;
+}).join('');
+
+const NEAR_MOUNTAIN_PATH = Array.from({ length: VW }, (_, x) => {
+  const h = Math.round(
+    59 -
+      Math.sin((x / VW) * Math.PI * 3.0 - 0.6) * 4.5 -
+      Math.cos((x / VW) * Math.PI * 6.0) * 2.0
+  );
+  const y = clamp(h, 52, 65);
+  return `M${x} ${y}h1v${GROUND - y}h-1Z`;
+}).join('');
+
+// Precomputed fine catenary fairy-light string across the top (night & dusk!)
+const WIRE_POINTS = Array.from({ length: VW }, (_, x) => {
+  const seg = x < 75 ? 0 : x < 150 ? 1 : 2;
+  const x0 = seg === 0 ? 0 : seg === 1 ? 75 : 150;
+  const span = seg === 2 ? 74 : 75;
+  const t = (x - x0) / span;
+  const sag = Math.sin(t * Math.PI) * 11;
+  const y = Math.round(5 + sag);
+  return [x, y];
+});
+const WIRE_PATH = WIRE_POINTS.map(([x, y]) => `M${x} ${y}h1v1h-1Z`).join('');
+const FAIRY_XS = [14, 28, 42, 56, 68, 86, 100, 114, 128, 142, 162, 176, 190, 206];
+
+// Starfield coordinates (pinpoint 1x1 & 2x2 crisp stars)
+const STARS = [
+  [10, 8], [22, 14], [35, 6], [48, 11], [63, 7], [108, 9], [122, 6],
+  [136, 13], [150, 7], [164, 15], [178, 8], [192, 12], [208, 7], [216, 17],
+  [18, 22], [72, 20], [128, 22], [186, 21],
+];
+
+// Clean pointed white garden picket fence (x = 148..214, y = 48..68)
+const FENCE_PICKETS_PATH = Array.from({ length: 8 }, (_, i) => {
+  const cx = 152 + i * 9;
+  return `M${cx} 47h2v2h-2ZM${cx - 1} 49h4v19h-4Z`;
+}).join('');
+
+// Sculpted lineless Rose Bush mound rectangles (3 harmonious celadon tones)
+const BUSH_DEEP_PATH = rectsPath([
+  [158, 54, 48, 14],
+  [162, 50, 40, 18],
+  [168, 46, 28, 22],
+]);
+const BUSH_MID_PATH = rectsPath([
+  [160, 52, 44, 12],
+  [164, 46, 36, 14],
+  [170, 42, 24, 14],
+  [174, 40, 16, 8],
+]);
+const BUSH_LIGHT_PATH = rectsPath([
+  [166, 46, 12, 6],
+  [175, 41, 14, 5],
+  [190, 47, 10, 5],
+  [163, 52, 8, 4],
+  [194, 53, 8, 4],
+]);
+
+// Architectural Lineless Rose-Porcelain Cottage (x = 14..68, y = 20..68)
+function PixelCottage({ cp, tick }) {
+  const lampOn = cp < 0.72;
+  const flicker = lampOn && tick % 11 === 0;
+  const roofMain = mix3(C.accent, C.accent, C.carmine, cp);
+  const roofHi = mix3(C.carmine, C.coral, C.blush, cp);
+  const roofShade = mix3(C.wine, C.crimson, C.accent, cp);
+  const wallMain = mix3(C.wine, C.petal, C.white, cp);
+  const wallShade = mix3(C.mulberry, C.blush, C.mist, cp);
+  const wood = mix3(C.plum, C.wine, C.crimson, cp);
+  const woodHi = mix3(C.mulberry, C.crimson, C.accent, cp);
+  const winGlass = lampOn ? (flicker ? C.cream : C.honey) : C.petal;
+  const winHi = lampOn ? C.cream : C.white;
+
+  // Stepped pitched gable roof (18px tall, y = 24..42, peak at x = 40)
+  const roofSteps = [];
+  const roofHighlight = [];
+  for (let row = 0; row < 18; row += 1) {
+    const half = 3 + Math.floor(row * 1.45);
+    const rx = 40 - half;
+    const rw = half * 2;
+    roofSteps.push([rx, 24 + row, rw, 1]);
+    if (row % 3 === 1 && row > 1) {
+      for (let sx = rx + 3; sx < rx + rw - 4; sx += 6) {
+        roofHighlight.push([sx, 24 + row, 3, 1]);
+      }
+    }
+  }
+
+  // Rising chimney smoke puffs (6-step continuous drift when idle!)
+  const smokePhase = tick % 6;
+
   return (
-    <g style={{ '--hop': day * (1 - motion) }}>
-      <ellipse cx="0" cy="0.4" rx={lerp(7, 5.5, wake)} ry="1" fill="rgba(40,10,25,0.22)" />
-      <g transform={`translate(0 ${walkHop.toFixed(2)})`}>
-        <g className="dn-bunny-idle">
-          <g transform={`scale(${facing} 1)`}>
-            <circle cx="-5.6" cy={-bodyRy + 0.6} r="1.7" fill="#fff" />
-            <ellipse cx="0" cy={-bodyRy} rx="6" ry={bodyRy} fill="#fff8fa" />
-            <g transform={`translate(${headX} ${headY - lookUp})`}>
-              <g transform={`rotate(${-earAngle} -0.6 -2.6)`}>
-                <ellipse cx="-1.4" cy="-5.6" rx="1.15" ry="3.5" fill="#fff8fa" />
-                <ellipse cx="-1.4" cy="-5.4" rx="0.5" ry="2.4" fill="#f6a5bd" />
-              </g>
-              <g transform={`rotate(${-earAngle * 0.9 + 8} 0.8 -2.6)`}>
-                <ellipse cx="0.9" cy="-5.8" rx="1.15" ry="3.6" fill="#fff8fa" />
-                <ellipse cx="0.9" cy="-5.6" rx="0.5" ry="2.5" fill="#f6a5bd" />
-              </g>
-              <circle cx="0" cy="0" r="3.7" fill="#fff8fa" />
-              <ellipse
-                cx="1.6"
-                cy={-0.5 - lookUp * 0.3}
-                rx="0.62"
-                ry={Math.max(0.14, 0.62 * eyeOpen)}
-                fill="#3a1b2b"
-              />
-              <circle cx="2.2" cy="1.1" r="0.9" fill="#f7b3c6" opacity="0.85" />
-              <circle cx="3.55" cy="0.25" r="0.45" fill="#d95b84" />
-            </g>
+    <g>
+      {/* Subtle warm window spill on meadow grass at night/dusk */}
+      {lampOn && (
+        <path
+          d={rectsPath([
+            [22, 68, 22, 3],
+            [25, 71, 16, 2],
+            [11, 68, 7, 2],
+          ])}
+          fill={C.honey}
+          opacity={flicker ? 0.45 : 0.32}
+        />
+      )}
+
+      {/* Brick Chimney (x = 50..57, y = 20..36) */}
+      <rect x={50} y={22} width={7} height={15} fill={roofShade} />
+      <rect x={49} y={20} width={9} height={3} fill={roofMain} />
+      <path d={rectsPath([[51, 24, 2, 1], [54, 26, 2, 1], [51, 29, 2, 1]])} fill={roofHi} />
+
+      {/* Continuously curling pixel chimney smoke (night & dusk) */}
+      {cp < 0.82 && (
+        <g fill={C.mist}>
+          <rect x={52 + (smokePhase % 2)} y={17 - smokePhase} width={3} height={2} opacity={0.85} />
+          <rect x={54 + Math.floor(smokePhase / 2)} y={12 - smokePhase} width={4} height={3} opacity={0.65} />
+          <rect x={57 + (smokePhase % 3)} y={7 - Math.floor(smokePhase / 2)} width={5} height={3} opacity={0.4} />
+        </g>
+      )}
+
+      {/* Clean Plaster Cottage Body + Eave Shadow + Stone Foundation */}
+      <rect x={19} y={42} width={42} height={26} fill={wallMain} />
+      <rect x={19} y={42} width={42} height={3} fill={wallShade} />
+      <rect x={19} y={42} width={2} height={26} fill={wallShade} />
+      <rect x={59} y={42} width={2} height={26} fill={wallShade} />
+      <rect x={18} y={65} width={44} height={3} fill={wood} />
+
+      {/* Pitched Scalloped Tile Roof */}
+      <path d={rectsPath(roofSteps)} fill={roofMain} />
+      <path d={rectsPath(roofHighlight)} fill={roofHi} />
+      <rect x={13} y={41} width={54} height={2} fill={roofShade} />
+
+      {/* Hanging Porch Lantern on Left Eave (x = 13..17, y = 43..52) */}
+      <rect x={15} y={43} width={1} height={3} fill={wood} />
+      <rect x={14} y={46} width={3} height={1} fill={wood} />
+      <rect x={14} y={47} width={3} height={4} fill={lampOn ? C.cream : C.coral} />
+      {lampOn && <rect x={12} y={46} width={7} height={6} fill={C.honey} opacity={0.28} />}
+      <rect x={14} y={51} width={3} height={1} fill={wood} />
+
+      {/* 4-Pane Mullioned Window (x = 24..38, y = 48..60) + Cozy Rose Flower-Box */}
+      <rect x={24} y={48} width={14} height={12} fill={wood} />
+      <rect x={25} y={49} width={12} height={10} fill={winGlass} />
+      {/* Top-left bright reflection / warm curtain corner */}
+      <path d={rectsPath([[25, 49, 5, 4], [32, 49, 5, 2]])} fill={winHi} />
+      {/* Thin 1px muntin cross */}
+      <rect x={30} y={49} width={2} height={10} fill={wood} />
+      <rect x={25} y={53} width={12} height={2} fill={wood} />
+      {/* Windowsill + pixel flower box with tiny rosebuds */}
+      <rect x={23} y={59} width={16} height={2} fill={woodHi} />
+      <rect x={24} y={61} width={14} height={3} fill={mix3(C.slate, C.sageDark, C.sageMid, cp)} />
+      <path
+        d={rectsPath([[26, 60, 2, 2], [30, 60, 2, 2], [34, 60, 2, 2]])}
+        fill={cp < 0.4 ? C.accent : C.coral}
+      />
+
+      {/* Arched Wooden Front Door (x = 44..55, y = 49..68) */}
+      <rect x={45} y={49} width={10} height={19} fill={wood} />
+      <rect x={44} y={51} width={12} height={17} fill={wood} />
+      <rect x={46} y={51} width={8} height={17} fill={woodHi} />
+      {/* Subtle plank grooves + tiny round transom + golden knob */}
+      <rect x={49} y={52} width={1} height={16} fill={wood} />
+      <rect x={52} y={52} width={1} height={16} fill={wood} />
+      <rect x={48} y={52} width={4} height={2} fill={lampOn ? C.honey : C.petal} />
+      <rect x={52} y={59} width={2} height={2} fill={C.cream} />
+
+      {/* Cute Rose Mailbox on Right (x = 64..70, y = 55..68) */}
+      <rect x={66} y={60} width={2} height={8} fill={wood} />
+      <rect x={64} y={55} width={6} height={5} fill={roofMain} />
+      <rect x={65} y={54} width={4} height={1} fill={roofHi} />
+      <rect x={68} y={56} width={2} height={2} fill={C.cream} />
+    </g>
+  );
+}
+
+function Bunny({ p, motion, facing, tick }) {
+  const bunnyPal = {
+    B: mix3(C.mist, C.white, C.white, p),
+    s: mix3(C.blush, C.petal, C.petal, p),
+    p: mix3(C.coral, C.blush, C.blush, p),
+    e: C.ink,
+    w: C.white,
+    n: C.carmine,
+  };
+
+  let sprite = BUNNY_SIT;
+  let dy = 0;
+
+  if (motion > 0.14) {
+    const stride = (Math.floor(Math.abs(p) * 24) + tick) % 2;
+    sprite = stride === 0 ? BUNNY_WALK_0 : BUNNY_WALK_1;
+    dy = stride === 1 ? -2 : 0;
+  } else if (p < 0.18) {
+    // Gentle sleeping chest breath
+    sprite = tick % 8 < 4 ? BUNNY_SLEEP_0 : BUNNY_SLEEP_1;
+  } else if (p < 0.36) {
+    sprite = BUNNY_WAKE;
+  } else if (p < 0.68) {
+    // Sitting at sunset: periodic blink + playful ear twitch!
+    const phase = tick % 20;
+    sprite = phase === 0 || phase === 1 ? BUNNY_SIT_BLINK : phase === 10 || phase === 11 ? BUNNY_SIT_TWITCH : BUNNY_SIT;
+  } else if (p < 0.84) {
+    sprite = tick % 4 < 2 ? BUNNY_SIT : BUNNY_WALK_1;
+  } else {
+    // Daytime idle joyful 6-step hop cycle right outside the cottage door!
+    const hop = tick % 6;
+    if (hop === 0) {
+      sprite = BUNNY_SIT;
+      dy = 0;
+    } else if (hop === 1) {
+      sprite = BUNNY_WALK_0;
+      dy = -3;
+    } else if (hop === 2) {
+      sprite = BUNNY_WALK_1;
+      dy = -6;
+    } else if (hop === 3) {
+      sprite = BUNNY_WALK_0;
+      dy = -3;
+    } else {
+      sprite = BUNNY_SIT;
+      dy = 0;
+    }
+  }
+
+  const flipX = facing < 0;
+  const showSleepZ = p < 0.18 && motion <= 0.14;
+  const zCycle = tick % 8;
+  const zx = flipX ? -6 : 22;
+
+  return (
+    <g>
+      {/* Soft shadow shrinking slightly during hop */}
+      <rect
+        x={dy < -2 ? 5 : 3}
+        y={23}
+        width={dy < -2 ? 14 : 18}
+        height={2}
+        fill={mix3(C.ink, C.wine, C.coral, p)}
+        opacity={0.35}
+      />
+      {renderSprite(sprite, bunnyPal, 0, dy, flipX, 1)}
+      {showSleepZ && (
+        <g>
+          <g opacity={zCycle < 6 ? 0.92 : 0.45}>
+            {renderSprite(Z_BIG, { z: C.cream }, zx, 6 - zCycle, false, 1)}
+          </g>
+          <g opacity={zCycle >= 2 ? 0.85 : 0.35}>
+            {renderSprite(Z_SM, { z: C.petal }, zx + (flipX ? -6 : 7), -1 - Math.floor(zCycle / 2), false, 1)}
           </g>
         </g>
-      </g>
-      {/* Night "z z" while sleeping */}
-      <g opacity={1 - smooth(0.04, 0.22, p)} className="dn-zzz">
-        <text x={facing > 0 ? 5 : -9} y="-12" fontSize="4.2" fontWeight="700" fill="#f6c8d8">
-          z
-        </text>
-        <text x={facing > 0 ? 8 : -12} y="-16" fontSize="3.2" fontWeight="700" fill="#f6c8d8">
-          z
-        </text>
-      </g>
+      )}
     </g>
   );
 }
 
 export function DayNightScene({ p, motion = 0, facing = -1 }) {
-  const uid = useId().replace(/[^a-zA-Z0-9]/g, '');
-  const duskW = smooth(0, 0.5, p);
-  const dayW = smooth(0.5, 1, p);
-  const moonY = lerp(9, 30, smooth(0.15, 0.55, p));
-  // Sunset sits on the right hill at dusk, then climbs to the upper-left by noon.
-  const sunY = p < 0.5 ? lerp(36, 21, smooth(0.25, 0.5, p)) : lerp(21, 9, smooth(0.5, 1, p));
-  const sunX = lerp(76, 52, smooth(0.5, 1, p));
-  const glowW = 1 - smooth(0.55, 0.85, p); // cottage lamp: on at night & dusk, off by day
-  const bloom = lerp(0.45, 1, smooth(0.4, 0.95, p));
-  const sunR = lerp(5.2, 4.2, smooth(0.5, 1, p));
-  // The bunny wanders opposite to the lens: asleep by the rose bush at night, under the lens at
-  // dusk, and hopping near the cottage door by day.
-  const bunnyX = lerp(80, 30, p);
+  const tick = usePixelTick();
+  const cp = clamp(p, 0, 1);
+
+  // Clean 6-band stepped 16-bit sky (zero noisy dotted dithering, zero smooth gradients!)
+  const sky0 = mix3(C.ink, C.wine, C.blush, cp);
+  const sky1 = mix3(C.ink, C.crimson, C.blush, cp);
+  const sky2 = mix3(C.plum, C.carmine, C.petal, cp);
+  const sky3 = mix3(C.plum, C.coral, C.petal, cp);
+  const sky4 = mix3(C.mulberry, C.coral, C.mist, cp);
+  const sky5 = mix3(C.mulberry, C.peach, C.white, cp);
+
+  const farMtn = mix3(C.plum, C.crimson, C.petal, cp);
+  const nearMtn = mix3(C.ink, C.accent, C.blush, cp);
+  const turfTop = mix3(C.wine, C.carmine, C.coral, cp);
+  const turfMid = mix3(C.mulberry, C.accent, C.carmine, cp);
+  const turfDeep = mix3(C.plum, C.wine, C.accent, cp);
+
+  // Celestial integer positions
+  const showNight = cp < 0.48;
+  const moonY = Math.round(lerp(8, 48, smooth(0.14, 0.48, cp)));
+  const showSun = cp >= 0.24;
+  const sunX = Math.round(lerp(116, 128, smooth(0.5, 1, cp)));
+  const sunY = cp < 0.5
+    ? Math.round(lerp(60, 38, smooth(0.24, 0.5, cp)))
+    : Math.round(lerp(38, 9, smooth(0.5, 1, cp)));
+
+  // Shooting star streak every ~2.5s at night
+  const shootStep = cp < 0.34 ? tick % 20 : -1;
+
+  // Fairy lights visible at BOTH night & dusk (twinkling continuously even when idle!)
+  const fairyOpacity = Number((1 - smooth(0.62, 0.85, cp)).toFixed(2));
+  const showClouds = cp >= 0.46;
+  const cloudDriftA = (Math.floor(tick / 3) % 16) - 8;
+  const cloudDriftB = (Math.floor(tick / 4) % 14) - 7;
+
+  // Rose Garden 3-stage bloom
+  const bloomStage = cp < 0.35 ? 0 : cp < 0.72 ? 1 : 2;
+  const rosePal = {
+    A: C.accent,
+    c: C.carmine,
+    R: C.coral,
+    p: C.petal,
+    l: mix3(C.slate, C.sageDark, C.sageDark, cp),
+  };
+  const fenceMain = mix3(C.wine, C.petal, C.white, cp);
+  const fenceShade = mix3(C.mulberry, C.blush, C.petal, cp);
+
+  // Bunny center X: 138 (night sleeping beside garden) -> 112 (dead center under Dusk lens) -> 80 (hopping outside cottage!)
+  const bunnyCx = Math.round(lerp(138, 82, cp));
+
+  // Butterfly wing frame (3-frame smooth flap!) & orbital float
+  const wingIdx = tick % 4;
+  const bflyA = wingIdx === 0 ? BFLY_OPEN : wingIdx === 2 ? BFLY_CLOSED : BFLY_MID;
+  const bflyB = wingIdx === 2 ? BFLY_OPEN : wingIdx === 0 ? BFLY_CLOSED : BFLY_MID;
+  const bflyFloatX = Math.round(Math.sin((tick / 12) * Math.PI * 2) * 4);
+  const bflyFloatY = Math.round(Math.cos((tick / 12) * Math.PI * 2) * 2);
+
   return (
-    <svg className="dn-scene" viewBox={`0 0 ${VW} ${VH}`} width={W} height={H} aria-hidden="true">
-      <defs>
-        <linearGradient id={`night${uid}`} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor="#1d1027" />
-          <stop offset="1" stopColor="#47213f" />
-        </linearGradient>
-        <linearGradient id={`dusk${uid}`} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor="#6d3d7e" />
-          <stop offset="0.55" stopColor="#e8708a" />
-          <stop offset="1" stopColor="#ffc19a" />
-        </linearGradient>
-        <linearGradient id={`day${uid}`} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor="#ffd3e1" />
-          <stop offset="1" stopColor="#fff6f8" />
-        </linearGradient>
-        <radialGradient id={`glow${uid}`}>
-          <stop offset="0" stopColor="#fff3c4" stopOpacity="0.9" />
-          <stop offset="1" stopColor="#fff3c4" stopOpacity="0" />
-        </radialGradient>
-        <radialGradient id={`lamp${uid}`}>
-          <stop offset="0" stopColor="#ffcf73" stopOpacity="0.95" />
-          <stop offset="1" stopColor="#ffcf73" stopOpacity="0" />
-        </radialGradient>
-        <mask id={`moon${uid}`}>
-          <circle cx="0" cy="0" r="4.4" fill="#fff" />
-          <circle cx="2.1" cy="-1.7" r="3.8" fill="#000" />
-        </mask>
-      </defs>
+    <svg
+      className="dn-scene"
+      viewBox={`0 0 ${VW} ${VH}`}
+      width={W}
+      height={H}
+      shapeRendering="crispEdges"
+      aria-hidden="true"
+    >
+      {/* 6-band crisp flat pixel sky */}
+      <rect x={0} y={0} width={VW} height={11} fill={sky0} />
+      <rect x={0} y={11} width={VW} height={11} fill={sky1} />
+      <rect x={0} y={22} width={VW} height={11} fill={sky2} />
+      <rect x={0} y={33} width={VW} height={11} fill={sky3} />
+      <rect x={0} y={44} width={VW} height={12} fill={sky4} />
+      <rect x={0} y={56} width={VW} height={12} fill={sky5} />
 
-      <rect width={VW} height={VH} fill={`url(#night${uid})`} />
-      <rect width={VW} height={VH} fill={`url(#dusk${uid})`} opacity={duskW} />
-      <rect width={VW} height={VH} fill={`url(#day${uid})`} opacity={dayW} />
-
-      {/* Night: twinkling stars + crescent moon */}
-      <g opacity={1 - smooth(0.1, 0.5, p)}>
-        {STARS.map(([x, y, r], i) => (
-          <circle key={i} className="dn-star" cx={x} cy={y} r={r} fill="#ffe9f1" style={{ animationDelay: `${i * 0.37}s` }} />
-        ))}
-      </g>
-      <g transform={`translate(52 ${moonY.toFixed(2)})`} opacity={1 - smooth(0.3, 0.55, p)}>
-        <circle r="8" fill={`url(#glow${uid})`} opacity="0.35" />
-        <circle r="4.4" fill="#fde6ee" mask={`url(#moon${uid})`} />
-      </g>
-      <g opacity={1 - smooth(0.05, 0.3, p)}>
-        <line className="dn-shoot" x1="70" y1="2" x2="76" y2="0" stroke="#fff3f8" strokeWidth="0.6" strokeLinecap="round" />
-      </g>
-
-      {/* Dusk: warm string lights */}
-      <g opacity={tri(p)}>
-        <path d="M0 3 Q 24 10 48 5 Q 72 10 96 3" fill="none" stroke="rgba(60,20,40,0.45)" strokeWidth="0.5" />
-        {BULBS.map((x, i) => {
-          // Sit each bulb on the quadratic wire: (0,3)-(24,10)-(48,5) then (48,5)-(72,10)-(96,3)
-          const left = x <= 48;
-          const t = left ? x / 48 : (x - 48) / 48;
-          const [y0, y1] = left ? [3, 5] : [5, 3];
-          const y = (1 - t) * (1 - t) * y0 + 2 * (1 - t) * t * 10 + t * t * y1;
-          return (
-            <circle
-              key={x}
-              className="dn-bulb"
-              cx={x}
-              cy={y + 1.2}
-              r="0.95"
-              fill={i % 2 ? '#ffd27a' : '#ff9fbd'}
-              style={{ animationDelay: `${i * 0.23}s` }}
+      {/* Night Sky: pinpoint stars, sparkling diamond stars, shooting star & crescent moon */}
+      {showNight && (
+        <g opacity={Number((1 - smooth(0.22, 0.48, cp)).toFixed(2))}>
+          {STARS.map(([sx, sy], i) => {
+            const phase = (tick + i * 3) % 8;
+            const size = phase < 2 ? 2 : 1;
+            return (
+              <rect
+                key={i}
+                x={sx}
+                y={sy}
+                width={size}
+                height={size}
+                fill={phase < 4 ? C.white : C.blush}
+                opacity={phase === 7 ? 0.3 : 1}
+              />
+            );
+          })}
+          {/* Twinkling 5x5 pixel diamond stars */}
+          <path
+            d={
+              tick % 4 < 2
+                ? 'M34 10h1v5h-1ZM32 12h5v1h-5ZM154 9h1v5h-1ZM152 11h5v1h-5Z'
+                : 'M34 11h1v3h-1ZM33 12h3v1h-3ZM154 10h1v3h-1ZM153 11h3v1h-3Z'
+            }
+            fill={C.cream}
+          />
+          {shootStep >= 0 && shootStep < 5 && (
+            <path
+              d={rectsPath([
+                [188 - shootStep * 14, 6 + shootStep * 4, 5, 1],
+                [193 - shootStep * 14, 5 + shootStep * 4, 4, 1],
+                [197 - shootStep * 14, 4 + shootStep * 4, 2, 1],
+              ])}
+              fill={C.cream}
             />
-          );
-        })}
-      </g>
-
-      {/* Sun: rises from the horizon at dusk to high noon */}
-      <g transform={`translate(${sunX.toFixed(2)} ${sunY.toFixed(2)})`} opacity={smooth(0.26, 0.45, p)}>
-        <circle r={sunR * 2.4} fill={`url(#glow${uid})`} opacity={lerp(0.5, 0.8, dayW)} />
-        <g className="dn-rays" opacity={smooth(0.75, 1, p)}>
-          {[0, 45, 90, 135, 180, 225, 270, 315].map((a) => (
-            <rect key={a} x="-0.35" y={-sunR - 2.6} width="0.7" height="1.6" rx="0.35" fill="#ffc46b" transform={`rotate(${a})`} />
-          ))}
+          )}
+          {renderSprite(MOON_SPRITE, { M: C.cream, m: C.honey }, 78, moonY, false, 1)}
         </g>
-        <circle r={sunR} fill={mixHex('#ff7d6b', '#ffd36b', dayW)} />
-      </g>
+      )}
 
-      {/* Day: drifting clouds + falling petals */}
-      <g opacity={smooth(0.62, 1, p)}>
-        <g className="dn-cloud">
-          <circle cx="62" cy="9" r="2.6" fill="#fff" />
-          <circle cx="65.5" cy="8" r="3.3" fill="#fff" />
-          <circle cx="69" cy="9.4" r="2.4" fill="#fff" />
+      {/* Pixel Sun (sinking gracefully behind dusk hills -> rising high with pulsing sunbeams by day) */}
+      {showSun && (
+        <g opacity={Number(smooth(0.24, 0.42, cp).toFixed(2))}>
+          {renderSprite(
+            SUN_SPRITE,
+            {
+              S: cp < 0.6 ? C.peach : C.honey,
+              c: C.cream,
+              C: C.white,
+            },
+            sunX,
+            sunY,
+            false,
+            1
+          )}
+          {cp >= 0.7 && (
+            <path
+              d={
+                tick % 4 < 2
+                  ? rectsPath([
+                      [sunX + 8, sunY - 5, 2, 3],
+                      [sunX + 8, sunY + 18, 2, 3],
+                      [sunX - 5, sunY + 7, 3, 2],
+                      [sunX + 20, sunY + 7, 3, 2],
+                    ])
+                  : rectsPath([
+                      [sunX - 2, sunY - 2, 2, 2],
+                      [sunX + 18, sunY - 2, 2, 2],
+                      [sunX - 2, sunY + 16, 2, 2],
+                      [sunX + 18, sunY + 16, 2, 2],
+                    ])
+              }
+              fill={C.honey}
+            />
+          )}
         </g>
-        <g className="dn-cloud dn-cloud-b">
-          <circle cx="35" cy="6.5" r="1.6" fill="#fff" />
-          <circle cx="37.3" cy="5.8" r="2.1" fill="#fff" />
-          <circle cx="39.5" cy="6.7" r="1.5" fill="#fff" />
-        </g>
-        {[24, 58, 84].map((x, i) => (
-          <ellipse key={x} className="dn-petal" cx={x} cy="-2" rx="1.1" ry="0.6" fill="#f48fb1" style={{ animationDelay: `${i * 1.3}s` }} />
-        ))}
-      </g>
+      )}
 
-      {/* Hills */}
+      {/* Daytime sculpted clouds drifting continuously in integer steps */}
+      {showClouds && (
+        <g opacity={Number(smooth(0.46, 0.76, cp).toFixed(2))}>
+          {renderSprite(CLOUD_LG, { C: C.white, s: C.mist }, 76 + cloudDriftA, 11, false, 1)}
+          {renderSprite(CLOUD_SM, { C: C.white, s: C.mist }, 172 - cloudDriftB, 8, false, 1)}
+        </g>
+      )}
+
+      {/* Stepped pixel mountains (clips the lower half of the setting dusk sun cleanly) */}
+      <path d={FAR_MOUNTAIN_PATH} fill={farMtn} />
+      <path d={NEAR_MOUNTAIN_PATH} fill={nearMtn} />
+
+      {/* Twinkling fairy string lights (alive at both Night & Dusk!) */}
+      {fairyOpacity > 0.02 && (
+        <g opacity={fairyOpacity}>
+          <path d={WIRE_PATH} fill={C.plum} opacity={0.75} />
+          {FAIRY_XS.map((bx, i) => {
+            const by = WIRE_POINTS[bx][1];
+            const phase = (tick + i * 2) % 6;
+            const palette = [C.cream, C.blush, C.honey, C.peach];
+            const col = palette[i % palette.length];
+            return (
+              <g key={bx}>
+                {phase < 3 && (
+                  <rect x={bx - 1} y={by + 1} width={4} height={4} fill={col} opacity={0.3} />
+                )}
+                <rect x={bx} y={by + 2} width={2} height={2} fill={phase < 4 ? col : C.wine} />
+              </g>
+            );
+          })}
+        </g>
+      )}
+
+      {/* Dusk gliding birds (2-frame gentle wingbeat) */}
+      {tri(cp) > 0.15 && (
+        <g fill={C.wine} opacity={Number(tri(cp).toFixed(2))}>
+          <path
+            d={
+              tick % 4 < 2
+                ? rectsPath([
+                    [88 + (tick % 12), 23, 3, 1],
+                    [91 + (tick % 12), 24, 2, 1],
+                    [93 + (tick % 12), 23, 3, 1],
+                    [140 - (tick % 10), 20, 3, 1],
+                    [143 - (tick % 10), 21, 2, 1],
+                    [145 - (tick % 10), 20, 3, 1],
+                  ])
+                : rectsPath([
+                    [88 + (tick % 12), 24, 8, 1],
+                    [140 - (tick % 10), 21, 8, 1],
+                  ])
+            }
+          />
+        </g>
+      )}
+
+      {/* Foreground Layered Meadow, Grass Blades & Stepping Stones */}
+      <rect x={0} y={GROUND} width={VW} height={4} fill={turfTop} />
+      <rect x={0} y={GROUND + 4} width={VW} height={5} fill={turfMid} />
+      <rect x={0} y={GROUND + 9} width={VW} height={VH - GROUND - 9} fill={turfDeep} />
+      {/* Soft grass highlight flecks */}
       <path
-        d={`M0 25 Q 16 17 34 22 Q 54 14 72 21 Q 86 17 ${VW} 20 V ${VH} H 0 Z`}
-        fill={mix3('#341a36', '#a2507a', '#f6c3d2', p)}
+        d={rectsPath([
+          [6, 69, 8, 1], [74, 69, 10, 1], [104, 70, 8, 1], [132, 69, 9, 1], [210, 69, 8, 1],
+        ])}
+        fill={farMtn}
       />
-      <path d={`M0 ${GROUND} Q 26 24.5 50 27.5 T ${VW} 26.5 V ${VH} H 0 Z`} fill={mix3('#4a2240', '#c8607f', '#eea2b9', p)} />
+      {/* Cottage cobblestone stepping-stone path */}
+      <path
+        d={rectsPath([
+          [46, 70, 9, 3], [58, 74, 9, 3], [70, 72, 8, 3], [82, 75, 7, 2],
+        ])}
+        fill={C.petal}
+        opacity={0.78}
+      />
+      {/* Fine pixel meadow grass tufts */}
+      <path
+        d={rectsPath([
+          [8, 65, 1, 3], [10, 66, 1, 2], [88, 66, 1, 2], [90, 65, 1, 3],
+          [144, 65, 1, 3], [146, 66, 1, 2], [214, 65, 1, 3],
+        ])}
+        fill={turfTop}
+      />
 
-      {/* Grass tufts */}
-      <g stroke={mix3('#6a3a5c', '#e08aa3', '#d77f9c', p)} strokeWidth="0.45" strokeLinecap="round" fill="none">
-        {[4, 27, 41, 63, 92].map((x) => (
-          <path key={x} d={`M${x} 30 l-0.8 -1.8 M${x} 30 l0 -2.2 M${x} 30 l0.8 -1.7`} />
-        ))}
-      </g>
+      {/* Left Zone (x = 12..70): Architectural Lineless Rose-Porcelain Cottage */}
+      <PixelCottage cp={cp} tick={tick} />
 
-      {/* Cottage: window lamp glows at night, chimney smoke curls at dusk */}
-      <g transform="translate(14 27.4)">
-        <circle cx="-2.5" cy="-4.4" r="6" fill={`url(#lamp${uid})`} opacity={glowW * 0.85} />
-        <rect x="2.6" y="-13" width="1.8" height="4" fill={mix3('#5c1f3b', '#8f2a50', '#c2456f', p)} />
-        <rect x="-6" y="-8" width="12" height="8" rx="0.8" fill={mix3('#4f2846', '#f0c4d1', '#fff4f7', p)} />
-        <path d="M-7.4 -7.4 L0 -13.4 L7.4 -7.4 Z" fill={mix3('#6e1f42', '#a32952', '#c2456f', p)} />
-        <rect x="-4.3" y="-6" width="3.6" height="3.3" rx="0.4" fill={mixHex('#cfe9ff', '#ffd47a', glowW)} />
-        <path d="M-2.5 -6 V -2.7 M-4.3 -4.35 H -0.7" stroke={mix3('#4f2846', '#f0c4d1', '#fff4f7', p)} strokeWidth="0.35" />
-        <rect x="1.2" y="-5" width="2.8" height="5" rx="1.4" fill={mix3('#3a1530', '#8f2a50', '#a32952', p)} />
-        <circle cx="3.4" cy="-2.4" r="0.25" fill="#ffd47a" />
-        <g opacity={(1 - dayW) * 0.75}>
-          {[0, 1, 2].map((i) => (
-            <circle key={i} className="dn-smoke" cx="3.5" cy="-14" r={0.8 + i * 0.25} fill="#f3dce6" style={{ animationDelay: `${i * 0.9}s` }} />
-          ))}
+      {/* Right Zone (x = 148..214): White Picket Fence + Sculpted 3-Tone Rose Garden + Butterflies */}
+      <path d={FENCE_PICKETS_PATH} fill={fenceMain} />
+      <rect x={150} y={54} width={66} height={2} fill={fenceShade} />
+      <rect x={150} y={62} width={66} height={2} fill={fenceShade} />
+
+      {/* Sculpted 3-tone lineless rose foliage bush */}
+      <path d={BUSH_DEEP_PATH} fill={mix3(C.slate, C.sageDark, C.sageDark, cp)} />
+      <path d={BUSH_MID_PATH} fill={mix3(C.mulberry, C.sageDark, C.sageMid, cp)} />
+      <path d={BUSH_LIGHT_PATH} fill={mix3(C.wine, C.sageMid, C.sageLight, cp)} />
+
+      {/* Side garden stems */}
+      <path d={rectsPath([[152, 61, 2, 7], [208, 61, 2, 7]])} fill={mix3(C.slate, C.sageDark, C.sageDark, cp)} />
+
+      {/* 3-Stage Spiral Pixel Roses driven continuously by p */}
+      {bloomStage === 0 && (
+        <g>
+          {renderSprite(ROSE_BUD, rosePal, 166, 48, false, 1)}
+          {renderSprite(ROSE_BUD, rosePal, 179, 43, false, 1)}
+          {renderSprite(ROSE_BUD, rosePal, 192, 50, false, 1)}
+          {renderSprite(ROSE_BUD, rosePal, 174, 57, false, 1)}
+          {renderSprite(ROSE_BUD, rosePal, 187, 58, false, 1)}
         </g>
-      </g>
+      )}
+      {bloomStage === 1 && (
+        <g>
+          {renderSprite(ROSE_HALF, rosePal, 164, 47, false, 1)}
+          {renderSprite(ROSE_HALF, rosePal, 178, 42, false, 1)}
+          {renderSprite(ROSE_HALF, rosePal, 191, 49, false, 1)}
+          {renderSprite(ROSE_HALF, rosePal, 172, 56, false, 1)}
+          {renderSprite(ROSE_HALF, rosePal, 186, 57, false, 1)}
+          {renderSprite(ROSE_BUD, rosePal, 151, 57, false, 1)}
+          {renderSprite(ROSE_BUD, rosePal, 207, 57, false, 1)}
+        </g>
+      )}
+      {bloomStage === 2 && (
+        <g>
+          {renderSprite(ROSE_FULL, rosePal, 162, 46, false, 1)}
+          {renderSprite(ROSE_FULL, rosePal, 177, 40, false, 1)}
+          {renderSprite(ROSE_FULL, rosePal, 191, 48, false, 1)}
+          {renderSprite(ROSE_FULL, rosePal, 170, 55, false, 1)}
+          {renderSprite(ROSE_FULL, rosePal, 185, 56, false, 1)}
+          {renderSprite(ROSE_HALF, rosePal, 149, 55, false, 1)}
+          {renderSprite(ROSE_HALF, rosePal, 205, 55, false, 1)}
+        </g>
+      )}
 
-      {/* Rose bush: buds at night, full bloom at noon, with butterflies */}
-      <g transform="translate(85 27.2)">
-        <circle cx="-4.2" cy="-2.4" r="3" fill={mix3('#2f3a37', '#61604a', '#78b585', p)} />
-        <circle cx="4.2" cy="-2.2" r="2.9" fill={mix3('#2f3a37', '#61604a', '#78b585', p)} />
-        <circle cx="0" cy="-4.2" r="3.7" fill={mix3('#3a4842', '#707452', '#8cc796', p)} />
-        {[
-          [-3.6, -4.2],
-          [1.2, -6.2],
-          [4.2, -3],
-          [-0.6, -2],
-        ].map(([x, y], i) => (
-          <g key={i} transform={`translate(${x} ${y}) scale(${bloom.toFixed(3)})`}>
-            <circle r="1.35" fill={mixHex('#7a2a4a', '#e0457b', smooth(0.3, 1, p))} />
-            <circle r="0.6" fill={mixHex('#5a1d36', '#ffb3cb', smooth(0.3, 1, p))} />
-          </g>
-        ))}
-      </g>
-      <g opacity={smooth(0.7, 1, p)}>
-        {[
-          [76, 15, '#ffd36b'],
-          [90, 11, '#ffffff'],
-        ].map(([x, y, c], i) => (
-          <g key={x} transform={`translate(${x} ${y})`}>
-            <g className="dn-fly" style={{ animationDelay: `${i * 0.8}s` }}>
-              <ellipse className="dn-wing" cx="-0.9" cy="0" rx="1" ry="0.75" fill={c} />
-              <ellipse className="dn-wing dn-wing-r" cx="0.9" cy="0" rx="1" ry="0.75" fill={c} />
-            </g>
-          </g>
-        ))}
-      </g>
+      {/* Daytime fluttering 3-frame pixel butterflies & drifting rose petals */}
+      {cp >= 0.58 && (
+        <g opacity={Number(smooth(0.58, 0.82, cp).toFixed(2))}>
+          {renderSprite(
+            bflyA,
+            { K: C.cream, P: C.blush, A: C.accent },
+            165 + bflyFloatX,
+            30 + bflyFloatY,
+            false,
+            1
+          )}
+          {renderSprite(
+            bflyB,
+            { K: C.white, P: C.petal, A: C.carmine },
+            190 - bflyFloatX,
+            26 - bflyFloatY,
+            true,
+            1
+          )}
+          {/* Gently drifting pink rose petals across the sunny garden */}
+          {[
+            [62, 0],
+            [116, 7],
+            [156, 14],
+            [204, 4],
+          ].map(([bx, off], idx) => {
+            const step = (tick + off) % 24;
+            const px = bx - step * 2;
+            const py = 8 + step * 3;
+            return py < GROUND ? (
+              <rect
+                key={idx}
+                x={px}
+                y={py}
+                width={step % 2 === 0 ? 3 : 2}
+                height={2}
+                fill={idx % 2 === 0 ? C.blush : C.coral}
+                opacity={0.9}
+              />
+            ) : null;
+          })}
+        </g>
+      )}
 
-      {/* Dusk fireflies */}
-      <g opacity={tri(p) * 0.9}>
-        {[
-          [20, 21],
-          [70, 19],
-          [84, 23],
-        ].map(([x, y], i) => (
-          <circle key={x} className="dn-firefly" cx={x} cy={y} r="0.7" fill="#fff1a8" style={{ animationDelay: `${i * 0.6}s` }} />
-        ))}
-      </g>
+      {/* Night & dusk drifting warm pixel fireflies */}
+      {cp < 0.68 && (
+        <g opacity={Number((1 - smooth(0.45, 0.68, cp)).toFixed(2))}>
+          {[
+            [10, 58, 0],
+            [76, 52, 3],
+            [140, 55, 6],
+            [212, 50, 9],
+          ].map(([bx, by, off], i) => {
+            const dx = Math.round(Math.sin(((tick + off) / 10) * Math.PI * 2) * 3);
+            const dy = Math.round(Math.cos(((tick + off) / 8) * Math.PI * 2) * 2);
+            const glow = (tick + off) % 6 < 4;
+            return (
+              <g key={i}>
+                {glow && <rect x={bx + dx - 1} y={by + dy - 1} width={4} height={4} fill={C.honey} opacity={0.28} />}
+                <rect x={bx + dx} y={by + dy} width={2} height={2} fill={C.cream} opacity={glow ? 1 : 0.45} />
+              </g>
+            );
+          })}
+        </g>
+      )}
 
-      <g transform={`translate(${bunnyX.toFixed(2)} ${GROUND - 1.2})`}>
-        <Bunny p={p} motion={motion} facing={facing} />
+      {/* 24x24 Fine Lineless Pixel Bunny */}
+      <g transform={`translate(${bunnyCx - 12} ${GROUND - 23})`}>
+        <Bunny p={cp} motion={motion} facing={facing} tick={tick} />
       </g>
     </svg>
   );
@@ -419,7 +1185,7 @@ export default function DayNightSlider({ mode = 'auto', onChange }) {
     d.moved = true;
     const now = performance.now();
     const dt = Math.max(1, now - d.lastT) / 1000;
-    const inst = (e.clientX - d.lastX) / TRAVEL / dt; // positions per second
+    const inst = (e.clientX - d.lastX) / TRAVEL / dt;
     d.vel = d.vel * 0.65 + inst * 0.35;
     d.lastX = e.clientX;
     d.lastT = now;
@@ -444,7 +1210,6 @@ export default function DayNightSlider({ mode = 'auto', onChange }) {
     setDragging(false);
     lockVerticalSwipes(false);
     if (!d.moved) {
-      // Tap: jump to the stop under the finger; tapping the current stop gives a playful nudge.
       const rect = rootRef.current.getBoundingClientRect();
       const tapPos = clamp((e.clientX - rect.left - PAD - D / 2) / TRAVEL, 0, 1);
       const target = Math.round(tapPos * 2) / 2;
@@ -456,8 +1221,6 @@ export default function DayNightSlider({ mode = 'auto', onChange }) {
       }
       return;
     }
-    // A finger that paused before lifting carries no fling; a released bubble close to a stop
-    // always settles there, so precise drags land exactly where the user let go.
     const idle = performance.now() - d.lastT > 90;
     const vel = idle ? 0 : clamp(d.vel, -4, 4);
     const here = phys.current.x;
@@ -481,7 +1244,9 @@ export default function DayNightSlider({ mode = 'auto', onChange }) {
 
   const lensX = clamp(pos, -0.12, 1.12) * TRAVEL;
   const cx = PAD + D / 2 + lensX;
-  const cy = H / 2 + 4; // focus slightly below centre so the lens frames the ground scene (cottage / bunny / roses)
+  const cy = H / 2 + 4; // focus slightly below centre so the crystal bubble frames cottage / bunny / roses
+  const lensTx = Math.round(D / 2 - cx * ZOOM);
+  const lensTy = Math.round(D / 2 - cy * ZOOM);
 
   return (
     <div
@@ -504,7 +1269,7 @@ export default function DayNightSlider({ mode = 'auto', onChange }) {
       <div className="dn-track">
         <DayNightScene p={clamp(pos, 0, 1)} motion={motion} facing={facing} />
       </div>
-      <div className="dn-lens" style={{ transform: `translate3d(${lensX.toFixed(2)}px,0,0)` }}>
+      <div className="dn-lens" style={{ transform: `translate3d(${Math.round(lensX)}px,0,0)` }}>
         <div
           className="dn-lens-body"
           style={{ '--sx': (1 + Math.abs(squash)).toFixed(3), '--sy': (1 - Math.abs(squash) * 0.7).toFixed(3) }}
@@ -512,7 +1277,7 @@ export default function DayNightSlider({ mode = 'auto', onChange }) {
           <div className="dn-lens-view">
             <div
               className="dn-lens-scene"
-              style={{ transform: `translate(${(D / 2 - cx * ZOOM).toFixed(2)}px, ${(D / 2 - cy * ZOOM).toFixed(2)}px) scale(${ZOOM})` }}
+              style={{ transform: `translate(${lensTx}px, ${lensTy}px) scale(${ZOOM})` }}
             >
               <DayNightScene p={clamp(pos, 0, 1)} motion={motion} facing={facing} />
             </div>
