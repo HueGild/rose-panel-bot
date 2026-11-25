@@ -1,0 +1,359 @@
+import { describe, expect, it, vi } from 'vitest';
+import { verifyTelegramInitData } from '../src/worker/auth.js';
+import { getLeaderboard, getMemberTicket, performCheckin, resolveLevel } from '../src/worker/checkin.js';
+import { DEFAULT_CONFIG, loadPanelConfig, savePanelConfig } from '../src/worker/config.js';
+import worker from '../src/worker/index.js';
+import { fetchKomariStatus, normalizeNodeMetrics } from '../src/worker/komari.js';
+import { applyVisitorAction, getVisitorDetail, listVisitors, upsertVisitorProfile } from '../src/worker/visitors.js';
+
+// Minimal in-memory Cloudflare KV mock
+function createMemoryKV() {
+  const store = new Map();
+  return {
+    store,
+    async get(key, opts) {
+      if (!store.has(key)) return null;
+      const raw = store.get(key);
+      if (opts === 'json' || opts?.type === 'json') {
+        return JSON.parse(raw);
+      }
+      return raw;
+    },
+    async put(key, value) {
+      store.set(key, String(value));
+    },
+    async delete(key) {
+      store.delete(key);
+    },
+    async list({ prefix = '', limit = 1000 } = {}) {
+      const keys = [];
+      for (const name of store.keys()) {
+        if (name.startsWith(prefix)) keys.push({ name });
+        if (keys.length >= limit) break;
+      }
+      return { keys, list_complete: true };
+    },
+  };
+}
+
+// Helper to sign valid Telegram WebApp initData for tests
+async function signInitData(fields, botToken) {
+  const enc = new TextEncoder();
+  const params = new URLSearchParams();
+  Object.entries(fields).forEach(([k, v]) => params.set(k, v));
+
+  const pairs = Array.from(params.entries()).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+  const dataCheckString = pairs.map(([k, v]) => `${k}=${v}`).join('\n');
+
+  const key1 = await crypto.subtle.importKey(
+    'raw',
+    enc.encode('WebAppData'),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign']
+  );
+  const secretKey = new Uint8Array(await crypto.subtle.sign('HMAC', key1, enc.encode(botToken)));
+
+  const key2 = await crypto.subtle.importKey(
+    'raw',
+    secretKey,
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign']
+  );
+  const hashBytes = new Uint8Array(await crypto.subtle.sign('HMAC', key2, enc.encode(dataCheckString)));
+  const hashHex = Array.from(hashBytes, (b) => b.toString(16).padStart(2, '0')).join('');
+
+  params.set('hash', hashHex);
+  return params.toString();
+}
+
+describe('Telegram Mini App initData verification', () => {
+  const token = '123456:TEST_BOT_TOKEN_SECRET';
+
+  it('verifies legitimately signed initData and parses user + start_param', async () => {
+    const now = Math.floor(Date.now() / 1000);
+    const initData = await signInitData(
+      {
+        auth_date: String(now),
+        query_id: 'AAHdF6IQAAAAAN0XohDhrOrc',
+        start_param: 'visitor_998877',
+        user: JSON.stringify({ id: 10001, first_name: 'Rose', username: 'rose_owner' }),
+      },
+      token
+    );
+
+    const res = await verifyTelegramInitData(initData, token);
+    expect(res.ok).toBe(true);
+    expect(res.user.id).toBe(10001);
+    expect(res.startParam).toBe('visitor_998877');
+  });
+
+  it('rejects tampered initData signature', async () => {
+    const now = Math.floor(Date.now() / 1000);
+    const initData = await signInitData(
+      {
+        auth_date: String(now),
+        user: JSON.stringify({ id: 10001, first_name: 'Rose' }),
+      },
+      token
+    );
+    const tampered = initData.replace('10001', '99999');
+    const res = await verifyTelegramInitData(tampered, token);
+    expect(res.ok).toBe(false);
+  });
+
+  it('rejects expired initData', async () => {
+    const old = Math.floor(Date.now() / 1000) - 90000;
+    const initData = await signInitData(
+      {
+        auth_date: String(old),
+        user: JSON.stringify({ id: 10001, first_name: 'Rose' }),
+      },
+      token
+    );
+    const res = await verifyTelegramInitData(initData, token, 3600);
+    expect(res.ok).toBe(false);
+    expect(res.error).toContain('expired');
+  });
+});
+
+describe('Group check-in, streaks, levels and badges', () => {
+  it('handles daily check-in idempotency, streaks, early bird badge, and leaderboard', async () => {
+    const env = { TOPIC_MAP: createMemoryKV() };
+    const cfg = { ...DEFAULT_CONFIG.community, enableCheckin: true, dailyMinPoints: 20, dailyMaxPoints: 20, streakStepBonus: 5 };
+    const user = { id: 55501, first_name: 'Alice', username: 'alice_tg' };
+
+    // Day 1 at 06:30 UTC+8 (22:30 UTC previous day) -> unlocks first_checkin + early_bird
+    const day1 = new Date('2026-11-20T22:30:00Z');
+    const r1 = await performCheckin(env, user, cfg, day1);
+    expect(r1.alreadyCheckedIn).toBe(false);
+    expect(r1.gained).toBe(20);
+    expect(r1.ticket.streak).toBe(1);
+    expect(r1.newlyUnlocked.map((b) => b.id)).toContain('first_checkin');
+    expect(r1.newlyUnlocked.map((b) => b.id)).toContain('early_bird');
+
+    // Same day repeat -> idempotent
+    const r1Repeat = await performCheckin(env, user, cfg, new Date('2026-11-21T04:00:00Z'));
+    expect(r1Repeat.alreadyCheckedIn).toBe(true);
+    expect(r1Repeat.gained).toBe(0);
+
+    // Day 2 -> streak 2, +5 bonus => 25 pts
+    const r2 = await performCheckin(env, user, cfg, new Date('2026-11-22T02:00:00Z'));
+    expect(r2.ticket.streak).toBe(2);
+    expect(r2.gained).toBe(25);
+
+    // Day 3 -> streak 3, unlocks streak_3 badge
+    const r3 = await performCheckin(env, user, cfg, new Date('2026-11-23T02:00:00Z'));
+    expect(r3.ticket.streak).toBe(3);
+    expect(r3.newlyUnlocked.map((b) => b.id)).toContain('streak_3');
+
+    // Skip a day (Day 5) -> streak resets to 1, bestStreak stays 3
+    const r5 = await performCheckin(env, user, cfg, new Date('2026-11-25T02:00:00Z'));
+    expect(r5.ticket.streak).toBe(1);
+    expect(r5.ticket.bestStreak).toBe(3);
+
+    const board = await getLeaderboard(env, 10);
+    expect(board.items).toHaveLength(1);
+    expect(board.items[0].userId).toBe('55501');
+
+    const lvl = resolveLevel(1350);
+    expect(lvl.current.level).toBe(5);
+    expect(lvl.current.title).toBe('知影人');
+  });
+});
+
+describe('Visitor profiles & moderation (telegram_private_chatbot KV compatibility)', () => {
+  it('reads legacy KV keys, supports ban/unban/trust/close/note and filtering', async () => {
+    const kv = createMemoryKV();
+    const env = { TOPIC_MAP: kv, SUPERGROUP_ID: '-1001234567890' };
+
+    // Simulate a legacy user key created by telegram_private_chatbot v5.3
+    await kv.put('user:77701', JSON.stringify({ thread_id: 42, closed: false }));
+    await kv.put('verified:77701', 'turnstile:v1');
+
+    // Plus a new enriched visitor
+    await upsertVisitorProfile(
+      env,
+      { id: 88802, first_name: 'Bob', username: 'bob_dev', language_code: 'zh-hans' },
+      { threadId: 99, incrementMsg: true, lastPreview: '你好，咨询合作' }
+    );
+
+    const listed = await listVisitors(env);
+    expect(listed.stats.total).toBe(2);
+    expect(listed.items.some((v) => v.userId === '77701')).toBe(true);
+    expect(listed.items.some((v) => v.userId === '88802')).toBe(true);
+
+    // Ban Bob -> writes exact `banned:88802 = "1"` key
+    const bannedBob = await applyVisitorAction(env, '88802', 'ban');
+    expect(bannedBob.isBanned).toBe(true);
+    expect(await kv.get('banned:88802')).toBe('1');
+
+    // Add note & filter
+    await applyVisitorAction(env, '88802', 'note', { note: '广告推销号' });
+    const bannedOnly = await listVisitors(env, { filter: 'banned', search: '广告' });
+    expect(bannedOnly.items).toHaveLength(1);
+    expect(bannedOnly.items[0].userId).toBe('88802');
+
+    // Unban & Trust
+    await applyVisitorAction(env, '88802', 'trust');
+    const trustedBob = await getVisitorDetail(env, '88802');
+    expect(trustedBob.isBanned).toBe(false);
+    expect(trustedBob.isTrusted).toBe(true);
+    expect(await kv.get('verified:88802')).toBe('trusted');
+  });
+});
+
+describe('Komari probe adapter', () => {
+  it('normalizes Komari metrics accurately', () => {
+    const node = normalizeNodeMetrics(
+      {
+        uuid: 'node-1',
+        name: 'Tokyo Edge',
+        region: '🇯🇵',
+        tags: 'jp;bgp',
+        mem_total: 2147483648,
+        disk_total: 42949672960,
+        os: 'Debian 12',
+        arch: 'amd64',
+      },
+      {
+        cpu: { usage: 18.44, load1: 0.35 },
+        ram: { total: 2147483648, used: 1073741824 },
+        disk: { total: 42949672960, used: 10737418240 },
+        network: { up: 102400, down: 512000, totalUp: 1000000, totalDown: 2000000 },
+        uptime: 86400,
+      }
+    );
+
+    expect(node.online).toBe(true);
+    expect(node.cpuUsage).toBe(18.4);
+    expect(node.ramUsage).toBe(50);
+    expect(node.diskUsage).toBe(25);
+    expect(node.tags).toEqual(['jp', 'bgp']);
+  });
+
+  it('returns demo nodes when demoMode is enabled without URL', async () => {
+    const env = { TOPIC_MAP: createMemoryKV() };
+    const status = await fetchKomariStatus(env, { ...DEFAULT_CONFIG.probe, demoMode: true, url: '' });
+    expect(status.configured).toBe(true);
+    expect(status.demo).toBe(true);
+    expect(status.nodes.length).toBeGreaterThan(0);
+    expect(status.summary.online).toBeGreaterThan(0);
+  });
+
+  it('fetches live Komari RPC2 nodes when endpoint responds', async () => {
+    const origFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn(async (_url, init) => {
+      const body = JSON.parse(init.body);
+      if (body.method === 'common:getNodes') {
+        return new Response(
+          JSON.stringify({
+            jsonrpc: '2.0',
+            id: 1,
+            result: {
+              'uuid-hk': { name: 'HK-01', region: '🇭🇰', mem_total: 1000, disk_total: 2000 },
+            },
+          }),
+          { status: 200 }
+        );
+      }
+      return new Response(
+        JSON.stringify({
+          jsonrpc: '2.0',
+          id: 2,
+          result: {
+            'uuid-hk': {
+              cpu: { usage: 22.5 },
+              ram: { total: 1000, used: 400 },
+              disk: { total: 2000, used: 500 },
+              uptime: 3600,
+            },
+          },
+        }),
+        { status: 200 }
+      );
+    });
+
+    try {
+      const env = { TOPIC_MAP: createMemoryKV() };
+      const res = await fetchKomariStatus(env, {
+        ...DEFAULT_CONFIG.probe,
+        url: 'https://probe.example.com',
+      });
+      expect(res.protocol).toBe('rpc2');
+      expect(res.nodes).toHaveLength(1);
+      expect(res.nodes[0].name).toBe('HK-01');
+      expect(res.nodes[0].ramUsage).toBe(40);
+    } finally {
+      globalThis.fetch = origFetch;
+    }
+  });
+});
+
+describe('Worker API authorization & config masking', () => {
+  const token = '987654:UNIT_TEST_BOT_TOKEN';
+
+  it('blocks non-admin access to admin endpoints and allows admin config update with secret preservation', async () => {
+    const env = {
+      TOPIC_MAP: createMemoryKV(),
+      BOT_TOKEN: token,
+      ADMIN_IDS: '10001',
+    };
+
+    const now = Math.floor(Date.now() / 1000);
+    const guestInit = await signInitData(
+      { auth_date: String(now), user: JSON.stringify({ id: 20002, first_name: 'Guest' }) },
+      token
+    );
+    const adminInit = await signInitData(
+      { auth_date: String(now), user: JSON.stringify({ id: 10001, first_name: 'Rose' }) },
+      token
+    );
+
+    // Health check
+    const healthRes = await worker.fetch(new Request('https://example.workers.dev/health'), env);
+    expect(healthRes.status).toBe(200);
+
+    // Guest blocked from admin visitors
+    const forbidden = await worker.fetch(
+      new Request('https://example.workers.dev/api/admin/visitors', {
+        headers: { 'X-Telegram-Init-Data': guestInit },
+      }),
+      env
+    );
+    expect(forbidden.status).toBe(403);
+
+    // Admin saves config with secret Komari API key
+    await savePanelConfig(env, { probe: { url: 'https://komari.test', apiKey: 'super-secret-key' } });
+
+    // Admin reads masked config via bootstrap
+    const bootRes = await worker.fetch(
+      new Request('https://example.workers.dev/api/bootstrap', {
+        headers: { 'X-Telegram-Init-Data': adminInit },
+      }),
+      env
+    );
+    const bootJson = await bootRes.json();
+    expect(bootJson.ok).toBe(true);
+    expect(bootJson.isAdmin).toBe(true);
+    expect(bootJson.adminConfig.probe.apiKey).toBe('********');
+
+    // Admin updates display name while sending masked apiKey back -> secret stays intact!
+    await worker.fetch(
+      new Request('https://example.workers.dev/api/admin/config', {
+        method: 'PUT',
+        headers: { 'X-Telegram-Init-Data': adminInit, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          profile: { displayName: 'Rose Studio' },
+          probe: { url: 'https://komari.test', apiKey: '********' },
+        }),
+      }),
+      env
+    );
+
+    const persisted = await loadPanelConfig(env);
+    expect(persisted.profile.displayName).toBe('Rose Studio');
+    expect(persisted.probe.apiKey).toBe('super-secret-key');
+  });
+});

@@ -1,0 +1,469 @@
+import React, { useState } from 'react';
+import {
+  Award,
+  Check,
+  ChevronRight,
+  Copy,
+  ExternalLink,
+  Flame,
+  Globe,
+  MessageCircle,
+  Server,
+  Sparkles,
+  Users,
+  X,
+} from 'lucide-react';
+import { Avatar, StubEmblem } from './Emblems.jsx';
+import { copyText, haptic, openExternalUrl } from '../lib/telegram.js';
+
+export default function TicketTab({
+  data,
+  onNavigate,
+  onCheckin,
+  checkinLoading,
+  onToast,
+}) {
+  const [showLevels, setShowLevels] = useState(false);
+  const [showLogs, setShowLogs] = useState(false);
+
+  const { config, user, isAdmin, checkin, levels = [], visitorSummary } = data;
+  const { profile, community, bot } = config;
+  const enableCheckin = Boolean(community.enableCheckin);
+
+  const statusToneClass =
+    profile.statusTone === 'busy'
+      ? 'amber'
+      : profile.statusTone === 'away'
+        ? 'red'
+        : 'green';
+
+  const handleCopy = async (value, label) => {
+    const ok = await copyText(value);
+    onToast(ok ? `已复制 ${label}` : '复制失败');
+  };
+
+  const openBotPm = () => {
+    const uname = (bot?.username || profile.handle || '').replace(/^@/, '');
+    if (uname) {
+      openExternalUrl(`https://t.me/${uname}`);
+    } else {
+      onToast('直接在机器人私聊窗口发消息即可联系');
+    }
+  };
+
+  // --- Mode B: Community Group Check-in Ticket Stub ---
+  if (enableCheckin && checkin) {
+    const lvl = checkin.level;
+    const emblemVariant =
+      lvl.current.level >= 7 ? 'crown' : lvl.current.level <= 2 ? 'petal' : 'bottle';
+
+    return (
+      <>
+        <div className="ticket-card">
+          <div className="ticket-left">
+            <div>
+              <div className="ticket-user-row">
+                <Avatar userId={checkin.userId} name={checkin.displayName} />
+                <div style={{ minWidth: 0 }}>
+                  <div className="ticket-name">{checkin.displayName}</div>
+                  <div className="ticket-handle">
+                    {checkin.username ? `@${checkin.username}` : `UID ${checkin.userId}`}
+                  </div>
+                </div>
+              </div>
+
+              <div className="ticket-big-stat">
+                <div>
+                  <div className="stub-label">连续签到</div>
+                  <div style={{ display: 'flex', alignItems: 'baseline', marginTop: 2 }}>
+                    <span className="ticket-big-num">{checkin.streak}</span>
+                    <span className="ticket-big-unit">天</span>
+                  </div>
+                </div>
+
+                <button
+                  className={`btn btn-sm ${checkin.checkedInToday ? 'btn-soft' : 'btn-primary'}`}
+                  disabled={checkin.checkedInToday || checkinLoading}
+                  onClick={() => {
+                    haptic('medium');
+                    onCheckin();
+                  }}
+                >
+                  {checkin.checkedInToday ? (
+                    <>
+                      <Check size={14} /> 已签
+                    </>
+                  ) : checkinLoading ? (
+                    '签到中…'
+                  ) : (
+                    <>
+                      <Sparkles size={14} /> 立即签到
+                    </>
+                  )}
+                </button>
+              </div>
+
+              <div className="ticket-caption">
+                累计打卡 {checkin.totalDays} 天 · 最长连签 {checkin.bestStreak} 天
+              </div>
+            </div>
+
+            <div style={{ marginTop: 14 }}>
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  fontSize: 12,
+                  marginBottom: 6,
+                }}
+              >
+                <span style={{ color: 'var(--text-secondary)' }}>
+                  {lvl.next ? `距 Lv.${lvl.next.level} ${lvl.next.title}` : '已达满级巅峰'}
+                </span>
+                <span style={{ fontWeight: 700 }}>
+                  {lvl.next ? `${checkin.points} / ${lvl.next.minXp}` : `${checkin.points}`}
+                </span>
+              </div>
+              <div className="progress-track">
+                <div className="progress-fill" style={{ width: `${lvl.progressPct}%` }} />
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowLevels(true)}
+                style={{
+                  marginTop: 10,
+                  width: '100%',
+                  background: 'transparent',
+                  border: 'none',
+                  padding: 0,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  fontSize: 12,
+                  color: 'var(--text-secondary)',
+                  cursor: 'pointer',
+                }}
+              >
+                <span>全部等级与规则</span>
+                <ChevronRight size={14} />
+              </button>
+            </div>
+          </div>
+
+          <div className="ticket-right">
+            <div className="stub-label">等级</div>
+            <StubEmblem variant={emblemVariant} size={58} />
+            <div className="stub-rank">
+              Lv.{lvl.current.level}
+              <br />
+              {lvl.current.title}
+            </div>
+            <div className="stub-sub">
+              {community.currencyName} {checkin.points}
+              <br />
+              徽章 {checkin.unlockedBadgeCount}/{checkin.totalBadgeCount}
+            </div>
+          </div>
+        </div>
+
+        {/* 7-Day Streak Card */}
+        <div className="card">
+          <div className="card-header" style={{ marginBottom: 4 }}>
+            <span className="card-title" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <Flame size={15} color="var(--accent)" /> 近 7 日打卡足迹
+            </span>
+            <span className="pill rose">
+              +{community.dailyMinPoints}~{community.dailyMaxPoints} {community.currencyName}/日
+            </span>
+          </div>
+          <div className="week-strip">
+            {(checkin.recent7Days || []).map((d) => (
+              <div
+                key={d.date}
+                className={`week-day ${d.checked ? 'checked' : ''} ${d.isToday ? 'today' : ''}`}
+              >
+                <span>{d.isToday ? '今天' : d.label}</span>
+                {d.checked ? <Check size={14} /> : <span style={{ opacity: 0.4 }}>·</span>}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Badges Wall */}
+        <div className="card">
+          <div className="card-header">
+            <span className="card-title" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <Award size={15} color="var(--accent)" /> 成就徽章墙
+            </span>
+            <span className="stub-label">
+              已点亮 {checkin.unlockedBadgeCount} / {checkin.totalBadgeCount}
+            </span>
+          </div>
+          <div className="badge-grid">
+            {(checkin.badges || []).map((b) => (
+              <button
+                key={b.id}
+                type="button"
+                className={`badge-tile ${b.unlocked ? 'unlocked' : 'locked'}`}
+                style={{ border: 'none', cursor: 'pointer' }}
+                onClick={() => onToast(`${b.icon} ${b.name}：${b.desc}${b.unlocked ? '（已解锁）' : '（未解锁）'}`)}
+              >
+                <div className="badge-emoji">{b.icon}</div>
+                <div className="badge-name">{b.name}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Points Ledger */}
+        <div className="card">
+          <button
+            type="button"
+            onClick={() => setShowLogs((v) => !v)}
+            style={{
+              width: '100%',
+              background: 'transparent',
+              border: 'none',
+              padding: 0,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              cursor: 'pointer',
+            }}
+          >
+            <span className="card-title">{community.currencyName}明细</span>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: 'var(--text-muted)' }}>
+              {showLogs ? '收起' : `最近 ${checkin.logs?.length || 0} 条`}
+              <ChevronRight size={14} style={{ transform: showLogs ? 'rotate(90deg)' : 'none', transition: '0.15s' }} />
+            </span>
+          </button>
+
+          {showLogs && (
+            <div style={{ marginTop: 12 }}>
+              {checkin.logs?.length ? (
+                checkin.logs.map((log, idx) => (
+                  <div className="list-row" key={`${log.at}-${idx}`}>
+                    <div className="row-main">
+                      <div className="row-title" style={{ fontSize: 13 }}>
+                        {log.reason}
+                      </div>
+                      <div className="row-desc">{log.date} · 余额 {log.balance}</div>
+                    </div>
+                    <span className="pill rose">+{log.delta}</span>
+                  </div>
+                ))
+              ) : (
+                <div className="empty-state" style={{ padding: '14px 0' }}>
+                  暂无明细，点击上方「立即签到」领取今日第一笔{community.currencyName}吧 🌸
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Compact Owner Card */}
+        <div className="card" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <Avatar src={profile.avatarUrl} name={profile.displayName} size="sm" />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 14, fontWeight: 700 }}>{profile.displayName}</div>
+            <div className="row-desc">{profile.tagline}</div>
+          </div>
+          <button className="btn btn-soft btn-sm" onClick={() => onNavigate('sites')}>
+            小站
+          </button>
+        </div>
+
+        {/* Levels Sheet */}
+        {showLevels && (
+          <div className="sheet-backdrop" onClick={() => setShowLevels(false)}>
+            <div className="sheet-panel" onClick={(e) => e.stopPropagation()}>
+              <div className="sheet-handle" />
+              <div className="sheet-header">
+                <div className="sheet-title">等级成长体系</div>
+                <button className="icon-btn" onClick={() => setShowLevels(false)}>
+                  <X size={16} />
+                </button>
+              </div>
+              <div className="card" style={{ marginBottom: 0 }}>
+                {levels.map((item) => {
+                  const isCurrent = item.level === lvl.current.level;
+                  return (
+                    <div className="list-row" key={item.level}>
+                      <div className="row-main">
+                        <div className="row-title">
+                          <span>Lv.{item.level} {item.title}</span>
+                          {isCurrent && <span className="pill rose">当前等级</span>}
+                        </div>
+                        <div className="row-desc">
+                          达到 {item.minXp} {community.currencyName} 解锁
+                        </div>
+                      </div>
+                      <span
+                        style={{
+                          width: 12,
+                          height: 12,
+                          borderRadius: '50%',
+                          background: item.color,
+                        }}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        )}
+      </>
+    );
+  }
+
+  // --- Mode A: Clean Personal Card Ticket Stub (Default for @Rose202_bot) ---
+  return (
+    <>
+      <div className="ticket-card">
+        <div className="ticket-left">
+          <div>
+            <div className="ticket-user-row">
+              <Avatar
+                src={profile.avatarUrl}
+                userId={isAdmin && user ? user.id : ''}
+                name={profile.displayName}
+              />
+              <div style={{ minWidth: 0 }}>
+                <div className="ticket-name">{profile.displayName}</div>
+                <div className="ticket-handle">{profile.handle}</div>
+              </div>
+            </div>
+
+            <div style={{ marginTop: 12 }}>
+              <span className={`pill ${statusToneClass}`}>
+                <span className="dot" />
+                {profile.statusText || '在线'}
+              </span>
+            </div>
+
+            <div className="ticket-caption" style={{ marginTop: 10 }}>
+              {profile.tagline}
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', gap: 8, marginTop: 14, flexWrap: 'wrap' }}>
+            <button className="btn btn-primary btn-sm" onClick={openBotPm}>
+              <MessageCircle size={14} /> 发私信
+            </button>
+            {profile.handle && (
+              <button
+                className="btn btn-soft btn-sm"
+                onClick={() => handleCopy(profile.handle, '账号')}
+              >
+                <Copy size={13} /> 复制账号
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div className="ticket-right">
+          <div className="stub-label">{profile.ownerTag || '个人名片'}</div>
+          <StubEmblem variant="owner" size={58} />
+          <div className="stub-rank">{profile.badgeTitle || '站长'}</div>
+          <div className="stub-sub">{profile.joinedText || 'RosePanel'}</div>
+        </div>
+      </div>
+
+      {profile.notice && (
+        <div
+          className="card"
+          style={{
+            background: 'var(--accent-soft)',
+            borderColor: 'transparent',
+            padding: '12px 14px',
+            fontSize: 13,
+            color: 'var(--accent)',
+            lineHeight: 1.55,
+          }}
+        >
+          🌸 {profile.notice}
+        </div>
+      )}
+
+      {/* Quick Shortcuts Card */}
+      <div className="card">
+        <div className="card-header">
+          <span className="card-title">快捷直达</span>
+        </div>
+        <div className="list-row" style={{ cursor: 'pointer' }} onClick={() => onNavigate('sites')}>
+          <div className="row-icon-box">
+            <Globe size={18} />
+          </div>
+          <div className="row-main">
+            <div className="row-title">我的个人小站</div>
+            <div className="row-desc">共收录 {config.sites?.length || 0} 个精选站点与服务入口</div>
+          </div>
+          <ChevronRight size={16} color="var(--text-muted)" />
+        </div>
+
+        <div className="list-row" style={{ cursor: 'pointer' }} onClick={() => onNavigate('probe')}>
+          <div className="row-icon-box">
+            <Server size={18} />
+          </div>
+          <div className="row-main">
+            <div className="row-title">{config.probe?.title || 'Komari 节点探针'}</div>
+            <div className="row-desc">{config.probe?.subtitle || '实时查看服务器在线与负载'}</div>
+          </div>
+          <ChevronRight size={16} color="var(--text-muted)" />
+        </div>
+
+        {isAdmin && (
+          <div className="list-row" style={{ cursor: 'pointer' }} onClick={() => onNavigate('visitors')}>
+            <div className="row-icon-box">
+              <Users size={18} />
+            </div>
+            <div className="row-main">
+              <div className="row-title">
+                私聊访客管理
+                <span className="pill rose">仅站长可见</span>
+              </div>
+              <div className="row-desc">
+                累计 {visitorSummary?.total ?? 0} 位访客 · 已拉黑 {visitorSummary?.banned ?? 0} 人
+              </div>
+            </div>
+            <ChevronRight size={16} color="var(--text-muted)" />
+          </div>
+        )}
+      </div>
+
+      {/* Social Links Card */}
+      {profile.socials?.length > 0 && (
+        <div className="card">
+          <div className="card-header">
+            <span className="card-title">联系与社交</span>
+          </div>
+          {profile.socials.map((item, idx) => (
+            <div
+              className="list-row"
+              key={item.id || idx}
+              style={{ cursor: item.url ? 'pointer' : 'default' }}
+              onClick={() => {
+                if (item.url) openExternalUrl(item.url);
+                else handleCopy(item.value, item.label);
+              }}
+            >
+              <div className="row-main">
+                <div className="row-title" style={{ fontSize: 14 }}>
+                  {item.label}
+                </div>
+                <div className="row-desc">{item.value}</div>
+              </div>
+              {item.url ? (
+                <ExternalLink size={15} color="var(--accent)" />
+              ) : (
+                <Copy size={15} color="var(--text-muted)" />
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </>
+  );
+}
