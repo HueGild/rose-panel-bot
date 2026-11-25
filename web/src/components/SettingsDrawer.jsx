@@ -387,7 +387,7 @@ export default function SettingsDrawer({
                       lineHeight: 1.5,
                     }}
                   >
-                    💡 <b>最快捷方式</b>：直接私聊机器人发 <code>/setbadge</code>，再发任意一张贴纸或收藏的 TG 自定义表情即可秒设！也可在下方贴贴纸包链接挑选：
+                    💡 <b>最快捷方式</b>：直接私聊机器人发 <code>/set</code>，再发任意一张贴纸、收藏的 TG 自定义表情或贴纸包链接即可秒设！也可在下方贴贴纸包链接挑选：
                   </div>
 
                   <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
@@ -875,7 +875,7 @@ export default function SettingsDrawer({
                     </button>
                   </div>
                   <div style={{ fontSize: 11, color: 'var(--accent)', marginBottom: 8, lineHeight: 1.5 }}>
-                    💡 既可点右上角「面板添加」拉贴纸包选图出题，也可直接私聊机器人发 <code>/addverify</code> 3 秒直录！
+                    💡 既可点右上角「面板添加」拉贴纸包选图出题，也可直接私聊机器人发 <code>/add</code> 3 秒直录！
                     {(draft.pmBot.stickerChallenges || []).length === 0 &&
                       '（当前题库为空时会自动回退到 Emoji 模式）'}
                   </div>

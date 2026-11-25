@@ -1408,7 +1408,7 @@ export async function handleTelegramUpdate(update, env, requestOrigin) {
         await savePanelConfig(env, { pmBot: { stickerChallenges: list.slice(0, 40) } });
         await tgCall(env, 'sendMessage', {
           chat_id: msg.chat.id,
-          text: `🎉 <b>表情包验证题录入成功！</b>（当前题库共 <b>${list.length}</b> 题）\n\n• 题目：${escapeHtml(parsedQuiz.question)}\n• 正确答案：✅ ${escapeHtml(parsedQuiz.answer)}\n• 干扰项：${parsedQuiz.wrong.map(escapeHtml).join(' / ')}\n\n<i>想继续录下一题随时发 /addverify 即可！</i>`,
+          text: `🎉 <b>表情包验证题录入成功！</b>（当前题库共 <b>${list.length}</b> 题）\n\n• 题目：${escapeHtml(parsedQuiz.question)}\n• 正确答案：✅ ${escapeHtml(parsedQuiz.answer)}\n• 干扰项：${parsedQuiz.wrong.map(escapeHtml).join(' / ')}\n\n<i>想继续录下一题随时发 /add 即可！</i>`,
           parse_mode: 'HTML',
           reply_markup: {
             inline_keyboard: [
