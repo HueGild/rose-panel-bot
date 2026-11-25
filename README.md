@@ -6,6 +6,7 @@
 
 [![Release](https://img.shields.io/github/v/release/mango0114/rose-panel-bot?color=A32952&label=Release&style=flat-square)](https://github.com/mango0114/rose-panel-bot/releases)
 [![Stars](https://img.shields.io/github/stars/mango0114/rose-panel-bot?color=E56B92&style=flat-square)](https://github.com/mango0114/rose-panel-bot/stargazers)
+[![Live Demo](https://img.shields.io/badge/Live%20Demo-%40Rose202__bot-C93B6B?logo=telegram&logoColor=white&style=flat-square)](https://t.me/Rose202_bot)
 [![Cloudflare Workers](https://img.shields.io/badge/Cloudflare-Workers-F38020?logo=cloudflare&logoColor=white&style=flat-square)](https://workers.cloudflare.com/)
 [![Telegram Mini App](https://img.shields.io/badge/Telegram-Mini%20App-26A5E4?logo=telegram&logoColor=white&style=flat-square)](https://core.telegram.org/bots/webapps)
 [![License: MIT](https://img.shields.io/badge/License-MIT-A32952?style=flat-square)](LICENSE)
@@ -15,7 +16,9 @@
   <a href="README_EN.md">🇺🇸 English</a> ·
   <a href="docs/SETUP_GUIDE.md">🐣 零基础 5 分钟教程</a> ·
   <a href="AGENTS.md">🤖 AI 一键部署协议</a> ·
-  <a href="CHANGELOG.md">📋 更新日志</a>
+  <a href="CHANGELOG.md">📋 更新日志</a> ·
+  <a href="https://t.me/Rose202_bot">💬 在线体验 / 联系作者</a> ·
+  <a href="#-赞助与支持">🧧 赞助支持</a>
 </p>
 
 <p>
@@ -248,8 +251,47 @@ npx wrangler dev --ip 127.0.0.1 --port 8787 --persist-to ./.wrangler/state --sho
 - 协议适配与兼容：[Komari Monitor](https://github.com/komari-monitor/komari) · [Combot Anti-Spam (CAS)](https://cas.chat/) · [jikssha/telegram_private_chatbot](https://github.com/jikssha/telegram_private_chatbot)
 - 开源基础设施：[Cloudflare Workers](https://workers.cloudflare.com/) · [Telegram Mini Apps](https://core.telegram.org/bots/webapps) · [React](https://react.dev/) · [Vite](https://vitejs.dev/) · [Lucide Icons](https://lucide.dev/) · [lottie-web](https://github.com/airbnb/lottie-web)
 
+---
+
+## 🧧 赞助与支持
+
+本项目以 MIT 协议完全免费开源，所有核心功能零付费墙、零数据收集。如果你喜欢 **RosePanel Bot**，或者它帮你挡掉了恼人的 TG 广告骚扰，欢迎请作者喝杯咖啡 / 投喂一点 AI 算力，支持项目持续迭代更强的功能 ☕✨
+
+- **在线体验 & 联系作者**：👉 **[@Rose202_bot](https://t.me/Rose202_bot)**（可亲手体验 0 秒启动个人面板与表情包看图验证）
+- **支付宝口令红包赞助（保护双方隐私）**：
+  1. 在支付宝生成一个任意金额的 **「口令红包」**；
+  2. 私聊 **[@Rose202_bot](https://t.me/Rose202_bot)** 通过验证后，发送 **口令 + 你想展示在名单中的昵称与留言**（支持匿名）；
+  3. 收到后会第一时间将你的支持记录到下方赞助者名单中！
+
+### 🏆 赞助者名单
+
+感谢以下支持者的慷慨赞助，您的支持是我们持续改进的动力！
+
+<details open>
+<summary><b>展开查看完整赞助者名单（虚位以待 🌸）</b></summary>
+
+| 序号 | 赞助者 | 金额 | 留言 |
+| :---: | :---: | :---: | :--- |
+| 1 | *虚位以待* | — | 成为第一位支持者，点亮开源赞助墙 ✨ |
+
+</details>
+
+---
+
+## 🌟 Star History
+
+<a href="https://www.star-history.com/#mango0114/rose-panel-bot&Date">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=mango0114/rose-panel-bot&type=Date&theme=dark" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=mango0114/rose-panel-bot&type=Date" />
+   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=mango0114/rose-panel-bot&type=Date" width="100%" />
+ </picture>
+</a>
+
+---
+
 <div align="center">
   <br />
-  <sub>如果这个项目帮到了你，欢迎点一颗 ⭐ Star 支持！</sub><br />
+  <b>⭐ 如果这个项目对您有帮助，请给个 Star 支持一下！</b><br /><br />
   <sub>MIT License © 2026 <a href="https://github.com/mango0114">mango0114</a></sub>
 </div>
