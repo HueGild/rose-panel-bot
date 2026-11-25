@@ -41,6 +41,11 @@ export default function TicketTab({
   } = data;
   const { profile, community, bot } = config;
   const enableCheckin = Boolean(community.enableCheckin);
+  const avatarMode = profile.avatarMode || (profile.avatarUrl ? 'custom' : 'bot');
+  const ownerAvatarSrc =
+    avatarMode === 'custom' && profile.avatarUrl
+      ? profile.avatarUrl
+      : `/api/avatar/owner?m=${encodeURIComponent(avatarMode)}`;
 
   const parsedTags = String(profile.tags || '')
     .split(/[,，、;\n]+/)
@@ -288,7 +293,7 @@ export default function TicketTab({
 
         {/* Compact Owner Card */}
         <div className="card" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <Avatar src={profile.avatarUrl} name={profile.displayName} size="sm" />
+          <Avatar src={ownerAvatarSrc} name={profile.displayName} size="sm" />
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 14, fontWeight: 700 }}>{profile.displayName}</div>
             <div className="row-desc">{profile.tagline}</div>
@@ -349,11 +354,7 @@ export default function TicketTab({
         <div className="ticket-left">
           <div>
             <div className="ticket-user-row">
-              <Avatar
-                src={profile.avatarUrl}
-                userId={isAdmin && user ? user.id : ''}
-                name={profile.displayName}
-              />
+              <Avatar src={ownerAvatarSrc} name={profile.displayName} />
               <div style={{ minWidth: 0 }}>
                 <div className="ticket-name">{profile.displayName}</div>
                 <div className="ticket-handle">{profile.handle}</div>

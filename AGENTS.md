@@ -61,5 +61,6 @@ After deploying, remind or assist the user with these 3 final steps:
 - `src/worker/bot.js` — Webhook router for PM forwarding, 4-mode verification (Sticker Quiz / Emoji / Quiz / Turnstile), admin `/set` (alias `/setbadge`) & `/add` (alias `/addverify`), group `/checkin` & `/rank`.
 - `src/worker/visitors.js` — KV-compatible visitor profiles, bidirectional photo/link archive, and two-mode history clear.
 - `src/worker/komari.js` — Pluggable probe module: `PROBE_PROVIDERS` registry (`komari`, `nezha`, `nodeget`, `json`) + `normalizeNodeMetrics`. Add new probe providers here.
+- `src/worker/updater.js` & `src/worker/version.js` — Admin-only GitHub latest release checker (6h KV cache) & optional Fork `merge-upstream` 1-click syncer.
 - `web/src/` — React 19 + Vite Mini App frontend (`TicketTab`, `SitesTab`, `ProbeTab`, `VisitorsTab`, `LeaderboardTab`, `SettingsDrawer`).
 - `tests/worker.test.js` — Vitest unit test suite (`npm test`). Always run `npm test && npm run build` after any modification.

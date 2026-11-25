@@ -422,6 +422,7 @@ export default function App() {
         <SettingsDrawer
           initialSection={settingsSection}
           adminConfig={bootstrap.adminConfig}
+          appVersion={bootstrap.appVersion}
           onClose={() => setSettingsSection(null)}
           onSaved={(savedRes) => {
             setBootstrap((prev) =>

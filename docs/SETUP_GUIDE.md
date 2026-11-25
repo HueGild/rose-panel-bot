@@ -151,5 +151,15 @@ https://你的域名/setup?secret=你刚填的WEBHOOK_SECRET
 **解决**：Cloudflare 控制台 → 你的域名 → **Rules → Configuration Rules** 新建规则，条件匹配探针域名和面板域名，把 **SSL** 单独改为 **Full** 即可，不影响同域名下其他子站。
 
 ### Q3：后续项目发布新版本，怎么更新？
-- **Cloudflare Git 自动部署**：在自己 Fork 的仓库点 **`Sync fork → Update branch`**，Cloudflare 自动构建上线，你的 KV 数据和访客记录 **100% 保留**。
-- **本地 CLI 部署**：执行 `git pull && npm install && npm run deploy`。
+你的 KV 数据、访客记录与环境变量在任何更新方式下都会 **100% 保留**，按你的部署来源二选一：
+- **情况 A · 通过 GitHub Fork 部署的仓库（最省心）**：
+  - 站长打开小程序 → **⚙️ 设置 → 版本更新** 自动查看新版，点「前往我的 Fork」在 GitHub 页面点击 **`Sync fork → Update branch`**（或在设置里选填单仓库 GitHub Token 站内一键同步），Cloudflare 约 30 秒自动完成重建上线。
+- **情况 B · 通过 Deploy to Cloudflare 一键按钮创建的独立副本（没有 `Sync fork` 按钮）**：
+  - **推荐（一劳永逸）**：先到 [官方仓库](https://github.com/mango0114/rose-panel-bot) 点一次右上角 **Fork**，再进 Cloudflare Worker → **Settings → Build** 断开旧副本、重新连接到你刚 Fork 出来的仓库，以后即可永久享受 `Sync fork` 与站内一键同步；
+  - **或本地 Git 手动同步**：
+    ```bash
+    git clone https://github.com/<你的用户名>/<你的仓库名>.git && cd <你的仓库名>
+    git remote add upstream https://github.com/mango0114/rose-panel-bot.git
+    git fetch upstream && git merge upstream/main --allow-unrelated-histories && git push origin main
+    ```
+- **情况 C · 本地 CLI 部署**：执行 `git pull && npm install && npm run deploy`。

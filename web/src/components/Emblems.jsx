@@ -5,6 +5,10 @@ export function Avatar({ src, userId, name = 'R', size = '' }) {
   const resolvedSrc = src || (userId ? `/api/avatar/${userId}` : '');
   const initials = String(name || 'R').trim().slice(0, 1).toUpperCase();
 
+  useEffect(() => {
+    setFailed(false);
+  }, [resolvedSrc]);
+
   return (
     <div className={`avatar-circle ${size}`}>
       {resolvedSrc && !failed ? (

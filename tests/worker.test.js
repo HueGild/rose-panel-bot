@@ -18,6 +18,9 @@ import worker from '../src/worker/index.js';
 import { fetchKomariStatus, normalizeNodeMetrics } from '../src/worker/komari.js';
 import { normalizeStickerObject, parseStickerPackName } from '../src/worker/telegram.js';
 import { renderTurnstileVerifyPage } from '../src/worker/turnstile.js';
+import { checkLatestRelease, compareSemver, syncForkWithUpstream } from '../src/worker/updater.js';
+import { APP_VERSION } from '../src/worker/version.js';
+import pkg from '../package.json' with { type: 'json' };
 import {
   applyVisitorAction,
   clearVisitorHistory,
@@ -1196,6 +1199,261 @@ describe('Pluggable probe providers (Nezha v1 WS/REST & v0, NodeGet, generic JSO
       );
       expect(emptyTestRes.status).toBe(400);
       expect((await emptyTestRes.json()).ok).toBe(false);
+    } finally {
+      globalThis.fetch = origFetch;
+    }
+  });
+});
+
+describe('In-app version checker (Scheme A) & optional Fork syncer (Scheme B)', () => {
+  it('keeps APP_VERSION in sync with package.json and compares SemVer accurately', () => {
+    expect(APP_VERSION).toBe(pkg.version);
+    expect(compareSemver('v1.4.0', '1.3.0')).toBe(1);
+    expect(compareSemver('1.10.0', '1.9.9')).toBe(1);
+    expect(compareSemver('v1.3.0', '1.3.0')).toBe(0);
+    expect(compareSemver('1.2.9', '1.3.0')).toBe(-1);
+    expect(compareSemver('v1.4.0-beta.1', '1.3.0')).toBe(1);
+  });
+
+  it('checks latest GitHub release with 6h KV caching and supports forceRefresh', async () => {
+    const kv = createMemoryKV();
+    const env = { TOPIC_MAP: kv };
+    const origFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn(async (url) => {
+      expect(String(url)).toBe('https://api.github.com/repos/mango0114/rose-panel-bot/releases/latest');
+      return new Response(
+        JSON.stringify({
+          tag_name: 'v9.9.9',
+          name: 'v9.9.9 — Future',
+          html_url: 'https://github.com/mango0114/rose-panel-bot/releases/tag/v9.9.9',
+          published_at: '2026-12-01T00:00:00Z',
+          body: 'New features!',
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      );
+    });
+
+    try {
+      const r1 = await checkLatestRelease(env);
+      expect(r1.ok).toBe(true);
+      expect(r1.hasUpdate).toBe(true);
+      expect(r1.latestVersion).toBe('9.9.9');
+      expect(r1.cached).toBe(false);
+
+      // Second call hits KV cache without calling fetch again
+      const r2 = await checkLatestRelease(env);
+      expect(r2.cached).toBe(true);
+      expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+
+      // forceRefresh bypasses cache
+      const r3 = await checkLatestRelease(env, { forceRefresh: true });
+      expect(r3.cached).toBe(false);
+      expect(globalThis.fetch).toHaveBeenCalledTimes(2);
+    } finally {
+      globalThis.fetch = origFetch;
+    }
+  });
+
+  it('falls back to raw package.json on GitHub 403/429 rate limits and caches errors for 30 min', async () => {
+    const kv = createMemoryKV();
+    const env = { TOPIC_MAP: kv };
+    const origFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn(async (url) => {
+      if (String(url).includes('api.github.com')) {
+        return new Response('rate limited', { status: 403 });
+      }
+      expect(String(url)).toBe('https://raw.githubusercontent.com/mango0114/rose-panel-bot/main/package.json');
+      return new Response(JSON.stringify({ version: '9.1.0' }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    });
+
+    try {
+      const fallbackRes = await checkLatestRelease(env);
+      expect(fallbackRes.ok).toBe(true);
+      expect(fallbackRes.latestVersion).toBe('9.1.0');
+      expect(fallbackRes.hasUpdate).toBe(true);
+      expect(fallbackRes.fallbackSource).toBe('raw-package-json');
+
+      // When both API and raw fail, cache error for 30 min so repeat opens don't hammer GitHub
+      globalThis.fetch = vi.fn(async () => new Response('down', { status: 503 }));
+      const fail1 = await checkLatestRelease(env, { forceRefresh: true });
+      expect(fail1.ok).toBe(false);
+      expect(fail1.cached).toBe(false);
+
+      const fail2 = await checkLatestRelease(env);
+      expect(fail2.ok).toBe(false);
+      expect(fail2.cached).toBe(true);
+      expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+    } finally {
+      globalThis.fetch = origFetch;
+    }
+  });
+
+  it('never writes env GITHUB_UPDATE_TOKEN into KV on savePanelConfig and returns clear 422 message for non-fork copies', async () => {
+    const kv = createMemoryKV();
+    const env = {
+      TOPIC_MAP: kv,
+      BOT_TOKEN: '123:ENV_TOK_TEST',
+      ADMIN_IDS: '10001',
+      DEV_PREVIEW: 'true',
+      GITHUB_UPDATE_TOKEN: 'env_super_secret_pat',
+    };
+
+    // Save config with masked placeholder while token is only provided via env Secret
+    await savePanelConfig(env, { updater: { forkRepo: 'bob/rose-panel-bot', branch: 'main', githubToken: '********' } });
+    const rawSaved = JSON.parse(await kv.get('config:panel'));
+    expect(rawSaved.updater.githubToken).toBe('');
+    expect(await kv.get('config:panel')).not.toContain('env_super_secret_pat');
+
+    const adminBoot = await (
+      await worker.fetch(new Request('http://localhost:8787/api/bootstrap', { headers: { 'X-Dev-Role': 'admin' } }), env)
+    ).json();
+    expect(adminBoot.adminConfig.updater.hasGithubToken).toBe(true);
+    expect(adminBoot.adminConfig.updater.tokenFromEnv).toBe(true);
+
+    const origFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn(async (_url, init) => {
+      expect(init.headers.Authorization).toBe('Bearer env_super_secret_pat');
+      return new Response(JSON.stringify({ message: 'This repository is not a fork' }), {
+        status: 422,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    });
+
+    try {
+      const syncRes = await worker.fetch(
+        new Request('http://localhost:8787/api/admin/update/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Dev-Role': 'admin' },
+          body: JSON.stringify({ forkRepo: 'bob/rose-panel-bot', branch: 'main', githubToken: '********' }),
+        }),
+        env
+      );
+      expect(syncRes.status).toBe(422);
+      const data = await syncRes.json();
+      expect(data.ok).toBe(false);
+      expect(data.error).toContain('不是 Fork');
+    } finally {
+      globalThis.fetch = origFetch;
+    }
+  });
+
+  it('validates fork repo strictly, syncs via GitHub merge-upstream, and masks/isolates token in API', async () => {
+    const kv = createMemoryKV();
+    const env = {
+      TOPIC_MAP: kv,
+      BOT_TOKEN: '123:UPD_TEST',
+      ADMIN_IDS: '10001',
+      DEV_PREVIEW: 'true',
+    };
+
+    // Rejects invalid repo, path traversal, and upstream self-sync
+    expect((await syncForkWithUpstream(env, { forkRepo: '../evil', githubToken: 'tok' })).ok).toBe(false);
+    expect((await syncForkWithUpstream(env, { forkRepo: 'mango0114/rose-panel-bot', githubToken: 'tok' })).ok).toBe(false);
+    expect((await syncForkWithUpstream(env, { forkRepo: 'alice/rose-panel-bot', githubToken: '' })).ok).toBe(false);
+
+    // Non-admin cannot access /api/admin/update/*
+    const guestCheck = await worker.fetch(new Request('http://localhost:8787/api/admin/update/check'), env);
+    expect(guestCheck.status).toBe(403);
+    const guestSync = await worker.fetch(
+      new Request('http://localhost:8787/api/admin/update/sync', { method: 'POST', body: '{}' }),
+      env
+    );
+    expect(guestSync.status).toBe(403);
+
+    // Save updater config with token, verify public config strips updater and admin masks token
+    await savePanelConfig(env, {
+      updater: { forkRepo: 'alice/rose-panel-bot', branch: 'main', githubToken: 'github_pat_secret123' },
+    });
+    const publicBoot = await (await worker.fetch(new Request('http://localhost:8787/api/bootstrap'), env)).json();
+    expect(publicBoot.config.updater).toBeUndefined();
+
+    const adminBoot = await (
+      await worker.fetch(new Request('http://localhost:8787/api/bootstrap', { headers: { 'X-Dev-Role': 'admin' } }), env)
+    ).json();
+    expect(adminBoot.adminConfig.updater.githubToken).toBe('********');
+    expect(adminBoot.adminConfig.updater.hasGithubToken).toBe(true);
+
+    // Admin sync with masked placeholder reuses stored secret and calls merge-upstream
+    const origFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn(async (url, init) => {
+      expect(String(url)).toBe('https://api.github.com/repos/alice/rose-panel-bot/merge-upstream');
+      expect(init.method).toBe('POST');
+      expect(init.headers.Authorization).toBe('Bearer github_pat_secret123');
+      expect(JSON.parse(init.body)).toEqual({ branch: 'main' });
+      return new Response(JSON.stringify({ merge_type: 'fast-forward' }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    });
+
+    try {
+      const syncRes = await worker.fetch(
+        new Request('http://localhost:8787/api/admin/update/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Dev-Role': 'admin' },
+          body: JSON.stringify({ forkRepo: 'https://github.com/alice/rose-panel-bot', branch: 'main', githubToken: '********' }),
+        }),
+        env
+      );
+      expect(syncRes.status).toBe(200);
+      const syncData = await syncRes.json();
+      expect(syncData.ok).toBe(true);
+      expect(syncData.alreadyLatest).toBe(false);
+    } finally {
+      globalThis.fetch = origFetch;
+    }
+  });
+});
+
+describe('Privacy-safe 3-way owner/bot card avatar proxy (/api/avatar/owner)', () => {
+  it('defaults to bot avatar (ignoring client query overrides), switches to owner avatar when configured, and preserves legacy custom avatarUrl', async () => {
+    const kv = createMemoryKV();
+    const env = {
+      TOPIC_MAP: kv,
+      BOT_TOKEN: '555000:AVATAR_TEST_TOKEN',
+      ADMIN_IDS: '999888',
+    };
+
+    const requestedUserIds = [];
+    const origFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn(async (url, init) => {
+      const u = String(url);
+      if (u.endsWith('/getUserProfilePhotos')) {
+        const body = JSON.parse(init.body);
+        requestedUserIds.push(body.user_id);
+        return new Response(
+          JSON.stringify({ ok: true, result: { photos: [[{ file_id: `photo_${body.user_id}` }]] } }),
+          { status: 200 }
+        );
+      }
+      if (u.endsWith('/getFile')) {
+        return new Response(JSON.stringify({ ok: true, result: { file_path: 'photos/a.jpg' } }), { status: 200 });
+      }
+      if (u.includes('/file/bot')) {
+        return new Response('fake-jpeg-bytes', { status: 200, headers: { 'Content-Type': 'image/jpeg' } });
+      }
+      throw new Error(`Unexpected fetch: ${u}`);
+    });
+
+    try {
+      // 1. Default mode = 'bot': fetches bot UID (555000), ignoring any ?mode=owner tamper attempt
+      const botRes = await worker.fetch(new Request('https://panel.test/api/avatar/owner?mode=owner'), env);
+      expect(botRes.status).toBe(200);
+      expect(requestedUserIds.at(-1)).toBe(555000);
+
+      // 2. Owner mode: fetches ADMIN_IDS[0] (999888) server-side without exposing UID to clients
+      await savePanelConfig(env, { profile: { avatarMode: 'owner' } });
+      const ownerRes = await worker.fetch(new Request('https://panel.test/api/avatar/owner'), env);
+      expect(ownerRes.status).toBe(200);
+      expect(requestedUserIds.at(-1)).toBe(999888);
+
+      // 3. Legacy config with avatarUrl and no avatarMode automatically preserves 'custom'
+      await kv.put('config:panel', JSON.stringify({ profile: { avatarUrl: 'https://cdn.test/me.png' } }));
+      const legacyCfg = await loadPanelConfig(env);
+      expect(legacyCfg.profile.avatarMode).toBe('custom');
     } finally {
       globalThis.fetch = origFetch;
     }

@@ -1,17 +1,20 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   ArrowDown,
   ArrowUp,
   Check,
+  ExternalLink,
   Globe,
   Lock,
   Plus,
   RefreshCw,
+  Rocket,
   Sparkles,
   Trash2,
   X,
 } from 'lucide-react';
 import { apiRequest } from '../lib/api.js';
+import { openExternalUrl } from '../lib/telegram.js';
 import { TgStickerMedia, TicketEmblem } from './Emblems.jsx';
 
 const PROBE_PROVIDER_OPTIONS = [
@@ -52,6 +55,7 @@ const PROBE_PROVIDER_OPTIONS = [
 export default function SettingsDrawer({
   initialSection = 'profile',
   adminConfig,
+  appVersion = '',
   onClose,
   onSaved,
   onToast,
@@ -61,6 +65,49 @@ export default function SettingsDrawer({
   const [saving, setSaving] = useState(false);
   const [testingProbe, setTestingProbe] = useState(false);
   const [probeTestResult, setProbeTestResult] = useState(null);
+
+  // Version check (Scheme A) & optional Fork 1-click sync (Scheme B)
+  const [checkingUpdate, setCheckingUpdate] = useState(false);
+  const [updateInfo, setUpdateInfo] = useState(null);
+  const [syncingFork, setSyncingFork] = useState(false);
+  const [syncResult, setSyncResult] = useState(null);
+
+  const handleCheckUpdate = async (force = false) => {
+    try {
+      setCheckingUpdate(true);
+      const res = await apiRequest(`/api/admin/update/check${force ? '?force=1' : ''}`);
+      setUpdateInfo(res);
+      if (force) {
+        onToast(res.hasUpdate ? `🎉 发现新版本 v${res.latestVersion}` : `✅ 已是最新版本 v${res.currentVersion}`);
+      }
+    } catch (err) {
+      if (force) onToast(err.message);
+      setUpdateInfo((prev) => ({ ...(prev || {}), ok: false, error: err.message }));
+    } finally {
+      setCheckingUpdate(false);
+    }
+  };
+
+  const handleSyncFork = async () => {
+    try {
+      setSyncingFork(true);
+      setSyncResult(null);
+      const res = await apiRequest('/api/admin/update/sync', {
+        method: 'POST',
+        body: draft.updater || {},
+      });
+      setSyncResult({ ok: true, text: res.message || '🎉 已同步上游代码！' });
+      onToast(res.alreadyLatest ? '✅ 仓库已是最新代码' : '🚀 已同步上游，CF 正在自动构建');
+    } catch (err) {
+      setSyncResult({ ok: false, text: err.message });
+    } finally {
+      setSyncingFork(false);
+    }
+  };
+
+  useEffect(() => {
+    handleCheckUpdate(false);
+  }, []);
 
   // Telegram Sticker / Custom Emoji pack browser state
   const [packInput, setPackInput] = useState('');
@@ -337,13 +384,27 @@ export default function SettingsDrawer({
             { id: 'sites', label: '个人小站' },
             { id: 'probe', label: '节点探针' },
             { id: 'modes', label: '社区与防骚扰' },
+            { id: 'update', label: '版本更新', badge: Boolean(updateInfo?.hasUpdate) },
           ].map((tab) => (
             <button
               key={tab.id}
               className={`chip ${section === tab.id ? 'active' : ''}`}
+              style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', gap: 5 }}
               onClick={() => setSection(tab.id)}
             >
               {tab.label}
+              {tab.badge && (
+                <span
+                  aria-label="有新版本"
+                  style={{
+                    width: 7,
+                    height: 7,
+                    borderRadius: '50%',
+                    background: 'var(--accent)',
+                    display: 'inline-block',
+                  }}
+                />
+              )}
             </button>
           ))}
         </div>
@@ -547,14 +608,28 @@ export default function SettingsDrawer({
                 />
               </div>
               <div className="field">
-                <label className="field-label">自定义头像图片链接（留空自动取站长 TG 头像）</label>
-                <input
+                <label className="field-label">名片头像来源（站长与访客看到一致，不暴露数字 UID）</label>
+                <select
                   className="input"
-                  value={draft.profile.avatarUrl}
-                  onChange={(e) => updateField('profile', 'avatarUrl', e.target.value)}
-                  placeholder="https://..."
-                />
+                  value={draft.profile.avatarMode || (draft.profile.avatarUrl ? 'custom' : 'bot')}
+                  onChange={(e) => updateField('profile', 'avatarMode', e.target.value)}
+                >
+                  <option value="bot">🤖 自动同步机器人头像（默认推荐，隐藏私人主号）</option>
+                  <option value="owner">👤 自动同步站长本人 TG 头像（服务端隐匿代理）</option>
+                  <option value="custom">🖼️ 自定义头像图片链接</option>
+                </select>
               </div>
+              {(draft.profile.avatarMode === 'custom' || (!draft.profile.avatarMode && draft.profile.avatarUrl)) && (
+                <div className="field">
+                  <label className="field-label">自定义头像图片链接（支持 https:// 图床直链）</label>
+                  <input
+                    className="input"
+                    value={draft.profile.avatarUrl}
+                    onChange={(e) => updateField('profile', 'avatarUrl', e.target.value)}
+                    placeholder="https://..."
+                  />
+                </div>
+              )}
               <div className="field">
                 <label className="field-label">置顶公告（留空则隐藏）</label>
                 <input
@@ -1344,6 +1419,179 @@ export default function SettingsDrawer({
             </div>
           </div>
         )}
+
+        {/* Section 5: Version Checker (Scheme A) & Optional 1-Click Fork Sync (Scheme B) */}
+        {section === 'update' && (() => {
+          const updater = draft.updater || { forkRepo: '', branch: 'main', githubToken: '' };
+          const cleanedFork = String(updater.forkRepo || '')
+            .trim()
+            .replace(/^https?:\/\/(?:www\.)?github\.com\//i, '')
+            .replace(/\.git$/i, '')
+            .replace(/\/+$/, '');
+          const manualSyncUrl = cleanedFork
+            ? `https://github.com/${cleanedFork}`
+            : updateInfo?.releaseUrl || 'https://github.com/mango0114/rose-panel-bot/releases';
+
+          return (
+            <>
+              <div className="card">
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+                  <div>
+                    <div className="row-title" style={{ fontSize: 15 }}>
+                      版本检查与更新
+                    </div>
+                    <div className="row-desc" style={{ marginTop: 2 }}>
+                      当前版本：<b>{updateInfo?.currentVersion || appVersion ? `v${updateInfo?.currentVersion || appVersion}` : '—'}</b>
+                      {updateInfo?.latestVersion && (
+                        <>
+                          {' '}· 最新版本：<b>v{updateInfo.latestVersion}</b>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                  <span
+                    className={`pill ${updateInfo?.hasUpdate ? 'rose' : ''}`}
+                    style={{ flexShrink: 0, fontSize: 11.5 }}
+                  >
+                    {checkingUpdate
+                      ? '检查中…'
+                      : updateInfo?.hasUpdate
+                        ? `🎉 有新版 v${updateInfo.latestVersion}`
+                        : updateInfo?.ok
+                          ? '✅ 已是最新'
+                          : '点击检查'}
+                  </span>
+                </div>
+
+                {updateInfo?.error && (
+                  <div
+                    style={{
+                      marginTop: 10,
+                      padding: '8px 11px',
+                      borderRadius: 12,
+                      fontSize: 12,
+                      background: 'var(--red-soft)',
+                      color: 'var(--red)',
+                    }}
+                  >
+                    ⚠️ {updateInfo.error}
+                  </div>
+                )}
+
+                {updateInfo?.notes && (
+                  <div
+                    style={{
+                      marginTop: 10,
+                      padding: '10px 12px',
+                      borderRadius: 12,
+                      fontSize: 12,
+                      lineHeight: 1.55,
+                      color: 'var(--text-secondary)',
+                      background: 'var(--surface-soft)',
+                      whiteSpace: 'pre-wrap',
+                      maxHeight: 150,
+                      overflowY: 'auto',
+                    }}
+                  >
+                    {updateInfo.notes}
+                  </div>
+                )}
+
+                <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
+                  <button
+                    type="button"
+                    className="btn btn-soft btn-sm"
+                    disabled={checkingUpdate}
+                    onClick={() => handleCheckUpdate(true)}
+                  >
+                    <RefreshCw size={14} className={checkingUpdate ? 'spin' : ''} /> 检查新版本
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-primary btn-sm"
+                    onClick={() => openExternalUrl(manualSyncUrl)}
+                  >
+                    <ExternalLink size={14} /> {cleanedFork ? '前往我的 Fork 点 Sync fork' : '查看官方更新日志'}
+                  </button>
+                </div>
+
+                <div className="row-desc wrap" style={{ marginTop: 10, lineHeight: 1.5 }}>
+                  💡 <b>零密钥安全更新（推荐）</b>：打开你 <b>Fork</b> 的 GitHub 仓库 → 点击 <b>Sync fork → Update branch</b>，Cloudflare 约 30 秒自动完成构建，全部配置与访客数据 100% 保留。<br />
+                  ⚠️ 仅通过 GitHub <b>Fork</b> 得到的仓库才有 Sync fork 按钮；若通过 Deploy to Cloudflare 一键按钮创建的是独立副本，请参考仓库教程 FAQ Q3 手动同步或改绑 Fork 仓库。
+                </div>
+              </div>
+
+              <div className="card">
+                <div className="row-title" style={{ fontSize: 14, marginBottom: 4 }}>
+                  🚀 站内一键同步上游（进阶可选 · 仅限 Fork 仓库）
+                </div>
+                <div className="row-desc wrap" style={{ marginBottom: 12, lineHeight: 1.5 }}>
+                  若希望直接在面板内点一下按钮就自动同步 Fork 并触发 Cloudflare 重建，可在此选填仅限单仓库权限的 GitHub Fine-grained Token（需开通 <code>Contents: Read and write</code>；若仓库包含 <code>.github/workflows</code> 自动化文件还需勾选 <code>Workflows: Read and write</code>）；不填则完全走上方手动跳转。
+                </div>
+
+                <div className="field">
+                  <label className="field-label">我 Fork 的 GitHub 仓库（owner/repo）</label>
+                  <input
+                    className="input"
+                    value={updater.forkRepo || ''}
+                    onChange={(e) => updateField('updater', 'forkRepo', e.target.value)}
+                    placeholder="例如：yourname/rose-panel-bot"
+                  />
+                </div>
+                <div className="field">
+                  <label className="field-label">同步分支名（默认 main）</label>
+                  <input
+                    className="input"
+                    value={updater.branch || 'main'}
+                    onChange={(e) => updateField('updater', 'branch', e.target.value)}
+                    placeholder="main"
+                  />
+                </div>
+                <div className="field">
+                  <label className="field-label">GitHub Fine-grained Token（选填，只保存在你自己的 Cloudflare KV，界面不回显）</label>
+                  <input
+                    className="input"
+                    type="password"
+                    value={updater.githubToken || ''}
+                    onChange={(e) => updateField('updater', 'githubToken', e.target.value)}
+                    placeholder={
+                      updater.tokenFromEnv
+                        ? '已通过环境变量 GITHUB_UPDATE_TOKEN 配置（不写入 KV）'
+                        : 'github_pat_...（不填则使用上方手动跳转更新）'
+                    }
+                  />
+                </div>
+
+                <button
+                  type="button"
+                  className="btn btn-soft btn-block"
+                  style={{ marginTop: 8 }}
+                  disabled={syncingFork || !updater.forkRepo?.trim()}
+                  onClick={handleSyncFork}
+                >
+                  <Rocket size={15} /> {syncingFork ? '正在同步上游代码…' : '一键同步 Fork 并触发云端更新'}
+                </button>
+
+                {syncResult && (
+                  <div
+                    style={{
+                      marginTop: 10,
+                      padding: '9px 12px',
+                      borderRadius: 12,
+                      fontSize: 12,
+                      lineHeight: 1.5,
+                      background: syncResult.ok ? 'var(--green-soft)' : 'var(--red-soft)',
+                      color: syncResult.ok ? 'var(--green)' : 'var(--red)',
+                    }}
+                  >
+                    {syncResult.ok ? '' : '❌ '}
+                    {syncResult.text}
+                  </div>
+                )}
+              </div>
+            </>
+          );
+        })()}
 
         <button className="btn btn-primary btn-block" disabled={saving} onClick={handleSave}>
           <Check size={16} /> {saving ? '保存中…' : '保存全部设置'}

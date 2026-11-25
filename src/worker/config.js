@@ -45,6 +45,7 @@ export const DEFAULT_CONFIG = {
     tagline: '欢迎来到我的个人面板，这里汇集了我的个人小站与节点探针。',
     statusText: '在线营业中',
     statusTone: 'online', // online | busy | away
+    avatarMode: 'bot', // bot | owner | custom
     avatarUrl: '',
     ownerTag: '个人名片',
     badgeTitle: '站长 · Owner',
@@ -120,6 +121,11 @@ export const DEFAULT_CONFIG = {
     welcomeText: '你好呀 🌸 这里是我的私聊助手。直接发送消息即可联系我，也可以点击下方按钮打开我的个人面板查看小站与探针。',
     autoAckEnabled: true,
     verifiedDays: 30,
+  },
+  updater: {
+    forkRepo: '', // e.g. "yourname/rose-panel-bot"
+    branch: 'main',
+    githubToken: '', // optional single-repo Fine-grained PAT for in-app 1-click fork sync
   },
 };
 
@@ -209,6 +215,12 @@ export function normalizeSplash(baseSplash = DEFAULT_SPLASH, override = null) {
 }
 
 export const PROBE_PROVIDER_IDS = ['komari', 'nezha', 'nodeget', 'json'];
+const AVATAR_MODES = ['bot', 'owner', 'custom'];
+
+function resolveAvatarMode(rawMode, avatarUrl) {
+  if (AVATAR_MODES.includes(rawMode)) return rawMode;
+  return String(avatarUrl || '').trim() ? 'custom' : 'bot';
+}
 
 export function mergeConfig(base, override) {
   if (!override || typeof override !== 'object') {
@@ -216,6 +228,7 @@ export function mergeConfig(base, override) {
     cloned.sites = cloned.sites.map(normalizeSite);
     cloned.profile.emblem = normalizeEmblem(cloned.profile.emblem);
     cloned.profile.splash = normalizeSplash(cloned.profile.splash);
+    cloned.profile.avatarMode = resolveAvatarMode(cloned.profile.avatarMode, cloned.profile.avatarUrl);
     cloned.probe.visibility = cloned.probe.visibility === 'private' ? 'private' : 'public';
     cloned.probe.provider = PROBE_PROVIDER_IDS.includes(cloned.probe.provider) ? cloned.probe.provider : 'komari';
     return cloned;
@@ -227,16 +240,23 @@ export function mergeConfig(base, override) {
   };
   mergedProbe.visibility = mergedProbe.visibility === 'private' ? 'private' : 'public';
   mergedProbe.provider = PROBE_PROVIDER_IDS.includes(mergedProbe.provider) ? mergedProbe.provider : 'komari';
+  const mergedProfile = {
+    ...base.profile,
+    ...(override.profile || {}),
+    emblem: normalizeEmblem(base.profile?.emblem, override.profile?.emblem),
+    splash: normalizeSplash(base.profile?.splash, override.profile?.splash),
+    socials: Array.isArray(override.profile?.socials)
+      ? override.profile.socials
+      : structuredClone(base.profile.socials),
+  };
+  // Preserve custom mode for existing configs that had avatarUrl set before avatarMode existed
+  const explicitMode = override.profile?.avatarMode;
+  mergedProfile.avatarMode = resolveAvatarMode(
+    explicitMode !== undefined ? explicitMode : base.profile?.avatarMode && !override.profile?.avatarUrl ? base.profile.avatarMode : undefined,
+    mergedProfile.avatarUrl
+  );
   return {
-    profile: {
-      ...base.profile,
-      ...(override.profile || {}),
-      emblem: normalizeEmblem(base.profile?.emblem, override.profile?.emblem),
-      splash: normalizeSplash(base.profile?.splash, override.profile?.splash),
-      socials: Array.isArray(override.profile?.socials)
-        ? override.profile.socials
-        : structuredClone(base.profile.socials),
-    },
+    profile: mergedProfile,
     sites: rawSites.map(normalizeSite),
     probe: mergedProbe,
     community: {
@@ -246,6 +266,10 @@ export function mergeConfig(base, override) {
     pmBot: {
       ...base.pmBot,
       ...(override.pmBot || {}),
+    },
+    updater: {
+      ...base.updater,
+      ...(override.updater || {}),
     },
   };
 }
@@ -277,6 +301,11 @@ export async function loadPanelConfig(env) {
   if (saved?.community?.enableCheckin === undefined && env.ENABLE_CHECKIN !== undefined) {
     merged.community.enableCheckin = String(env.ENABLE_CHECKIN).toLowerCase() === 'true';
   }
+  if (!merged.updater.forkRepo && env.UPDATE_FORK_REPO) {
+    merged.updater.forkRepo = String(env.UPDATE_FORK_REPO).trim();
+  }
+  // NOTE: Intentionally do NOT copy env.GITHUB_UPDATE_TOKEN into merged.updater.githubToken
+  // so saving Settings never persists an environment Secret in plaintext inside KV.
   return merged;
 }
 
@@ -284,10 +313,16 @@ export async function savePanelConfig(env, nextConfig) {
   const current = await loadPanelConfig(env);
   const merged = mergeConfig(current, nextConfig);
 
-  // Preserve stored API key if admin sent masked placeholder
+  // Preserve stored secrets if admin sent masked placeholder
   if (nextConfig?.probe?.apiKey === '********') {
     merged.probe.apiKey = current.probe.apiKey;
   }
+  if (nextConfig?.updater?.githubToken === '********') {
+    merged.updater.githubToken = current.updater.githubToken;
+  }
+  merged.updater.forkRepo = String(merged.updater.forkRepo || '').trim().slice(0, 120);
+  merged.updater.branch = String(merged.updater.branch || 'main').trim().slice(0, 64) || 'main';
+  merged.updater.githubToken = String(merged.updater.githubToken || '').trim().slice(0, 256);
 
   // Clamp numeric settings
   merged.probe.cacheTtlSeconds = Math.min(Math.max(Number(merged.probe.cacheTtlSeconds) || 15, 5), 300);
@@ -388,6 +423,18 @@ export function sanitizeAdminConfig(config, env = {}) {
     cloned.probe.hasApiKey = true;
   } else {
     cloned.probe.hasApiKey = false;
+  }
+  const hasStoredGhToken = Boolean(cloned.updater?.githubToken);
+  const hasEnvGhToken = Boolean(env.GITHUB_UPDATE_TOKEN);
+  if (cloned.updater) {
+    if (hasStoredGhToken || hasEnvGhToken) {
+      cloned.updater.githubToken = '********';
+      cloned.updater.hasGithubToken = true;
+      cloned.updater.tokenFromEnv = !hasStoredGhToken && hasEnvGhToken;
+    } else {
+      cloned.updater.hasGithubToken = false;
+      cloned.updater.tokenFromEnv = false;
+    }
   }
   cloned.pmBot.turnstileReady = Boolean(env.TURNSTILE_SITE_KEY && env.TURNSTILE_SECRET);
   return cloned;
