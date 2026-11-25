@@ -534,7 +534,7 @@ export function sanitizePublicConfig(config, env, isAdmin = false) {
         (config.botUsername || '').replace(/^@/, '') ||
         (() => {
           const h = String(config.profile?.handle || '').trim().replace(/^@/, '');
-          return h && h !== 'your_bot' ? h : '';
+          return h && h !== 'your_bot' && /bot$/i.test(h) ? h : '';
         })(),
       appShortName: env.APP_SHORT_NAME || '',
     },

@@ -86,8 +86,9 @@ export default function TicketTab({
   const [openingPm, setOpeningPm] = useState(false);
 
   const openBotPm = async () => {
-    const rawU = (bot?.username || profile.handle || '').replace(/^@/, '').trim();
-    const uname = rawU && rawU !== 'your_bot' ? rawU : '';
+    const rawBot = String(bot?.username || '').replace(/^@/, '').trim();
+    const cleanHandle = String(profile.handle || '').replace(/^@/, '').trim();
+    const uname = rawBot || (cleanHandle && cleanHandle !== 'your_bot' && /bot$/i.test(cleanHandle) ? cleanHandle : '');
     haptic('medium');
 
     // Inside Telegram Mini App:
@@ -97,19 +98,28 @@ export default function TicketTab({
       if (isOpenedFromGroup()) {
         if (uname) {
           openExternalUrl(`https://t.me/${uname}?start=pm`);
+          closeMiniApp();
+        } else {
+          onToast('请直接私聊机器人发送消息');
         }
-        closeMiniApp();
         return;
       }
       try {
         setOpeningPm(true);
-        const res = await apiRequest('/api/chat/start', { method: 'POST' }).catch(() => null);
+        const res = await apiRequest('/api/chat/start', { method: 'POST' });
         if (res?.needsDeepLink && uname) {
           openExternalUrl(`https://t.me/${uname}?start=pm`);
         }
+        closeMiniApp();
+      } catch {
+        if (uname) {
+          openExternalUrl(`https://t.me/${uname}?start=pm`);
+          closeMiniApp();
+        } else {
+          onToast('请点击右上角关闭面板，直接在下方聊天框打字发消息');
+        }
       } finally {
         setOpeningPm(false);
-        closeMiniApp();
       }
       return;
     }

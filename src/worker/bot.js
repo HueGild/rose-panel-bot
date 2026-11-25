@@ -790,6 +790,12 @@ async function startVerificationChallenge(env, requestOrigin, msg, config, risk 
       carriedEscalation = Boolean(existingState.escalated);
       carriedPending = Array.isArray(existingState.pending) ? existingState.pending.slice(0, 3) : [];
       await env.TOPIC_MAP.delete(`chal:${existingChalId}`);
+      if (existingState.welcomePhotoMessageId && existingState.challengeChatId) {
+        await tgCall(env, 'deleteMessage', {
+          chat_id: existingState.challengeChatId,
+          message_id: existingState.welcomePhotoMessageId,
+        }).catch(() => {});
+      }
       if (existingState.stickerMessageId && existingState.challengeChatId) {
         await tgCall(env, 'deleteMessage', {
           chat_id: existingState.challengeChatId,
@@ -825,6 +831,7 @@ async function startVerificationChallenge(env, requestOrigin, msg, config, risk 
 
   // Optional owner welcome header/photo when triggered from `/start` or Mini App PM button
   let welcomeHeaderHtml = '';
+  let welcomePhotoMessageId = null;
   if (fromStart && config.pmBot.enableStartWelcome !== false) {
     const rawWelcome = String(config.pmBot.welcomeText || '').trim().slice(0, 500);
     const welcomeImg = String(config.pmBot.welcomeImageUrl || '').trim();
@@ -836,6 +843,7 @@ async function startVerificationChallenge(env, requestOrigin, msg, config, risk 
         caption: rawWelcome ? `${titleHtml}\n\n${escapeHtml(rawWelcome)}` : titleHtml,
         parse_mode: 'HTML',
       }).catch(() => null);
+      welcomePhotoMessageId = sentPhoto?.result?.message_id || null;
       if (!sentPhoto && rawWelcome) {
         welcomeHeaderHtml = `${titleHtml}\n${escapeHtml(rawWelcome)}\n━━━━━━━━━━━━━━━━\n`;
       }
@@ -850,6 +858,7 @@ async function startVerificationChallenge(env, requestOrigin, msg, config, risk 
     failures: carriedFailures,
     escalated: shouldEscalate,
     challengeChatId: msg.chat.id,
+    welcomePhotoMessageId,
     user: {
       id: msg.from.id,
       first_name: msg.from.first_name || '',
@@ -1161,7 +1170,7 @@ async function handleAdminSupergroupMessage(env, requestOrigin, msg, config) {
       const hintKey = `hint:general_reply:${msg.chat.id}`;
       const hinted = await env.TOPIC_MAP.get(hintKey);
       if (!hinted) {
-        await env.TOPIC_MAP.put(hintKey, '1', { expirationTtl: 300 });
+        await env.TOPIC_MAP.put(hintKey, '1', { expirationTtl: 86400 });
         await tgCall(env, 'sendMessage', {
           chat_id: msg.chat.id,
           reply_to_message_id: msg.message_id,
@@ -1177,7 +1186,7 @@ async function handleAdminSupergroupMessage(env, requestOrigin, msg, config) {
       const hintKey = `hint:general_reply:${msg.chat.id}`;
       const hinted = await env.TOPIC_MAP.get(hintKey);
       if (!hinted) {
-        await env.TOPIC_MAP.put(hintKey, '1', { expirationTtl: 300 });
+        await env.TOPIC_MAP.put(hintKey, '1', { expirationTtl: 86400 });
         await tgCall(env, 'sendMessage', {
           chat_id: msg.chat.id,
           message_thread_id: threadId,
