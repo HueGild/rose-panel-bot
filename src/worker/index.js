@@ -1,6 +1,7 @@
 // Main Cloudflare Worker Entrypoint for RosePanel Bot
 
 import { handleApiRequest } from './api.js';
+import { parseAdminIds } from './auth.js';
 import { completeTurnstileVerification, handleTelegramUpdate } from './bot.js';
 import { loadPanelConfig, safeGetJSON } from './config.js';
 import { serveEmbeddedAsset } from './embedded-assets.js';
@@ -67,6 +68,55 @@ async function handleSetup(request, env, url) {
     commands: groupCommands,
     scope: { type: 'all_group_chats' },
   });
+
+  // 2b. Register rich Admin-only private commands (visible ONLY to admins in their private chat!)
+  const adminPrivateCommands = [
+    ...privateCommands,
+    { command: 'setbadge', description: '发贴纸/收藏表情设为票根徽章' },
+    { command: 'resetbadge', description: '恢复默认玫瑰票根徽章' },
+    { command: 'addverify', description: '录入收藏表情包看图验证题' },
+    { command: 'cancel', description: '取消当前录入流程' },
+  ];
+
+  const adminIdSet = parseAdminIds(env);
+  if (env.SUPERGROUP_ID) {
+    try {
+      const adminsRes = await tgCall(env, 'getChatAdministrators', {
+        chat_id: env.SUPERGROUP_ID,
+      });
+      for (const m of adminsRes?.result || []) {
+        if (m?.user?.id && !m.user.is_bot) {
+          adminIdSet.add(String(m.user.id));
+        }
+      }
+    } catch {
+      // Ignore if unable to list supergroup administrators
+    }
+
+    // 2c. Register Topic moderation commands inside the Admin Supergroup
+    results.supergroupAdminCommands = await tgCall(env, 'setMyCommands', {
+      commands: [
+        { command: 'info', description: '查看当前话题访客资料与媒体统计' },
+        { command: 'ban', description: '拉黑当前话题访客' },
+        { command: 'unban', description: '解除拉黑' },
+        { command: 'trust', description: '设为永久信任（免验证）' },
+        { command: 'reset', description: '重置访客验证状态' },
+        { command: 'close', description: '结束当前对话' },
+        { command: 'open', description: '重新开启对话' },
+        { command: 'panel', description: '打开个人面板小程序' },
+      ],
+      scope: { type: 'chat_administrators', chat_id: Number(env.SUPERGROUP_ID) },
+    }).catch((e) => ({ error: e.message }));
+  }
+
+  results.adminPrivateCommands = [];
+  for (const adminId of adminIdSet) {
+    const r = await tgCall(env, 'setMyCommands', {
+      commands: adminPrivateCommands,
+      scope: { type: 'chat', chat_id: Number(adminId) },
+    }).catch((e) => ({ adminId, error: e.message }));
+    results.adminPrivateCommands.push({ adminId, ok: Boolean(r?.ok), error: r?.error });
+  }
 
   // 3. Attach Mini App to the bottom-left chat menu button
   results.menuButton = await tgCall(env, 'setChatMenuButton', {
