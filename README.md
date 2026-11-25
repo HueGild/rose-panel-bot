@@ -30,10 +30,13 @@
 
 > **🔒 零数据收集承诺**：本项目 **不收集任何用户数据、不经过作者或任何第三方中转服务器**；所有 Bot Token、配置、小站与访客记录全部保存在**你自己的 Cloudflare Workers 与 KV** 中，代码 100% 开源可审计（可选的 CAS 反垃圾黑名单查询为公开只读接口，也可在设置里随时关闭）。
 
-> **🤖 AI 懒人一键部署（推荐）**：本仓库内置 **[AGENTS.md](AGENTS.md)**！用 **Antigravity / Claude Code / Codex / Cursor** 打开仓库，直接复制发给 AI：
-> ```text
-> 请阅读仓库里的 AGENTS.md，先询问我需要开启哪些模块（或选择轻量化安装），再帮我一步步部署 RosePanel Bot。
-> ```
+> **🧭 快速上手分流（老手 / 小白各走各的，不绕路！）**：
+> - **⚡ 老手（已有 TG 机器人 Token + Cloudflare 账号）**：直接点上方 **Deploy to Cloudflare**，或把仓库丢给 AI（准备好 `BOT_TOKEN`，等 AI 问你要时贴给它）→ **[查看 1 分钟老手速通](docs/SETUP_GUIDE.md#-老手速通通道已有-bot-token--cloudflare)**
+> - **🐣 小白（还没有机器人 或 还没有 Cloudflare 账号）**：AI 没法替你申请机器人，先花 30 秒去 TG 找 `@BotFather` 拿到 Token → **[零基础 5 分钟保姆教程（含全景流程图）](docs/SETUP_GUIDE.md#-小白零基础通道还没有机器人或-cloudflare)**
+> - **🤖 AI 懒人部署提示词**（支持 Antigravity / Claude Code / Codex / Cursor，内置 [AGENTS.md](AGENTS.md)）：
+>   ```text
+>   请阅读仓库里的 AGENTS.md，先询问我需要开启哪些模块（或选择轻量化安装），再帮我一步步部署 RosePanel Bot。
+>   ```
 
 ---
 

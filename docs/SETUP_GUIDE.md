@@ -1,118 +1,146 @@
-# 🐣 零基础 5 分钟上手教程：从 0 申请第一个 Telegram 机器人到一键上线
+# 🧭 上手部署指南（老手速通 / 小白零基础双通道）
 
-没写过代码、没申请过 Telegram 机器人、也没买过服务器？**完全没关系！**  
-按下面步骤操作，**0 成本（Cloudflare 免费版）** 就能拥有你自己的四层防广告双向私聊机器人 + 0 秒启动个人面板。
+无论你是玩过 Cloudflare 的老手，还是第一次接触 Telegram 机器人的纯小白，都可以 **0 成本（Cloudflare 免费版）** 跑起自己的 **四层防广告双向私聊机器人 + 0 秒启动个人面板**。
 
-> **🤖 最省心方式 · 交给 AI 助手帮你全自动一键部署（推荐！）**  
-> 本仓库内置了标准 AI 安装协议 **[`AGENTS.md`](../AGENTS.md)**。如果你正在使用 **Antigravity / Claude Code / Codex / Cursor** 等任意 AI 编程工具，**根本不用自己敲命令**，打开本仓库直接把下面这句话发给 AI：
-> ```text
-> 请阅读仓库里的 AGENTS.md，先询问我需要开启哪些模块（或选择轻量化安装），再帮我一步步部署 RosePanel Bot。
-> ```
-> AI 会先问你要开启哪些功能（是否只要防广告私聊、要不要探针或群签到），再一步步帮你部署激活！  
-> *(如果你喜欢自己亲手点点鼠标完成，直接往下看 6 步极简图文流程 👇)*
+> **💡 给准备用 AI 部署的朋友一句提醒**：AI 无法替你登录个人 Telegram 账号申请机器人。  
+> - **已有机器人**：先把 `BOT_TOKEN` 准备好，直接把项目丢给 AI，等它问你要时贴给它即可；  
+> - **还没有机器人**：先把项目丢给 AI，同时花 30 秒去 Telegram 找 `@BotFather` 申请好拿到 Token，再直接交给 AI！
 
 ---
 
-## 第 1 步：30 秒申请你的第一个 Telegram 机器人（拿 `BOT_TOKEN`）
+## 🗺️ 全景部署流程图（先看你是哪一类）
+
+```mermaid
+flowchart TD
+  START["🌸 开始部署 RosePanel Bot"] --> CHECK{"你已经有 TG 机器人 Token<br/>且有 Cloudflare 账号吗？"}
+
+  CHECK -- "✅ 都有（老手通道）" --> VET["⚡ 进入老手 1 分钟速通"]
+  CHECK -- "🐣 缺其中一个（小白通道）" --> NEWBIE["🐣 进入小白零基础通道"]
+
+  NEWBIE --> S1["1. 找 @BotFather 30 秒申请机器人拿 BOT_TOKEN"]
+  S1 --> S2["2. 找 @userinfobot 5 秒查自己的数字 UID"]
+  S2 --> S3["3. 免费注册 GitHub 与 Cloudflare 账号"]
+  S3 --> DEPLOY
+
+  VET --> DEPLOY{"选择部署方式"}
+  DEPLOY -- "🤖 最省心：交给 AI 助手" --> AI["复制 AGENTS.md 提示词发给 AI<br/>等 AI 问你要 Token 时直接贴给它"]
+  DEPLOY -- "🖱️ 手动：点网页一键按钮" --> CF["点击 Deploy to Cloudflare<br/>填 4 个核心变量并保存"]
+
+  AI --> ACTIVATE["🔗 浏览器访问一次 /setup 激活"]
+  CF --> ACTIVATE
+  ACTIVATE --> BIND{"需要防广告双向私聊吗？"}
+  BIND -- "不需要（仅个人名片/小站/探针）" --> DONE["🎉 全部上线！点左下角打开 0 秒个人面板"]
+  BIND -- "需要（强烈推荐）" --> GROUP["新建私密群 → 开「话题」→ 拉 Bot 当管理 → 发 /bind"]
+  GROUP --> DONE
+```
+
+**快捷直达：**
+- 👉 **[⚡ 老手速通通道（已有 Bot Token + Cloudflare）](#-老手速通通道已有-bot-token--cloudflare)**
+- 👉 **[🐣 小白零基础通道（还没有机器人或还没注册 Cloudflare）](#-小白零基础通道还没有机器人或-cloudflare)**
+- 👉 **[✨ 上线后 30 秒玩转表情包验证与动态徽章](#-上线后-30-秒玩转表情包验证与动态徽章)**
+- 👉 **[❓ 常见问题排错 (FAQ)](#-常见问题排错-faq)**
+
+---
+
+## ⚡ 老手速通通道（已有 Bot Token + Cloudflare）
+
+如果你已经手握 `BOT_TOKEN` 且有 Cloudflare 账号，**1～2 分钟就能上线**，两种方式任选：
+
+### 方案 A · 🤖 丢给 AI 助手全自动部署（推荐）
+把本仓库交给 **Antigravity / Claude Code / Codex / Cursor**，直接发下面这段话，**等 AI 问你要 `BOT_TOKEN` 和 `ADMIN_IDS` 时直接发给它**即可：
+```text
+请阅读仓库里的 AGENTS.md，先询问我需要开启哪些模块（或选择轻量化安装），再帮我一步步部署 RosePanel Bot。
+```
+
+### 方案 B · 🖱️ 一键点按钮手动上线（4 步搞定）
+1. 点击 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/mango0114/rose-panel-bot)（Build：`npm run build`，Deploy：`npx wrangler deploy`）。
+2. 在 Worker **Settings → Variables & Bindings** 确认绑定了 `TOPIC_MAP` KV，并填入 4 个核心变量：
+   - `BOT_TOKEN`（Secret）· `WEBHOOK_SECRET`（Secret，任意随机串）· `ADMIN_IDS`（你的数字 UID）· `BOT_USERNAME`（不含 `@`）。
+3. 浏览器打开 `https://<你的域名>/setup?secret=<WEBHOOK_SECRET>`，看到 `"ok": true` 即激活。
+4. 新建开启 **「话题 (Topics)」** 的私密群、把机器人设为管理员（勾选管理话题 & 删除消息），群内发一句 **`/bind`** 秒完成通知群绑定！
+
+---
+
+## 🐣 小白零基础通道（还没有机器人或 Cloudflare）
+
+> 没写过代码、没申请过机器人？跟着下面 5 步照做，全程点点鼠标 **5 分钟免费上线**！
+
+### 第 1 步：30 秒申请你的第一个 Telegram 机器人（拿 `BOT_TOKEN`）
 
 1. 在 Telegram 顶部搜索并打开官方机器人 **[@BotFather](https://t.me/BotFather)**（认准蓝色官方认证勾）。
 2. 发送 `/newbot`。
-3. BotFather 会让你输入两样东西：
-   - **机器人展示昵称**（可以是中文，比如 `Rose 小助手`）；
-   - **机器人用户名**（必须英文且以 `bot` 结尾，比如 `my_rose_panel_bot`，不能跟别人重复）。
-4. 创建成功后，你会收到一串形如 `123456789:AAHxxxxxxxxxxxxxxxxxxxxxxxx` 的密钥，这就是 **`BOT_TOKEN`**，先复制保存好（**切勿泄露给他人**）。
-5. *(可选美化)* 顺手在 `@BotFather` 里：
-   - 发 `/setuserpic` → 选刚建的机器人 → 发一张图片给机器人换头像；
-   - 发 `/setdescription` → 写一句简介，陌生人打开对话前就能看到。
+3. 依次回复两样东西：
+   - **机器人展示昵称**（支持中文，如 `我的私聊小助手`）；
+   - **机器人用户名**（必须英文且以 `bot` 结尾，如 `my_rose_panel_bot`，不可与他人重复）。
+4. 创建成功后会收到一串形如 `123456789:AAHxxxxxxxxxxxxxxxxxxxxxxxx` 的密钥，这就是 **`BOT_TOKEN`**，先复制保存好（**切勿发到公开群或提交到 GitHub**）。
+5. *(可选美化)* 顺手在 `@BotFather` 发 `/setuserpic` 给机器人换个喜欢的头像。
 
----
+### 第 2 步：5 秒拿到你自己的数字 UID（填 `ADMIN_IDS`）
 
-## 第 2 步：5 秒拿到你自己的数字 UID（填 `ADMIN_IDS`）
+1. 在 Telegram 搜索 **[@userinfobot](https://t.me/userinfobot)**（或 [@RawDataBot](https://t.me/RawDataBot)），点击 **Start**。
+2. 记下回复里 `Id:` 后面的纯数字（如 `1234567890`），这就是你的 **`ADMIN_IDS`**。
 
-1. 在 Telegram 搜索 **[@userinfobot](https://t.me/userinfobot)**（或 [@RawDataBot](https://t.me/RawDataBot)），点 **Start**。
-2. 记下回复里 `Id:` 后面的那串纯数字（例如 `1234567890`），这就是你的 **`ADMIN_IDS`**。
+### 第 3 步：免费注册 GitHub 与 Cloudflare 并部署
 
-> 填上 `ADMIN_IDS` 后，系统 100% 精准识别你是站长，而且鉴权走内存 `<0.1ms` 极速完成，不消耗任何 KV 额度！
+1. 免费注册登录 [GitHub](https://github.com/) 和 [Cloudflare](https://dash.cloudflare.com/)（Cloudflare Workers 免费额度完全够个人永久使用）。
+2. **如果你有 AI 助手（最省心）**：现在你已经拿到 `BOT_TOKEN` 和 `ADMIN_IDS` 了，直接跳回上面的 **[方案 A · 丢给 AI 全自动部署](#方案-a--丢给-ai-助手全自动部署推荐)**，AI 会带你走完剩下全部步骤！
+3. **自己动手点网页部署**：
+   - 点击一键部署按钮：[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/mango0114/rose-panel-bot)
+   - 构建参数保持默认（Build：`npm run build`，Deploy：`npx wrangler deploy`），点 **Save and Deploy** 等待约 30 秒。
+   - 进入 Worker 的 **Settings → Variables & Bindings**：
+     - 确认已绑定名为 `TOPIC_MAP` 的 KV Namespace（没有就新建一个 KV 并绑定命名为 `TOPIC_MAP`）；
+     - 填入以下 4 个核心变量：
+       | 变量名 | 类型 | 填什么 |
+       | :--- | :--- | :--- |
+       | `BOT_TOKEN` | **Secret (加密)** | 第 1 步从 `@BotFather` 拿到的 Token |
+       | `WEBHOOK_SECRET` | **Secret (加密)** | 自己随便写一串英文+数字密码（如 `rose2026pass`） |
+       | `ADMIN_IDS` | Text | 第 2 步查到的你自己的数字 UID |
+       | `BOT_USERNAME` | Text | 你的机器人用户名（**不要带 `@`**） |
+   - *(强烈推荐)* 在 Worker 的 **Settings → Domains & Routes** 绑定自己的域名（如 `panel.yourdomain.com`）。
 
----
+### 第 4 步：10 秒一键激活（`/setup`）
 
-## 第 3 步：一键免费部署到 Cloudflare Workers（免装任何软件）
-
-1. 先免费注册并登录 [GitHub](https://github.com/) 和 [Cloudflare](https://dash.cloudflare.com/)。
-2. 直接点击仓库首页的 **Deploy to Cloudflare** 一键按钮（或先 Fork 本仓库，再进入 Cloudflare Dashboard → **Workers & Pages** → **Create** → **Workers** → **Import a repository** 选择 `rose-panel-bot`）：
-   - **Build command**：`npm run build`
-   - **Deploy command**：`npx wrangler deploy`
-   - 点击 **Save and Deploy** 等待约 30 秒。
-3. 部署完成后，打开这个 Worker 的 **Settings → Variables & Bindings**：
-   - **KV Namespace 绑定**：确认已存在名为 `TOPIC_MAP` 的 KV（没有的话新建一个 KV 绑定为 `TOPIC_MAP` 即可）。
-   - **添加环境变量**（只需填下面 4 个最核心的）：
-     | 变量名 | 类型 | 填什么 |
-     | :--- | :--- | :--- |
-     | `BOT_TOKEN` | **Secret (加密)** | 第 1 步从 `@BotFather` 拿到的 Token |
-     | `WEBHOOK_SECRET` | **Secret (加密)** | 自己随便打一串英文+数字密码（如 `rose2026secret`） |
-     | `ADMIN_IDS` | Text | 第 2 步拿到的你自己的数字 UID |
-     | `BOT_USERNAME` | Text | 你的机器人用户名（**不要带 `@`**，如 `my_rose_panel_bot`） |
-4. *(强烈推荐)* 在 Worker 的 **Settings → Domains & Routes** 绑定一个自己的自定义域名（如 `panel.yourdomain.com`），访问速度更快更稳。
-
----
-
-## 第 4 步：10 秒一键激活机器人（`/setup`）
-
-在浏览器里打开一次下面这个网址（把域名和密码换成你自己的）：
+在浏览器里打开一次下面这个网址（换成你的域名和密码）：
 
 ```text
 https://你的域名/setup?secret=你刚填的WEBHOOK_SECRET
 ```
 
-看到页面返回 `"ok": true` 就大功告成！这一步会自动帮你做好：
-- 绑定 Telegram Webhook；
-- 给机器人左下角装上 **「个人面板」** 小程序入口按钮；
-- 给普通人、管理群和你自己私聊分别配置专属 `/` 快捷菜单。
+看到页面显示 `"ok": true`，机器人就正式连上线啦！左下角也会自动出现 **「个人面板」** 小程序入口。
 
-> *(可选：支持在群里滑出小程序)* 去 `@BotFather` 发 `/newapp` → 选你的机器人 → 填标题/简介/图标 → Web App URL 填 `https://你的域名/` → 短名填 `panel`（然后把 `APP_SHORT_NAME` 变量设为 `panel`）。
+> *(可选：支持在群里滑出小程序)* 去 `@BotFather` 发 `/newapp` → 选你的机器人 → 填标题简介图标 → Web App URL 填 `https://你的域名/` → 短名填 `panel`（然后把变量 `APP_SHORT_NAME` 设为 `panel`）。
 
----
+### 第 5 步：30 秒一键绑定「私聊通知群」（`/bind`，免查群 ID！）
 
-## 第 5 步：30 秒一键绑定「私聊通知群」（`/bind`，告别查群 ID！）
+> 如果你只想用「个人名片 + 小站 + 探针」，不需要别人私聊你，可以跳过这一步。
 
-> 如果你**只想做纯个人名片 + 小站 + 探针**，不需要别人通过机器人私聊你，可以**直接跳过这一步**！
-
-想开启防骚扰双向私聊（别人私聊机器人自动转发给你，你在群里直接回复且不暴露主号）：
-
-1. 在 Telegram 里**新建一个私密群**（比如叫 `我的通知群`），只拉进你刚创建的机器人（全群就你们 2 个成员）。
-2. 点群名称 → **编辑** → 打开 **「话题 (Topics)」** 开关。
-3. 在群成员里把机器人设为 **管理员**，务必勾选 **「管理话题」** 和 **「删除消息」**。
+1. 在 Telegram 里**新建一个私密群**（如 `我的通知群`），只拉进你刚建的机器人（全群 2 人）。
+2. 点群名称 → **编辑** → 打开 **「话题 (Topics)」**。
+3. 把机器人设为 **管理员**，务必勾选 **「管理话题」** 和 **「删除消息」**。
 4. 直接在群里发一句：
    ```text
    /bind
    ```
-5. 收到机器人回复 **「🎉 私聊通知群绑定成功！」** 就完成了！**完全不需要查 `-100...` 群 ID，也不用再回 Cloudflare 改环境变量。**
-
-> 以后想换群？在新话题群里发一次 `/bind` 即可无缝切换；想关闭私聊转发，在群里发 `/unbind` 即可。
+5. 看到机器人回复 **「🎉 私聊通知群绑定成功！」** 就全部完成！完全不用查 `-100...` 群 ID。
 
 ---
 
-## 第 6 步：在手机上把面板装扮成你的专属风格 ✨
+## ✨ 上线后 30 秒玩转表情包验证与动态徽章
 
-现在点开你的机器人，点左下角 **「个人面板」**，点右上角 **⚙️ 设置**，所有东西都能在手机上可视化改：
+打开你的机器人，点左下角 **「个人面板」** → 右上角 **⚙️ 设置**，所有东西都能在手机上可视化调整：
 
-- **换动态贴纸主徽章**：直接私聊机器人发 `/set`，再发任意一张你喜欢的 TG 贴纸、收藏表情或 `t.me/addstickers/...` 链接，瞬间换上 60fps 动效徽章！
-- **定制趣味表情包验证题**：私聊发 `/add`，发一张你收藏的表情包，再发 `题目 正确答案 错1 错2 错3`（用空格隔开就行），让每个来联系你的人都被可爱到，广告号却 0 破解率！
-- **定制开屏加载页**：在 **⚙️ 设置 → 名片与徽章** 里可选 **✨ 徽章呼吸 / 🌹 表情跳动 / 🪄 卡片骨架屏**，并自定义开屏提示文案。
-- **管理公开 & 私密小站**：在 **⚙️ 设置 → 个人小站** 添加博客、导航，自己的后台/网盘点一下标成 **🔒 仅我可见**（访客完全看不到）。
-- **接入 Komari 探针**：在 **⚙️ 设置 → Komari 探针** 填入你的 Komari 地址即可（支持一键设为「仅自己可见」）。
+- **🎭 一键发静/动态贴纸设图形验证题**：私聊发 `/add` → 发一张收藏表情包 → 用空格隔开发 `题目 正确答案 错1 错2 错3`，3 秒做好一道防广告题！
+- **✨ 秒换动态贴纸主徽章**：私聊发 `/set` → 发任意静/动态 TG 贴纸或自定义表情，自动同步为 0 秒开屏呼吸徽章！
+- **🌐 管公开/私密小站 & 📡 Komari 探针**：在小程序设置里随手增删，私密小站与探针均可一键设为 **🔒 仅自己可见**。
 
 ---
 
-## ❓ 新手常见问题 (FAQ)
+## ❓ 常见问题排错 (FAQ)
 
 ### Q1：我的 Komari 探针和面板在同一个 Cloudflare 域名下，测试连接报「重定向循环」怎么办？
-这是因为你该域名在 Cloudflare 的全局 SSL/TLS 模式是 **Flexible**，Worker 访问同域名子站时会被强制降级为 HTTP，而探针源站又强制跳 HTTPS。  
-**解决方法**：在 Cloudflare 控制台 → 你的域名 → **Rules → Configuration Rules** 新建一条规则，条件选 `Hostname equals 你的探针域名`（和面板域名），把 **SSL** 单独改为 **Full** 即可，完全不影响同域名下其他站点。
+这是因为该域名在 Cloudflare 的全局 SSL/TLS 为 **Flexible**，Worker 访问同域名子站时会被降级为 HTTP，而源站又强制跳 HTTPS。  
+**解决**：Cloudflare 控制台 → 你的域名 → **Rules → Configuration Rules** 新建规则，条件匹配探针域名和面板域名，把 **SSL** 单独改为 **Full** 即可，不影响同域名下其他子站。
 
-### Q2：通知群的聊天界面本身可以美化吗？
-Telegram 群聊外框由客户端控制，你可以直接在「通知群 → 右上角 `...` → 更改颜色 / 聊天壁纸」里给这个群单独换一套喜欢的背景图和玫瑰粉气泡色；机器人创建的新访客话题已默认配色为柔和的珊瑚玫瑰色图标。
-
-### Q3：以后项目发布新版本，我怎么一键更新？
-- **Cloudflare Git 自动构建用户**：回到你 Fork 的 GitHub 仓库，点一下 **`Sync fork → Update branch`**，Cloudflare 会自动构建部署新版，你的 KV 配置、小站和访客记录 **100% 自动保留**。
-- **本地 CLI 部署用户**：在仓库目录执行 `git pull && npm install && npm run deploy` 即可。
+### Q2：后续项目发布新版本，怎么更新？
+- **Cloudflare Git 自动部署**：在自己 Fork 的仓库点 **`Sync fork → Update branch`**，Cloudflare 自动构建上线，你的 KV 数据和访客记录 **100% 保留**。
+- **本地 CLI 部署**：执行 `git pull && npm install && npm run deploy`。
