@@ -1,101 +1,149 @@
-# 🌸 RosePanel Bot
+<div align="center">
 
-[![Cloudflare Workers](https://img.shields.io/badge/Cloudflare-Workers-F38020?logo=cloudflare&logoColor=white)](https://workers.cloudflare.com/)
-[![Telegram Mini App](https://img.shields.io/badge/Telegram-Mini%20App-26A5E4?logo=telegram&logoColor=white)](https://core.telegram.org/bots/webapps)
-[![Release](https://img.shields.io/github/v/release/mango0114/rose-panel-bot?color=A32952&label=Release)](https://github.com/mango0114/rose-panel-bot/releases)
-[![License: MIT](https://img.shields.io/badge/License-MIT-A32952.svg)](LICENSE)
+<img src="docs/assets/banner.svg" alt="RosePanel Bot Banner" width="100%" />
 
-[🇨🇳 简体中文](README.md) | 🇺🇸 **English** | [🐣 5-Min Beginner Guide (ZH)](docs/SETUP_GUIDE.md) | [📋 Changelog](CHANGELOG.md)
+<br />
 
-[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/mango0114/rose-panel-bot)
+[![Release](https://img.shields.io/github/v/release/mango0114/rose-panel-bot?color=A32952&label=Release&style=flat-square)](https://github.com/mango0114/rose-panel-bot/releases)
+[![Stars](https://img.shields.io/github/stars/mango0114/rose-panel-bot?color=E56B92&style=flat-square)](https://github.com/mango0114/rose-panel-bot/stargazers)
+[![Live Demo](https://img.shields.io/badge/Live%20Demo-%40Rose202__bot-C93B6B?logo=telegram&logoColor=white&style=flat-square)](https://t.me/Rose202_bot)
+[![Cloudflare Workers](https://img.shields.io/badge/Cloudflare-Workers-F38020?logo=cloudflare&logoColor=white&style=flat-square)](https://workers.cloudflare.com/)
+[![Telegram Mini App](https://img.shields.io/badge/Telegram-Mini%20App-26A5E4?logo=telegram&logoColor=white&style=flat-square)](https://core.telegram.org/bots/webapps)
+[![License: MIT](https://img.shields.io/badge/License-MIT-A32952?style=flat-square)](LICENSE)
 
-An all-in-one **Telegram Mini App Personal Panel**, **Public/Private Site Directory**, **Komari Server Probe Monitor**, **Bidirectional Anti-Spam PM Bot with Photo/Link Archive**, and **Optional Group Check-in & Badges System** running on **Cloudflare Workers**.
+<p>
+  <a href="README.md">🇨🇳 简体中文</a> ·
+  <a href="README_ZH_TW.md">🇭🇰🇹🇼 繁體中文</a> ·
+  <b>🇺🇸 English</b> ·
+  <a href="docs/SETUP_GUIDE.md">🐣 5-Min Guide (ZH)</a> ·
+  <a href="AGENTS.md">🤖 AI Auto-Deploy</a> ·
+  <a href="CHANGELOG.md">📋 Changelog</a> ·
+  <a href="https://t.me/Rose202_bot">💬 Live Demo</a> ·
+  <a href="#-support--sponsors">🧧 Sponsors</a>
+</p>
 
----
+<p>
+  <a href="https://deploy.workers.cloudflare.com/?url=https://github.com/mango0114/rose-panel-bot">
+    <img src="https://deploy.workers.cloudflare.com/button" alt="Deploy to Cloudflare" />
+  </a>
+</p>
 
-## ✨ Key Features
+<sub><b>4-Layer Anti-Spam Telegram Bidirectional PM Bot</b> — Silent CAS Global Blacklist · Blocks Unverified Spam Flyers · Turn Any Static/Animated TG Sticker Into a Visual Quiz in 3s · Includes a <b>0-Second Personal Mini App Panel</b> (Sites / Komari Probe / Visitor Photo Archive) on Cloudflare Workers Free Tier</sub>
 
-- **🪪 Rose-Porcelain Personal Card & Dual Mode**
-  - **Personal Card Mode (Default)**: Clean profile card with avatar, status badge, bio, social links, personal tags, customizable contact etiquette card, and optional notice banner — plus an **Admin-Only Overview** (blocked spam count, active visitors, recent contacts) visible exclusively to the owner.
-  - **Group Community Mode (1-Click Toggle)**: Enables `/me`, `/panel`, `/checkin`, `/rank` in groups and Mini App with daily points, streak bonuses, 7-tier levels, 8 achievement badges, and leaderboard.
-- **✨ Telegram Stickers & Custom Emojis as Main Emblem**
-  - Supports static `.webp`, video `.webm`, animated `.tgs` (edge-decompressed 60fps Lottie JSON), and Telegram Premium Custom Emojis.
-  - Send `/set` (alias `/setbadge`) to the bot with any sticker, custom emoji, or pack link, or browse `t.me/addstickers/...` / `t.me/addemoji/...` visually inside Settings.
-- **🌐 Public Sites & Private Bookmarks (Server-Side Isolated)**
-  - Categories, search, reordering, and 1-tap **`Public` vs `🔒 Private`** visibility toggle. Non-admin responses strictly omit private sites at the Worker layer.
-- **📡 Komari Server Probe Monitor**
-  - Native adapter for **Komari v2 (`/api/rpc2`)** and **v1 (`/api/nodes`)**, supporting public and private instances, 10-segment online meter, CPU/RAM/Disk/network metrics, and hardware details.
-- **👤 Bidirectional PM Bot + Photo Gallery / Link Archive / Quick Clear (Admin Only)**
-  - Dedicated Telegram Forum Topic per visitor, bidirectional message counter (`Visitor · Me`), auto-archived **Photo Gallery** (HMAC-signed private proxy + lightbox) & **Links List**, private notes, 1-tap Ban/Unban/Trust/Close, and two-tier **Clear Chat History** (archive-only or full topic wipe + <48h PM deletion).
+</div>
 
----
+> **🔒 Zero Data Collection Promise**: This project **collects zero user data and never relays traffic through the author or any third-party server**. Your Bot Token, settings, sites, and visitor archive live 100% inside **your own Cloudflare Workers & KV** (the optional read-only CAS spam lookup can be toggled off anytime in Settings).
 
-## 🛡️ How Anti-Spam Verification Works
-
-Switch freely between **3 verification modes** inside **⚙️ Settings → Community & Anti-Spam**:
-
-| Mode | Experience & Mechanism | Anti-Abuse Protection |
-| :--- | :--- | :--- |
-| **🎯 Emoji Odd-One-Out / Pick (Default)** | 3×3 pure-icon inline grid alternating odd-one-out and semantic pick. **Zero latency, ~0.5s for humans** | 1st wrong tap reshuffles a new challenge; 2 consecutive failures trigger silent 10-min cooldown (configurable) |
-| **🎭 Custom Sticker Quiz (Personal & Fun)** | Use `/add` (alias `/addverify`) or the in-panel sticker pack builder to turn your own collected animated/static TG stickers into custom visual multiple-choice quizzes — **unique per owner, impossible for text scripts** | Auto-switches stickers on retry, auto-deletes sticker after passing, plus honeypot & cooldown |
-| **📝 Local Quiz** | 2×2 local commonsense buttons, zero external API calls | Same reshuffle-on-error + cooldown protection |
-| **🛡️ CF Turnstile Strict Mode** | 1-tap escalation during heavy bot raids; runs Cloudflare Turnstile natively inside Telegram WebApp overlay | Server-side `siteverify` validation; auto-falls back to Emoji mode if Turnstile keys aren't configured |
-
-- **4-Layer Intelligent Anti-Spam Shield (Millisecond Edge Latency)**:
-  1. **CAS Global Blacklist**: Checks [Combot Anti-Spam (CAS)](https://cas.chat/) on first contact from unverified strangers (KV-cached 6h/24h, fail-open) to silently drop known userbot spammers with zero friction for real users.
-  2. **Unsolicited Media/Flyer Block & Smart Escalation**: Unverified first-message photos/videos/stickers (e.g. USDT/casino/VPN ad flyers), channel forwards, external links, zero-width spoofing, or ad display names are never pre-queued and automatically escalate to CF Turnstile strict mode.
-  3. **Honeypot Trap + Reshuffle Cooldown**: Decoy button silently bans blind callback scripts; wrong answers reshuffle and trigger silent cooldown.
-  4. **De-Obfuscated Keyword Filter & Edit Guard**: Strips zero-width chars, full-width Unicode (NFKC), and Cyrillic homoglyphs; monitors `edited_message` to catch "send innocent text then edit into spam link" exploits.
-- **30-Day Grace Period**: Verified users stay verified for 30 days; admins can also grant **⭐ Permanent Trust** or **🚫 Silent Ban** anytime.
-- **End-to-End Security**: Official Telegram `initData` HMAC-SHA256 verification on APIs, server-side filtering for private sites, and 30-minute HMAC-signed proxy URLs for private chat photos (`BOT_TOKEN` never reaches clients).
-
----
-
-## 💎 Why RosePanel?
-
-1. **Zero Server Cost & Native HTTPS**: Runs on Cloudflare Workers' free tier with global edge speed and instant TLS.
-2. **100% Visual Management Inside Telegram**: Edit bio, public/private sites, Komari URL, sticker badges, verification mode, and check-in rules right from your phone — no redeploy needed.
-3. **Zero-Downtime Migration**: Directly compatible with `telegram_private_chatbot`'s `TOPIC_MAP` KV schema and root `POST /` webhooks.
-4. **Privacy-Clean Repository**: Zero hardcoded tokens, group IDs, KV IDs, or private bookmarks in Git.
-5. **Modular Lightweight Design & AI-Native Installer**: Deploy as an ultra-lightweight personal card with just `BOT_TOKEN`, or toggle any module on demand. Includes a standard [AGENTS.md](AGENTS.md) so AI coding agents automatically ask which modules you want before installing!
-
----
-
-## 🧩 Modular Add-Ons & 🤖 AI-Guided Setup
-
-Pick only what you need — unused modules stay cleanly out of the way:
-
-| Module | Default | Activation | Notes |
-| :--- | :---: | :--- | :--- |
-| **🎫 Personal Ticket + 🌐 Public/Private Sites** | Core | `BOT_TOKEN` + `TOPIC_MAP` KV | Ultra-lightweight baseline with custom TG sticker emblems & private bookmarks |
-| **📡 Komari Server Probe** | Optional | Set `KOMARI_URL` (env or in-app) | Automatically hides the `Probe` tab for visitors when unconfigured |
-| **👤 Bidirectional PM Bot + 4-Layer Shield** | Optional | Set `SUPERGROUP_ID` | Forum Topics, photo/link archive, CAS blacklist, and flyer-ad blocking |
-| **🛡️ CF Turnstile Strict Mode** | Optional | Set `TURNSTILE_SITE_KEY` & `SECRET` | Auto-escalates suspicious ads or toggleable manually in Settings |
-| **🌸 Group Check-in, Points & Badges** | Optional | `ENABLE_CHECKIN="true"` or in-app switch | Off by default for clean personal cards; 1-click on for Telegram groups |
-| **🔌 Extra Optional Extensions** | Opt-in | Ask your AI agent during setup | Need Nezha/Uptime Kuma probes or channel comment guard? Your AI agent follows [AGENTS.md](AGENTS.md) to add them only if requested |
-
-> **🤖 AI-Guided Installation (Antigravity / Claude Code / Codex / Cursor)**:  
-> Open this repo with your AI assistant and say:
+> **🤖 AI-Guided Modular Setup** (works with Antigravity / Claude Code / Codex / Cursor via [AGENTS.md](AGENTS.md)):
 > ```text
 > Read AGENTS.md in this repo, ask me which modules I want (or if I prefer a lightweight install), and guide me through deploying RosePanel Bot.
 > ```
 
 ---
 
-## 🚀 Fast Deployment (4 Options)
+## 🎬 Live Motion Showcase
 
-> **Prerequisites**: Get a `BOT_TOKEN` from [@BotFather](https://t.me/BotFather) and your numeric UID from [@userinfobot](https://t.me/userinfobot). For PM forwarding, simply create a Telegram group with **Topics** enabled, add the bot as Administrator (**Manage Topics** & **Delete Messages**), and send **`/bind`** inside the group — **no need to look up `-100...` group IDs or manually edit `SUPERGROUP_ID`!**
+<div align="center">
+  <img src="docs/assets/showcase.webp" alt="RosePanel Bot Motion Showcase" width="94%" />
+</div>
+
+---
+
+## 🎭 Signature Features: Custom Sticker Quizzes & Animated Emblems
+
+<div align="center">
+  <img src="docs/assets/showcase-antispam.png" alt="Send any static or animated TG sticker via /add to create custom visual anti-spam quizzes" width="94%" />
+  <br /><br />
+  <img src="docs/assets/showcase-badges.png" alt="Send /set with any sticker or custom emoji to update the animated main emblem" width="94%" />
+</div>
+
+---
+
+## 📱 4-Tab Mini App Gallery (Card · Sites · Probe · Visitors)
+
+<div align="center">
+  <img src="docs/assets/preview-row1.png" alt="1 Personal Card & Contact Etiquette · 2 Public & Private Sites" width="94%" />
+  <br /><br />
+  <img src="docs/assets/preview-row2.png" alt="3 Komari Server Probe · 4 Visitors & 4-Layer Anti-Spam Shield" width="94%" />
+</div>
+
+---
+
+## ✨ Key Features
+
+- **🎭 1-Tap Static/Animated Sticker Visual Quizzes (`/add`)**
+  - Send `/add` to your bot, drop any static or animated Telegram sticker you love + space-separated choices, and create a custom visual quiz in 3 seconds — or pick directly from sticker packs inside Settings. Humans pass in 1 second while automated spam bots hit a wall.
+- **🛡️ 4-Layer Intelligent Anti-Spam Shield (Millisecond Edge Latency)**
+  1. **Layer 1 · CAS Global Blacklist**: Checks [Combot Anti-Spam (CAS)](https://cas.chat/) on first contact from unverified strangers (KV-cached, zero friction for real users) to silently drop known spam userbots.
+  2. **Layer 2 · Unsolicited Media/Flyer Block & Auto-Escalation**: Blocks unverified first-message ad flyers (USDT/casino/VPN posters), channel forwards, and external links, auto-escalating high-risk senders to Cloudflare Turnstile.
+  3. **Layer 3 · Zero-Latency Visual/Emoji Challenges + Honeypot Trap**: Switch freely among Sticker Quizzes, 3×3 Emoji Odd-One-Out/Pick, Local Quizzes, and CF Turnstile; includes decoy honeypot buttons and silent cooldowns.
+  4. **Layer 4 · De-Obfuscated Keyword Filter & Edit Guard**: Strips zero-width characters, full-width Unicode (NFKC), and Cyrillic homoglyphs; monitors `edited_message` to catch "send normal text then edit into spam" bypasses.
+- **⚡ 0-Second Personal Mini App Panel & Animated Sticker Emblems**
+  - Edge-injected customizable splash screen (`emblem` breathing halo / `emoji` bounce / `skeleton` shimmer) + local SWR cache + single-key admin overview cache (50× fewer KV reads) + automatic Telegram native dark/light chrome sync.
+  - Send `/set` with any `.webp` / `.webm` / 60fps `.tgs` sticker or Custom Emoji to instantly update your main emblem and save it to your collection library.
+  - Admin-only **Owner Overview** card on the home tab (blocked spam count, active visitors, recent contacts) + optional 1-click **Group Check-in, Points & Badges System**.
+- **🌐 Public / Private Site Directory & 📡 Komari Server Probe**
+  - Categories, search, drag-free reordering, and 1-tap **`Public` vs `🔒 Private`** visibility toggle (private sites are strictly omitted server-side for non-admins).
+  - Native **Komari v2 (`/api/rpc2`)** and **v1 (`/api/nodes`)** adapter with redirect-loop protection, 15s edge caching, and a **`🔒 Private (Admin Only)`** visibility switch.
+- **💬 In-Group `/bind` Setup + Bidirectional Photo Album & Link Archive**
+  - Create a private Telegram group with **Topics** enabled, make the bot an admin, and send **`/bind`** — **no `-100...` group ID lookup or manual `SUPERGROUP_ID` editing required!**
+  - Tracks bidirectional message counts, auto-archives exchanged photos (30-min HMAC-signed private proxy + lightbox) & links, with notes, 1-tap Ban/Trust/Close, and two-tier chat history clearing.
+
+---
+
+## 🛡️ 4-Layer Anti-Spam Architecture
+
+```mermaid
+flowchart LR
+  U["Stranger PMs Bot"] --> L1{"Layer 1 · CAS Global Blacklist"}
+  L1 -- "Known Spammer" --> DROP["🚫 Silent Drop & Logged"]
+  L1 -- "Clean User" --> L2{"Layer 2 · Risk & De-Obfuscation"}
+  L2 -- "Banned Keyword / Edit Bypass" --> DROP
+  L2 -- "Ad Flyer / Forward / URL" --> TS["🛡️ Auto-Escalate to CF Turnstile"]
+  L2 -- "Normal Message" --> CH["🎭 Sticker Quiz / 🎯 Emoji Pick"]
+  CH -- "Honeypot Clicked" --> DROP
+  CH -- "Passed (30-Day Grace)" --> INBOX["💬 Forward to Forum Topic + Mini App Archive"]
+  TS -- "Verified" --> INBOX
+```
+
+Switch anytime among **4 verification modes** inside **⚙️ Settings → Community & Anti-Spam**:
+
+| Mode | Experience & Mechanism | Anti-Abuse Protection |
+| :--- | :--- | :--- |
+| **🎭 Custom Sticker Quiz (Recommended)** | Use `/add` (or the in-panel sticker pack builder) to turn your collected animated/static stickers into custom visual quizzes — **1s for humans, high barrier for spam scripts** | Auto-rotates stickers on retry, cleans up after passing + honeypot & cooldown |
+| **🎯 Emoji Odd-One-Out / Pick (Default)** | 3×3 pure-icon inline grid alternating odd-one-out and semantic pick — **zero latency, ~0.5s for humans** | Reshuffles on first mistake; 2 consecutive failures trigger silent 10-min cooldown (configurable) |
+| **📝 Local Quiz** | 2×2 local commonsense buttons, zero external calls | Reshuffle-on-error + honeypot + silent cooldown |
+| **🛡️ CF Turnstile Strict Mode** | 1-tap escalation during targeted raids; native Cloudflare Turnstile inside Telegram WebApp with server-side `siteverify` | Auto-falls back to Emoji mode if Turnstile keys aren't set |
+
+---
+
+## 🧩 Modular Add-Ons & 🤖 AI-Guided Setup
+
+Unused modules stay completely hidden and add zero overhead; includes [AGENTS.md](AGENTS.md) so AI assistants ask which modules you want before deploying:
+
+| Module | Default | Activation | Notes |
+| :--- | :---: | :--- | :--- |
+| **🪪 Personal Card + 🌐 Public/Private Sites** | Core | `BOT_TOKEN` + `TOPIC_MAP` KV | Lightweight baseline with animated TG sticker emblems & dual-layer sites |
+| **📡 Komari Server Probe** | Optional | Enter URL in Mini App | Hidden from visitors when unconfigured or set to Admin Only |
+| **👤 Bidirectional PM Bot + 4-Layer Shield** | Optional | Send `/bind` in Topics group (or `SUPERGROUP_ID`) | Forum Topics inbox, photo/link archive, CAS & sticker verification |
+| **🛡️ CF Turnstile Strict Mode** | Optional | `TURNSTILE_SITE_KEY` & `SECRET` | Auto-escalates high-risk ads or toggle manually in Settings |
+| **🌸 Group Check-in, Points & Badges** | Optional | `ENABLE_CHECKIN="true"` or in-app switch | Off by default for personal cards; 1-click on for group communities |
+
+---
+
+## 🚀 Fast Deployment (Free in 5 Minutes)
 
 ### Option 1: One-Click Deploy to Cloudflare (Easiest ★, Zero Local Setup)
 
-1. Click the **Deploy to Cloudflare** button above (or fork and open [Cloudflare Dashboard](https://dash.cloudflare.com/) → **Workers & Pages → Create → Workers → Import a repository** → choose `rose-panel-bot`):
+1. Click **Deploy to Cloudflare** at the top (or fork & import in Cloudflare Dashboard → **Workers & Pages → Create → Workers → Import a repository**):
    - **Build command**: `npm run build`
    - **Deploy command**: `npx wrangler deploy`
-   - Click **Save and Deploy**.
-2. In **Settings → Variables & Bindings**, confirm `TOPIC_MAP` KV is bound and set `BOT_TOKEN`, `WEBHOOK_SECRET`, `ADMIN_IDS`, and `BOT_USERNAME`.
-3. Open `https://<your-domain>/setup?secret=<WEBHOOK_SECRET>` once, then send `/bind` in your Forum Group!
+2. In **Settings → Variables & Bindings**, confirm `TOPIC_MAP` KV is bound and set 4 core variables: `BOT_TOKEN` (Secret), `WEBHOOK_SECRET` (Secret), `ADMIN_IDS` (your numeric UID), `BOT_USERNAME` (without `@`).
+3. Visit `https://<your-domain>/setup?secret=<WEBHOOK_SECRET>` once until you see `"ok": true`.
+4. *(For bidirectional PM)* Create a private group with **Topics** enabled, add the bot as Administrator, and send **`/bind`** inside the group!
 
-### Option 2: Windows (PowerShell)
+<details>
+<summary><b>🪟 Option 2: Windows (PowerShell)</b></summary>
 
 ```powershell
 winget install --id Git.Git -e
@@ -110,8 +158,10 @@ npm run deploy
 npx wrangler secret put BOT_TOKEN
 npx wrangler secret put WEBHOOK_SECRET
 ```
+</details>
 
-### Option 3: macOS (Terminal)
+<details>
+<summary><b>🍎 Option 3: macOS (Terminal)</b></summary>
 
 ```bash
 brew install git node
@@ -123,24 +173,18 @@ npm run deploy
 npx wrangler secret put BOT_TOKEN
 npx wrangler secret put WEBHOOK_SECRET
 ```
+</details>
 
-### Option 4: Linux VPS (All Major Distros & Docker)
+<details>
+<summary><b>🐧 Option 4: Linux VPS / Docker / Self-Hosted</b></summary>
 
 #### 1. Install Git & Node.js 22
-- **Debian / Ubuntu**:
-  ```bash
-  sudo apt update && sudo apt install -y curl git ca-certificates
-  curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash - && sudo apt install -y nodejs
-  ```
-- **CentOS Stream / Rocky Linux / AlmaLinux / RHEL**:
-  ```bash
-  sudo dnf install -y curl git
-  curl -fsSL https://rpm.nodesource.com/setup_22.x | sudo bash - && sudo dnf install -y nodejs
-  ```
+- **Debian / Ubuntu**: `sudo apt update && sudo apt install -y curl git ca-certificates && curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash - && sudo apt install -y nodejs`
+- **CentOS Stream / Rocky / AlmaLinux**: `sudo dnf install -y curl git && curl -fsSL https://rpm.nodesource.com/setup_22.x | sudo bash - && sudo dnf install -y nodejs`
 - **Arch Linux**: `sudo pacman -Syu --noconfirm git nodejs npm`
 - **Alpine Linux**: `apk add --no-cache git nodejs npm`
 
-#### 2. Headless Deploy to Cloudflare Workers via API Token
+#### 2. Headless Deploy to Cloudflare Workers
 ```bash
 git clone https://github.com/mango0114/rose-panel-bot.git
 cd rose-panel-bot && npm ci
@@ -150,48 +194,44 @@ echo "YOUR_BOT_TOKEN" | npx wrangler secret put BOT_TOKEN
 echo "YOUR_RANDOM_SECRET" | npx wrangler secret put WEBHOOK_SECRET
 ```
 
-#### 3. One-Line Docker Deploy (Any OS)
+#### 3. One-Line Docker Deploy
 ```bash
 git clone https://github.com/mango0114/rose-panel-bot.git && cd rose-panel-bot
 docker run --rm -it -v "$PWD":/app -w /app -e CLOUDFLARE_API_TOKEN="YOUR_API_TOKEN" node:22-alpine sh -c "npm ci && npm run deploy"
 ```
 
-#### 4. Self-Host Persistently on Your Own VPS (with Caddy HTTPS)
+#### 4. Self-Host on Your Own VPS (with Caddy HTTPS)
 ```bash
 npm ci && npm run build && cp .dev.vars.example .dev.vars
 # Edit .dev.vars with real secrets (remove DEV_PREVIEW="true" in production!)
 npx wrangler dev --ip 127.0.0.1 --port 8787 --persist-to ./.wrangler/state --show-interactive-dev-session=false
 ```
-Reverse-proxy `127.0.0.1:8787` with Caddy (`reverse_proxy 127.0.0.1:8787`) for automatic HTTPS and run under `systemd`.
+Reverse-proxy `127.0.0.1:8787` with Caddy (`reverse_proxy 127.0.0.1:8787`) for automatic HTTPS.
+</details>
 
 ---
 
-## ⚙️ Environment Variables & Final Activation
+## ⚙️ Environment Variables
 
 | Variable | Type | Required | Notes |
 | :--- | :--- | :---: | :--- |
-| `TOPIC_MAP` | KV Binding | ✅ | Stores config, sites, visitor archive, and check-ins |
-| `BOT_TOKEN` | Secret | ✅ | Telegram Bot Token |
-| `SUPERGROUP_ID` | Text | Optional | Admin Forum Group ID (**or simply run `/bind` inside your Forum Group after deploy!**) |
-| `ADMIN_IDS` | Text | Recommended | Comma-separated numeric UIDs (supergroup admins are also auto-detected) |
+| `TOPIC_MAP` | KV Binding | ✅ | Stores panel config, sites, visitor archive, and check-ins |
+| `BOT_TOKEN` | Secret | ✅ | Telegram Bot Token from `@BotFather` |
+| `ADMIN_IDS` | Text | Recommended | Owner numeric UID (`<0.1ms` in-memory fast auth, 0 KV writes) |
 | `BOT_USERNAME` | Text | Recommended | Bot username without `@` |
+| `WEBHOOK_SECRET` | Secret | Recommended | Random secret protecting Webhook & `/setup` |
 | `APP_SHORT_NAME` | Text | Recommended | BotFather `/newapp` short name (e.g. `panel`) |
-| `WEBHOOK_SECRET` | Secret | Recommended | Random secret protecting `/webhook` & `/setup` |
+| `SUPERGROUP_ID` | Text | Optional | Forum group ID (**recommended: simply run `/bind` in your group!**) |
 | `TURNSTILE_SITE_KEY` / `TURNSTILE_SECRET` | Text / Secret | Optional | Required only for CF Turnstile strict mode |
-| `KOMARI_URL` / `KOMARI_API_KEY` | Text / Secret | Optional | Komari endpoint & optional private auth (also editable in-app) |
-
-**Final Activation (10s)**:
-1. (Recommended) Attach a Custom Domain (e.g. `panel.yourdomain.com`) in Cloudflare Worker Settings.
-2. Open `https://<your-domain>/setup?secret=<YOUR_WEBHOOK_SECRET>` once in your browser until you see `"ok": true`.
-3. (For group pop-up launch) Run `/newapp` in `@BotFather` pointing to `https://<your-domain>/` with short name `panel`.
+| `KOMARI_URL` / `KOMARI_API_KEY` | Text / Secret | Optional | Komari URL & private auth (also editable in Mini App) |
 
 ---
 
 ## 🤖 Commands
 
-- **Everyone**: `/start`, `/panel`, `/me`, `/checkin` (community mode), `/rank` (community mode)
-- **Admin Private Chat**: `/set` (set animated sticker/Custom Emoji emblem, alias `/setbadge`), `/add` (add custom sticker visual verification quiz, alias `/addverify`), `/resetbadge`, `/cancel`
-- **Admin Forum Topics**: `/bind` (1-click inbox bind), `/unbind`, `/info`, `/ban`, `/unban`, `/trust`, `/reset`, `/close`, `/open`
+- **Everyone**: `/start` · `/panel` · `/me` · `/checkin` (community mode) · `/rank` (community mode)
+- **Admin PM**: `/set` (animated sticker emblem) · `/add` (add custom sticker quiz) · `/resetbadge` · `/cancel`
+- **Admin Forum Topics**: `/bind` (1-click inbox bind) · `/unbind` · `/info` · `/ban` · `/unban` · `/trust` · `/reset` · `/close` · `/open`
 
 ---
 
@@ -200,4 +240,44 @@ Reverse-proxy `127.0.0.1:8787` with Caddy (`reverse_proxy 127.0.0.1:8787`) for a
 - Integrations & Compatibility: [Komari Monitor](https://github.com/komari-monitor/komari) · [Combot Anti-Spam (CAS)](https://cas.chat/) · [jikssha/telegram_private_chatbot](https://github.com/jikssha/telegram_private_chatbot)
 - Built With: [Cloudflare Workers](https://workers.cloudflare.com/) · [Telegram Mini Apps](https://core.telegram.org/bots/webapps) · [React](https://react.dev/) · [Vite](https://vitejs.dev/) · [Lucide Icons](https://lucide.dev/) · [lottie-web](https://github.com/airbnb/lottie-web)
 
-MIT License © 2026 [mango0114](https://github.com/mango0114)
+---
+
+## 🧧 Support & Sponsors
+
+**RosePanel Bot** is 100% free and open-source under the MIT License with zero paywalls and zero telemetry. If it helped block Telegram spam or gave you a personal panel you love, feel free to buy the author a coffee / AI compute credits ☕✨
+
+- **Live Demo & Contact**: 👉 **[@Rose202_bot](https://t.me/Rose202_bot)** (try the 0-second panel and custom sticker quiz live!)
+- **Privacy-Friendly Sponsorship (Alipay Red-Packet Passcode)**: Send an Alipay passcode red packet + your desired display name & message (anonymous welcome) to **[@Rose202_bot](https://t.me/Rose202_bot)** and we'll add you to the Sponsors Wall below!
+
+### 🏆 Sponsors Wall
+
+Thank you to our generous supporters for keeping this open-source project evolving!
+
+<details open>
+<summary><b>View full sponsors list (Be the first supporter 🌸)</b></summary>
+
+| # | Sponsor | Amount | Message |
+| :---: | :---: | :---: | :--- |
+| 1 | *First spot open* | — | Light up the open-source sponsors wall ✨ |
+
+</details>
+
+---
+
+## 🌟 Star History
+
+<a href="https://www.star-history.com/#mango0114/rose-panel-bot&Date">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=mango0114/rose-panel-bot&type=Date&theme=dark" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=mango0114/rose-panel-bot&type=Date" />
+   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=mango0114/rose-panel-bot&type=Date" width="100%" />
+ </picture>
+</a>
+
+---
+
+<div align="center">
+  <br />
+  <b>⭐ If you find this project helpful, please consider giving it a Star!</b><br /><br />
+  <sub>MIT License © 2026 <a href="https://github.com/mango0114">mango0114</a></sub>
+</div>
