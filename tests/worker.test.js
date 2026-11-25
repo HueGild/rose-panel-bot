@@ -2085,7 +2085,79 @@ describe('Card labels cleanup (labelsRev 2)', () => {
 });
 
 describe('Honeypot / CAS auto-ban visibility & unban cooldown clearing', () => {
-  it('indexes honeypot-banned visitors so admin can inspect and unban them (clearing cooldown too)', async () => {
+  it('defaults honeypot click to temporary cooldown (preventing permanent lockout) with single-shot cooldown reminder', async () => {
+    const kv = createMemoryKV();
+    const env = {
+      TOPIC_MAP: kv,
+      BOT_TOKEN: '555111:HONEYPOT_TEST_TOKEN',
+      ADMIN_IDS: '10001',
+      SUPERGROUP_ID: '-100888999',
+    };
+
+    const tgPayloads = [];
+    const origFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn(async (url, init) => {
+      if (String(url).includes('api.cas.chat')) {
+        return new Response(JSON.stringify({ ok: false }), { status: 200 });
+      }
+      if (String(url).includes('/sendMessage') && init?.body) {
+        tgPayloads.push(JSON.parse(init.body));
+      }
+      return new Response(JSON.stringify({ ok: true, result: { message_id: 77 } }), { status: 200 });
+    });
+
+    try {
+      const chal = generateInlineChallenge('emoji', 'trapcool1', true);
+      expect(chal.keyboard[3][0].text).toBe('🚫 防脚本陷阱 · 点此直接锁定');
+
+      await kv.put(
+        'chal:trapcool1',
+        JSON.stringify({ userId: '60000', correctIndex: 0, failures: 0, mode: 'emoji' })
+      );
+      await kv.put('user_challenge:60000', 'trapcool1');
+
+      // Visitor accidentally clicks honeypot under default config (`honeypotAction: 'cooldown'`)
+      await handleTelegramUpdate(
+        {
+          callback_query: {
+            id: 'cq_trap_cool',
+            from: { id: 60000, first_name: 'MisclickFriend' },
+            data: 'v:trapcool1:trap',
+            message: { message_id: 8, chat: { id: 60000, type: 'private' } },
+          },
+        },
+        env,
+        'https://panel.test'
+      );
+
+      // Must NOT permanently ban; must enter verification cooldown instead!
+      expect(await kv.get('banned:60000')).toBeNull();
+      expect(await kv.get('verify_cool:60000')).toBe('1');
+      expect(await kv.get('chal:trapcool1')).toBeNull();
+
+      // Sending 2 messages during cooldown sends at most 1 gentle reminder (anti-amplification)
+      for (const mId of [21, 22]) {
+        await handleTelegramUpdate(
+          {
+            message: {
+              message_id: mId,
+              from: { id: 60000, first_name: 'MisclickFriend' },
+              chat: { id: 60000, type: 'private' },
+              text: '在吗？',
+            },
+          },
+          env,
+          'https://panel.test'
+        );
+      }
+      expect(tgPayloads).toHaveLength(1);
+      expect(tgPayloads[0].text).toContain('冷却中');
+    } finally {
+      globalThis.fetch = origFetch;
+    }
+  });
+
+  it('supports strict honeypot ban mode, recovers pre-v1.5.3 orphan banned:* keys, and prevents CAS re-ban after manual unban', async () => {
     const kv = createMemoryKV();
     const env = {
       TOPIC_MAP: kv,
@@ -2095,9 +2167,18 @@ describe('Honeypot / CAS auto-ban visibility & unban cooldown clearing', () => {
     };
 
     const origFetch = globalThis.fetch;
-    globalThis.fetch = vi.fn(async () => new Response(JSON.stringify({ ok: true, result: true }), { status: 200 }));
+    globalThis.fetch = vi.fn(async () => new Response(JSON.stringify({ ok: true, result: { message_id: 50 } }), { status: 200 }));
 
     try {
+      await savePanelConfig(env, { pmBot: { honeypotAction: 'ban' } });
+
+      // Simulate an already-migrated deployment that ALSO has an orphan pre-v1.5.3 `banned:59999` key without `user:59999`
+      await kv.put('visitors:migrated', '1');
+      await kv.put('banned:59999', '1');
+      // Plus a legacy telegram_private_chatbot record with `title` only
+      await kv.put('user:58888', JSON.stringify({ thread_id: 12, title: 'Legacy Friend', closed: false }));
+      await kv.put('banned:58888', '1');
+
       // Seed active challenge for visitor 60001
       await kv.put(
         'chal:traptest1',
@@ -2105,7 +2186,7 @@ describe('Honeypot / CAS auto-ban visibility & unban cooldown clearing', () => {
       );
       await kv.put('user_challenge:60001', 'traptest1');
 
-      // Visitor accidentally clicks honeypot decoy button
+      // Visitor clicks honeypot under strict `ban` mode
       await handleTelegramUpdate(
         {
           callback_query: {
@@ -2121,16 +2202,35 @@ describe('Honeypot / CAS auto-ban visibility & unban cooldown clearing', () => {
 
       expect(await kv.get('banned:60001')).toBe('1');
 
-      // Admin opens Visitors -> Banned tab and immediately finds the user to unban!
+      // Admin opens Visitors -> Banned tab and sees BOTH new ban (60001) AND pre-v1.5.3 orphan bans (59999, 58888)!
       const bannedList = await listVisitors(env, { filter: 'banned' });
       expect(bannedList.items.some((v) => v.userId === '60001' && v.isBanned)).toBe(true);
-      expect(bannedList.items.find((v) => v.userId === '60001')?.last_preview).toContain('蜜罐');
+      expect(bannedList.items.some((v) => v.userId === '59999' && v.isBanned)).toBe(true);
+      expect(bannedList.items.find((v) => v.userId === '58888')?.displayName).toBe('Legacy Friend');
 
-      // Even if a cooldown existed, admin unban clears both banned:<uid> and verify_cool:<uid>
+      // Even if CAS cached `cas:60001 = "1"`, manual admin `unban` clears cooldown AND exempts from CAS auto-reban
+      await kv.put('cas:60001', '1');
       await kv.put('verify_cool:60001', '1');
+      await kv.put('verify_cool_hint:60001', '1');
       await applyVisitorAction(env, '60001', 'unban');
       expect(await kv.get('banned:60001')).toBeNull();
       expect(await kv.get('verify_cool:60001')).toBeNull();
+      expect(await kv.get('verify_cool_hint:60001')).toBeNull();
+
+      await handleTelegramUpdate(
+        {
+          message: {
+            message_id: 30,
+            from: { id: 60001, first_name: 'CuriousHuman', username: 'curious_user' },
+            chat: { id: 60001, type: 'private' },
+            text: '你好，感谢解封！',
+          },
+        },
+        env,
+        'https://panel.test'
+      );
+      expect(await kv.get('banned:60001')).toBeNull();
+      expect(await kv.get('user_challenge:60001')).toBeTruthy();
     } finally {
       globalThis.fetch = origFetch;
     }

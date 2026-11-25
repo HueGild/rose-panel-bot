@@ -106,6 +106,8 @@ function shuffle(arr) {
   return copy;
 }
 
+const HONEYPOT_BUTTON_TEXT = '🚫 防脚本陷阱 · 点此直接锁定';
+
 /**
  * Generates an inline-button anti-spam challenge for either `emoji` (odd-one-out / semantic pick, 3x3)
  * or `quiz` (local commonsense 2x2).
@@ -113,7 +115,7 @@ function shuffle(arr) {
 export function generateInlineChallenge(mode = 'emoji', verifyId = 'test', enableHoneypot = true) {
   const withTrap = (rows) =>
     enableHoneypot
-      ? [...rows, [{ text: '🤖 我是机器人（真人勿点）', callback_data: `v:${verifyId}:trap` }]]
+      ? [...rows, [{ text: HONEYPOT_BUTTON_TEXT, callback_data: `v:${verifyId}:trap` }]]
       : rows;
 
   if (mode === 'quiz') {
@@ -232,7 +234,7 @@ export function generateStickerChallenge(
     );
   }
   if (enableHoneypot) {
-    rows.push([{ text: '🤖 我是机器人（真人勿点）', callback_data: `v:${verifyId}:trap` }]);
+    rows.push([{ text: HONEYPOT_BUTTON_TEXT, callback_data: `v:${verifyId}:trap` }]);
   }
 
   return {
@@ -707,6 +709,7 @@ export async function completeTurnstileVerification(env, requestOrigin, verifyId
   await env.TOPIC_MAP.delete(`chal:${verifyId}`);
   await env.TOPIC_MAP.delete(`user_challenge:${state.userId}`);
   await env.TOPIC_MAP.delete(`verify_cool:${state.userId}`);
+  await env.TOPIC_MAP.delete(`verify_cool_hint:${state.userId}`);
 
   if (state.challengeChatId && state.challengeMessageId) {
     await tgCall(env, 'editMessageText', {
@@ -729,9 +732,18 @@ export async function completeTurnstileVerification(env, requestOrigin, verifyId
 async function startVerificationChallenge(env, requestOrigin, msg, config, risk = null) {
   const uid = String(msg.from.id);
 
-  // Check cooldown lock (after repeated failed attempts)
+  // Check cooldown lock (after repeated failed attempts or honeypot trigger)
   const inCooldown = await env.TOPIC_MAP.get(`verify_cool:${uid}`);
   if (inCooldown) {
+    const hinted = await env.TOPIC_MAP.get(`verify_cool_hint:${uid}`);
+    if (!hinted) {
+      const cooldownMins = Math.max(1, Number(config.pmBot.cooldownMinutes || 10));
+      await env.TOPIC_MAP.put(`verify_cool_hint:${uid}`, '1', { expirationTtl: cooldownMins * 60 });
+      await tgCall(env, 'sendMessage', {
+        chat_id: msg.chat.id,
+        text: '⏳ 人机验证仍在冷却中，请稍等几分钟后再发送消息重新验证。',
+      }).catch(() => {});
+    }
     return;
   }
 
@@ -1146,15 +1158,13 @@ async function handleCallbackQuery(env, requestOrigin, cq, config) {
       return;
     }
 
-    // Layer 3: Honeypot trap button — blind spam scripts clicking the decoy get silently banned immediately!
+    // Layer 3: Honeypot trap button — defaults to temporary cooldown so misclicking humans are never permanently lost;
+    // admins who prefer strict permanent blocking can switch `pmBot.honeypotAction` to `'ban'`.
     if (idxStr === 'trap') {
-      await env.TOPIC_MAP.put(`banned:${state.userId}`, '1');
+      const trapAction = config.pmBot.honeypotAction === 'ban' ? 'ban' : 'cooldown';
+      const cooldownMins = Math.max(1, Number(config.pmBot.cooldownMinutes || 10));
       await env.TOPIC_MAP.delete(`chal:${verifyId}`);
       await env.TOPIC_MAP.delete(`user_challenge:${state.userId}`);
-      await upsertVisitorProfile(env, cq.from, {
-        incrementMsg: false,
-        lastPreview: '[触发蜜罐陷阱 · 已自动拉黑]',
-      }).catch(() => {});
       await recordBlockedSpam(env);
       if (state.stickerMessageId && cq.message?.chat?.id) {
         await tgCall(env, 'deleteMessage', {
@@ -1162,15 +1172,39 @@ async function handleCallbackQuery(env, requestOrigin, cq, config) {
           message_id: state.stickerMessageId,
         }).catch(() => {});
       }
+
+      if (trapAction === 'ban') {
+        await env.TOPIC_MAP.put(`banned:${state.userId}`, '1');
+        await upsertVisitorProfile(env, cq.from, {
+          incrementMsg: false,
+          lastPreview: '[触发蜜罐陷阱 · 已自动拉黑]',
+        }).catch(() => {});
+        await tgCall(env, 'answerCallbackQuery', {
+          callback_query_id: cq.id,
+          text: '🚫 触发防脚本陷阱，已拒绝访问。',
+          show_alert: true,
+        }).catch(() => {});
+        await tgCall(env, 'editMessageText', {
+          chat_id: cq.message.chat.id,
+          message_id: cq.message.message_id,
+          text: '🚫 <b>验证未通过</b>：触发防脚本陷阱按钮，如系误触请联系站长解除拉黑。',
+          parse_mode: 'HTML',
+        }).catch(() => {});
+        return;
+      }
+
+      await env.TOPIC_MAP.put(`verify_cool:${state.userId}`, '1', { expirationTtl: cooldownMins * 60 });
+      await env.TOPIC_MAP.delete(`verify_cool_hint:${state.userId}`);
       await tgCall(env, 'answerCallbackQuery', {
         callback_query_id: cq.id,
-        text: '🛡️ 触发反垃圾蜜罐陷阱，已拒绝访问。',
+        text: `⏳ 误触防脚本陷阱按钮，已锁定 ${cooldownMins} 分钟，稍后再发消息即可重新验证。`,
         show_alert: true,
       }).catch(() => {});
       await tgCall(env, 'editMessageText', {
         chat_id: cq.message.chat.id,
         message_id: cq.message.message_id,
-        text: '🛡️ 验证未通过。',
+        text: `⏳ <b>误触防脚本陷阱按钮</b>，验证已暂时锁定，请于 <b>${cooldownMins} 分钟</b>后重新发送消息完成人机验证。`,
+        parse_mode: 'HTML',
       }).catch(() => {});
       return;
     }
@@ -1182,6 +1216,7 @@ async function handleCallbackQuery(env, requestOrigin, cq, config) {
 
       if (nextFails >= maxFails) {
         await env.TOPIC_MAP.put(`verify_cool:${state.userId}`, '1', { expirationTtl: cooldownMins * 60 });
+        await env.TOPIC_MAP.delete(`verify_cool_hint:${state.userId}`);
         await env.TOPIC_MAP.delete(`chal:${verifyId}`);
         await env.TOPIC_MAP.delete(`user_challenge:${state.userId}`);
         await recordBlockedSpam(env);
@@ -1270,6 +1305,8 @@ async function handleCallbackQuery(env, requestOrigin, cq, config) {
     await env.TOPIC_MAP.delete(`needs_verify:${state.userId}`);
     await env.TOPIC_MAP.delete(`chal:${verifyId}`);
     await env.TOPIC_MAP.delete(`user_challenge:${state.userId}`);
+    await env.TOPIC_MAP.delete(`verify_cool:${state.userId}`);
+    await env.TOPIC_MAP.delete(`verify_cool_hint:${state.userId}`);
     if (state.stickerMessageId && cq.message?.chat?.id) {
       await tgCall(env, 'deleteMessage', {
         chat_id: cq.message.chat.id,
@@ -1889,8 +1926,23 @@ export async function handleTelegramUpdate(update, env, requestOrigin) {
     }
 
     if (!isAdmin && verifyMode !== 'off' && (!verified || needsVerify)) {
-      // Layer 1: CAS global spammer blacklist check (only for unverified strangers, KV-cached 6h/24h)
-      if (config.pmBot.enableCasCheck !== false) {
+      // Short-circuit cooldown before external CAS lookup to save subrequests under spam bursts
+      const inCooldown = await env.TOPIC_MAP.get(`verify_cool:${uid}`);
+      if (inCooldown) {
+        const hinted = await env.TOPIC_MAP.get(`verify_cool_hint:${uid}`);
+        if (!hinted) {
+          const cooldownMins = Math.max(1, Number(config.pmBot.cooldownMinutes || 10));
+          await env.TOPIC_MAP.put(`verify_cool_hint:${uid}`, '1', { expirationTtl: cooldownMins * 60 });
+          await tgCall(env, 'sendMessage', {
+            chat_id: msg.chat.id,
+            text: '⏳ 人机验证仍在冷却中，请稍等几分钟后再发送消息重新验证。',
+          }).catch(() => {});
+        }
+        return;
+      }
+
+      // Layer 1: CAS global spammer blacklist check (only for unverified strangers, KV-cached 6h/24h; skipped if manually unbanned)
+      if (config.pmBot.enableCasCheck !== false && !rec?.casExempt) {
         const cas = await checkCasBlacklist(env, uid);
         if (cas.isSpammer) {
           await env.TOPIC_MAP.put(`banned:${uid}`, '1');

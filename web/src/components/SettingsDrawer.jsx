@@ -1462,7 +1462,9 @@ export default function SettingsDrawer({
                 <div className="list-row">
                   <div className="row-main">
                     <div className="row-title" style={{ fontSize: 13 }}>蜜罐防盲点陷阱</div>
-                    <div className="row-desc wrap">在验证题底部埋设诱饵按钮，无脑脚本误点直接静默拉黑</div>
+                    <div className="row-desc wrap">
+                      在验证题底部埋设「防脚本陷阱」按钮，默认进入冷却锁定（避免真人手滑或眼花被永久失联）
+                    </div>
                   </div>
                   <button
                     type="button"
@@ -1472,6 +1474,25 @@ export default function SettingsDrawer({
                     <span className="switch-knob" />
                   </button>
                 </div>
+
+                {draft.pmBot.enableHoneypot !== false && (
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6, marginBottom: 4 }}>
+                    {[
+                      { id: 'cooldown', label: '⏳ 冷却锁定（推荐 · 防真人误触）' },
+                      { id: 'ban', label: '🚫 直接拉黑（可在访客列表解封）' },
+                    ].map((opt) => (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        className={`pill ${(draft.pmBot.honeypotAction || 'cooldown') === opt.id ? 'rose' : ''}`}
+                        style={{ cursor: 'pointer', fontSize: 11 }}
+                        onClick={() => updateField('pmBot', 'honeypotAction', opt.id)}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
 
                 <div className="field" style={{ marginTop: 10 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 }}>

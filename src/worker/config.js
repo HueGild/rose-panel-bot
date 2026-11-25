@@ -126,6 +126,7 @@ export const DEFAULT_CONFIG = {
     smartEscalation: true,
     blockUnverifiedMedia: true,
     enableHoneypot: true,
+    honeypotAction: 'cooldown', // cooldown | ban (default cooldown prevents permanent lockout on human misclick)
     blockedKeywords: '',
     stickerChallenges: [],
     welcomeText: '你好呀 🌸 这里是我的私聊助手。直接发送消息即可联系我，也可以点击下方按钮打开我的个人面板查看小站与探针。',
@@ -300,6 +301,8 @@ export function mergeConfig(base, override) {
     pmBot: {
       ...base.pmBot,
       ...(override.pmBot || {}),
+      honeypotAction:
+        (override.pmBot?.honeypotAction ?? base.pmBot?.honeypotAction) === 'ban' ? 'ban' : 'cooldown',
       enableStartWelcome:
         (override.pmBot?.enableStartWelcome ?? base.pmBot?.enableStartWelcome) !== false,
       showPanelButtonInWelcome:
@@ -409,6 +412,7 @@ export async function savePanelConfig(env, nextConfig) {
   merged.pmBot.smartEscalation = merged.pmBot.smartEscalation !== false;
   merged.pmBot.blockUnverifiedMedia = merged.pmBot.blockUnverifiedMedia !== false;
   merged.pmBot.enableHoneypot = merged.pmBot.enableHoneypot !== false;
+  merged.pmBot.honeypotAction = merged.pmBot.honeypotAction === 'ban' ? 'ban' : 'cooldown';
   merged.pmBot.enableStartWelcome = merged.pmBot.enableStartWelcome !== false;
   merged.pmBot.showPanelButtonInWelcome = merged.pmBot.showPanelButtonInWelcome !== false;
   merged.pmBot.autoReplyEnabled = Boolean(merged.pmBot.autoReplyEnabled);

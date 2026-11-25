@@ -10,6 +10,7 @@ import { resolveSupergroupId, safeGetJSON, safePutJSON } from './config.js';
 
 const VISITOR_INDEX_KEY = 'visitors:index';
 const VISITOR_MIGRATED_KEY = 'visitors:migrated';
+const VISITOR_BANNED_MIGRATED_KEY = 'visitors:banned_migrated';
 const VISITOR_SUMMARY_CACHE_KEY = 'cache:visitor_summary';
 const VISITOR_SUMMARY_TTL_MS = 10 * 60 * 1000;
 const MAX_PHOTOS = 150;
@@ -29,6 +30,7 @@ export function formatDisplayName(rec = {}) {
   const full = [rec.first_name, rec.last_name].filter(Boolean).join(' ').trim();
   if (full) return full;
   if (rec.username) return `@${rec.username}`;
+  if (rec.title) return String(rec.title).trim();
   return `用户 ${rec.userId || ''}`.trim();
 }
 
@@ -413,12 +415,14 @@ export async function listVisitors(env, options = {}) {
     return { stats: { total: 0, active: 0, trusted: 0, banned: 0, closed: 0 }, items: [] };
   }
 
-  const [indexedRaw, migrated] = await Promise.all([
+  const [indexedRaw, migrated, bannedMigrated] = await Promise.all([
     safeGetJSON(env.TOPIC_MAP, VISITOR_INDEX_KEY, []),
     env.TOPIC_MAP.get(VISITOR_MIGRATED_KEY),
+    env.TOPIC_MAP.get(VISITOR_BANNED_MIGRATED_KEY),
   ]);
   const indexed = Array.isArray(indexedRaw) ? indexedRaw : [];
-  const idSet = new Set(indexed.map(String));
+  let idList = Array.from(new Set(indexed.map(String)));
+  const idSet = new Set(idList);
 
   // Run one-time legacy `user:*` discovery only until migrated, avoiding recurring KV.list quota burn
   if (!migrated && typeof env.TOPIC_MAP.list === 'function') {
@@ -429,11 +433,12 @@ export async function listVisitors(env, options = {}) {
         const uid = k.name.slice(5);
         if (/^\d+$/.test(uid) && !idSet.has(uid)) {
           idSet.add(uid);
+          idList.push(uid);
           discovered += 1;
         }
       }
       if (discovered > 0) {
-        await safePutJSON(env.TOPIC_MAP, VISITOR_INDEX_KEY, Array.from(idSet).slice(0, 500));
+        await safePutJSON(env.TOPIC_MAP, VISITOR_INDEX_KEY, idList.slice(0, 500));
       }
       await env.TOPIC_MAP.put(VISITOR_MIGRATED_KEY, '1');
     } catch {
@@ -441,7 +446,29 @@ export async function listVisitors(env, options = {}) {
     }
   }
 
-  const allIds = Array.from(idSet).slice(0, 120);
+  // One-time orphan `banned:*` discovery so pre-v1.5.3 honeypot/CAS auto-bans appear in Admin -> Banned for 1-click unban
+  if (!bannedMigrated && typeof env.TOPIC_MAP.list === 'function') {
+    try {
+      const listedBanned = await env.TOPIC_MAP.list({ prefix: 'banned:', limit: 200 });
+      const prepended = [];
+      for (const k of listedBanned.keys || []) {
+        const uid = k.name.slice(7);
+        if (/^\d+$/.test(uid) && !idSet.has(uid)) {
+          idSet.add(uid);
+          prepended.push(uid);
+        }
+      }
+      if (prepended.length > 0) {
+        idList = [...prepended, ...idList].slice(0, 500);
+        await safePutJSON(env.TOPIC_MAP, VISITOR_INDEX_KEY, idList);
+      }
+      await env.TOPIC_MAP.put(VISITOR_BANNED_MIGRATED_KEY, '1');
+    } catch {
+      // Ignore list failure
+    }
+  }
+
+  const allIds = idList.slice(0, 120);
   const supergroupId = await resolveSupergroupId(env);
   const details = (await Promise.all(allIds.map((uid) => getVisitorDetail(env, uid, supergroupId)))).filter(Boolean);
 
@@ -524,20 +551,29 @@ export async function applyVisitorAction(env, userId, action, payload = {}) {
   switch (action) {
     case 'ban':
       await env.TOPIC_MAP.put(`banned:${uid}`, '1');
+      if (rec.casExempt) {
+        delete rec.casExempt;
+        await safePutJSON(env.TOPIC_MAP, key, rec);
+      }
       break;
     case 'unban':
       await env.TOPIC_MAP.delete(`banned:${uid}`);
       await env.TOPIC_MAP.delete(`verify_cool:${uid}`);
+      await env.TOPIC_MAP.delete(`verify_cool_hint:${uid}`);
+      rec.casExempt = true;
+      await safePutJSON(env.TOPIC_MAP, key, rec);
       break;
     case 'trust':
       await env.TOPIC_MAP.delete(`banned:${uid}`);
       await env.TOPIC_MAP.delete(`verify_cool:${uid}`);
+      await env.TOPIC_MAP.delete(`verify_cool_hint:${uid}`);
       await env.TOPIC_MAP.put(`verified:${uid}`, 'trusted');
       await env.TOPIC_MAP.delete(`needs_verify:${uid}`);
       break;
     case 'reset':
       await env.TOPIC_MAP.delete(`verified:${uid}`);
       await env.TOPIC_MAP.delete(`verify_cool:${uid}`);
+      await env.TOPIC_MAP.delete(`verify_cool_hint:${uid}`);
       await env.TOPIC_MAP.put(`needs_verify:${uid}`, '1', { expirationTtl: 600 });
       break;
     case 'close':
