@@ -14,8 +14,14 @@ import {
   X,
 } from 'lucide-react';
 import { apiRequest } from '../lib/api.js';
-import { openExternalUrl } from '../lib/telegram.js';
+import { confirmDialog, openExternalUrl } from '../lib/telegram.js';
 import { TgStickerMedia, TicketEmblem } from './Emblems.jsx';
+import {
+  CHANGELOG_URL,
+  HIDE_STAR_STRIP_STORAGE_KEY,
+  REPO_URL,
+  StarSupportBanner,
+} from './WhatsNewModal.jsx';
 
 const PROBE_PROVIDER_OPTIONS = [
   {
@@ -56,6 +62,7 @@ export default function SettingsDrawer({
   initialSection = 'profile',
   adminConfig,
   appVersion = '',
+  onOpenWhatsNew,
   onClose,
   onSaved,
   onToast,
@@ -65,6 +72,13 @@ export default function SettingsDrawer({
   const [saving, setSaving] = useState(false);
   const [testingProbe, setTestingProbe] = useState(false);
   const [probeTestResult, setProbeTestResult] = useState(null);
+  const [hideStarStrip, setHideStarStrip] = useState(() => {
+    try {
+      return localStorage.getItem(HIDE_STAR_STRIP_STORAGE_KEY) === '1';
+    } catch {
+      return false;
+    }
+  });
 
   // Version check (Scheme A) & optional Fork 1-click sync (Scheme B)
   const [checkingUpdate, setCheckingUpdate] = useState(false);
@@ -430,14 +444,22 @@ export default function SettingsDrawer({
   };
 
   const emblem = draft.profile?.emblem || { type: 'builtin', variant: 'owner', savedStickers: [] };
+  const isDirty = JSON.stringify(draft) !== JSON.stringify(adminConfig);
+
+  const handleRequestClose = async () => {
+    if (isDirty && !(await confirmDialog('还有未保存的设置修改，确定直接关闭吗？'))) {
+      return;
+    }
+    onClose();
+  };
 
   return (
-    <div className="sheet-backdrop" onClick={onClose}>
+    <div className="sheet-backdrop" onClick={handleRequestClose}>
       <div className="sheet-panel" onClick={(e) => e.stopPropagation()}>
         <div className="sheet-handle" />
         <div className="sheet-header">
           <div className="sheet-title">面板可视化设置</div>
-          <button className="icon-btn" onClick={onClose}>
+          <button className="icon-btn" onClick={handleRequestClose}>
             <X size={16} />
           </button>
         </div>
@@ -447,7 +469,8 @@ export default function SettingsDrawer({
             { id: 'profile', label: '名片与徽章' },
             { id: 'sites', label: '个人小站' },
             { id: 'probe', label: '节点探针' },
-            { id: 'modes', label: '社区与防骚扰' },
+            { id: 'modes', label: '防骚扰验证' },
+            { id: 'welcome', label: '欢迎与回复' },
             { id: 'update', label: '版本更新', badge: Boolean(updateInfo?.hasUpdate) },
           ].map((tab) => (
             <button
@@ -1075,67 +1098,11 @@ export default function SettingsDrawer({
           );
         })()}
 
-        {/* Section 4: Community Check-in & PM Anti-Spam */}
+        {/* Section 4: PM Anti-Spam & Verification */}
         {section === 'modes' && (
           <div className="card">
-            <div className="list-row">
-              <div className="row-main">
-                <div className="row-title" style={{ fontSize: 14 }}>群签到与积分徽章模式</div>
-                <div className="row-desc wrap">
-                  关闭时为极简个人名片；开启后支持群员每日签到、连签奖励、等级与徽章墙
-                </div>
-              </div>
-              <button
-                type="button"
-                className={`switch ${draft.community.enableCheckin ? 'on' : ''}`}
-                onClick={() => updateField('community', 'enableCheckin', !draft.community.enableCheckin)}
-              >
-                <span className="switch-knob" />
-              </button>
-            </div>
-
-            {draft.community.enableCheckin && (
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 12 }}>
-                <div className="field">
-                  <label className="field-label">每日最低积分</label>
-                  <input
-                    className="input"
-                    type="number"
-                    value={draft.community.dailyMinPoints}
-                    onChange={(e) => updateField('community', 'dailyMinPoints', Number(e.target.value))}
-                  />
-                </div>
-                <div className="field">
-                  <label className="field-label">每日最高积分</label>
-                  <input
-                    className="input"
-                    type="number"
-                    value={draft.community.dailyMaxPoints}
-                    onChange={(e) => updateField('community', 'dailyMaxPoints', Number(e.target.value))}
-                  />
-                </div>
-                <div className="field">
-                  <label className="field-label">连签每日递增奖励</label>
-                  <input
-                    className="input"
-                    type="number"
-                    value={draft.community.streakStepBonus}
-                    onChange={(e) => updateField('community', 'streakStepBonus', Number(e.target.value))}
-                  />
-                </div>
-                <div className="field">
-                  <label className="field-label">积分单位名称</label>
-                  <input
-                    className="input"
-                    value={draft.community.currencyName}
-                    onChange={(e) => updateField('community', 'currencyName', e.target.value)}
-                  />
-                </div>
-              </div>
-            )}
-
-            <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--border)' }}>
-              <label className="field-label">私聊防骚扰人机验证模式</label>
+            <div>
+              <label className="field-label">私聊防骚扰人机验证模式（陌生人点 /start 或发消息立即触发）</label>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10 }}>
                 {[
                   { id: 'emoji', label: '🎯 Emoji 找茬/点选', desc: '0延迟推荐' },
@@ -1384,6 +1351,39 @@ export default function SettingsDrawer({
                 </div>
               )}
 
+              {draft.pmBot.verificationMode !== 'off' && (
+                <div className="field" style={{ marginBottom: 10 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 }}>
+                    <label className="field-label" style={{ margin: 0 }}>
+                      验证通过免重复验证天数（1–3650 天）
+                    </label>
+                    <div style={{ display: 'flex', gap: 4 }}>
+                      {[7, 30, 90, 365].map((d) => (
+                        <button
+                          key={d}
+                          type="button"
+                          className={`pill ${Number(draft.pmBot.verifiedDays ?? 30) === d ? 'rose' : ''}`}
+                          style={{ cursor: 'pointer', fontSize: 10, padding: '2px 7px' }}
+                          onClick={() => updateField('pmBot', 'verifiedDays', d)}
+                        >
+                          {d}天
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <input
+                    className="input"
+                    type="number"
+                    min="1"
+                    max="3650"
+                    value={draft.pmBot.verifiedDays ?? 30}
+                    onChange={(e) =>
+                      updateField('pmBot', 'verifiedDays', e.target.value === '' ? '' : Number(e.target.value))
+                    }
+                  />
+                </div>
+              )}
+
               {draft.pmBot.verificationMode !== 'off' && draft.pmBot.verificationMode !== 'turnstile' && (
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
                   <div className="field" style={{ marginBottom: 0 }}>
@@ -1522,72 +1522,126 @@ export default function SettingsDrawer({
                 </div>
               </div>
             </div>
+          </div>
+        )}
 
-            <div className="list-row" style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--border)' }}>
-              <div className="row-main">
-                <div className="row-title" style={{ fontSize: 13 }}>话题访客资料卡附带对方头像</div>
-                <div className="row-desc wrap">
-                  开启后，新建话题及 /info 资料卡将附带访客 TG 头像大图（未设或隐藏头像时自动回退纯文字；点击卡片昵称亦可直达资料页）
-                </div>
+        {/* Section 5: Pre-Start Greeting, Panel Entry Visibility, Auto-Reply & Optional Group Check-in */}
+        {section === 'welcome' && (
+          <>
+            <div className="card">
+              <div className="field-label" style={{ marginBottom: 8 }}>👋 进门欢迎引导与面板入口</div>
+
+              <div className="field">
+                <label className="field-label">主人欢迎 / 引导语</label>
+                <textarea
+                  className="textarea"
+                  value={draft.pmBot.welcomeText}
+                  onChange={(e) => updateField('pmBot', 'welcomeText', e.target.value)}
+                  placeholder="例如：你好呀 🌸 点击下方「开始」完成简单验证后，即可直接打字联系我。"
+                />
               </div>
-              <button
-                type="button"
-                className={`switch ${draft.pmBot.showVisitorAvatarInCard ? 'on' : ''}`}
-                onClick={() => updateField('pmBot', 'showVisitorAvatarInCard', !draft.pmBot.showVisitorAvatarInCard)}
-              >
-                <span className="switch-knob" />
-              </button>
-            </div>
 
-            <div className="list-row" style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--border)' }}>
-              <div className="row-main">
-                <div className="row-title" style={{ fontSize: 13 }}>私聊 /start 发送欢迎卡片</div>
-                <div className="row-desc wrap">
-                  关闭后，访客点击开始或发送 /start 时静默不弹出欢迎语卡片（发 /panel 或点左下角「个人面板」菜单仍可打开面板）。访客此时收不到任何提示，建议在 @BotFather 的 /setdescription 里写一句「直接发消息即可联系我」
-                </div>
-              </div>
-              <button
-                type="button"
-                className={`switch ${draft.pmBot.enableStartWelcome !== false ? 'on' : ''}`}
-                onClick={() => updateField('pmBot', 'enableStartWelcome', draft.pmBot.enableStartWelcome === false)}
-              >
-                <span className="switch-knob" />
-              </button>
-            </div>
-
-            {draft.pmBot.enableStartWelcome !== false && (
-              <>
-                <div className="list-row" style={{ marginTop: 8 }}>
-                  <div className="row-main">
-                    <div className="row-title" style={{ fontSize: 13 }}>欢迎卡片附带「打开个人面板」按钮</div>
-                    <div className="row-desc wrap">
-                      关闭后 /start 仅发纯文字欢迎语，隐藏卡片底部的个人面板入口按钮
-                    </div>
+              <div className="list-row">
+                <div className="row-main">
+                  <div className="row-title" style={{ fontSize: 13 }}>同步欢迎语到机器人顶部介绍框（推荐）</div>
+                  <div className="row-desc wrap">
+                    开启后保存设置会自动更新 Telegram 机器人的官方介绍文字，陌生人点开聊天窗、还没按「开始」时就能直接在屏幕中央看到上面的引导语
                   </div>
-                  <button
-                    type="button"
-                    className={`switch ${draft.pmBot.showPanelButtonInWelcome !== false ? 'on' : ''}`}
-                    onClick={() =>
-                      updateField('pmBot', 'showPanelButtonInWelcome', draft.pmBot.showPanelButtonInWelcome === false)
-                    }
-                  >
-                    <span className="switch-knob" />
-                  </button>
                 </div>
+                <button
+                  type="button"
+                  className={`switch ${draft.pmBot.syncBotDescription !== false ? 'on' : ''}`}
+                  onClick={() =>
+                    updateField('pmBot', 'syncBotDescription', draft.pmBot.syncBotDescription === false)
+                  }
+                >
+                  <span className="switch-knob" />
+                </button>
+              </div>
 
-                <div className="field" style={{ marginTop: 10 }}>
-                  <label className="field-label">私聊 /start 欢迎语</label>
-                  <textarea
-                    className="textarea"
-                    value={draft.pmBot.welcomeText}
-                    onChange={(e) => updateField('pmBot', 'welcomeText', e.target.value)}
-                  />
+              <div className="field" style={{ marginTop: 10 }}>
+                <label className="field-label">可选：/start 欢迎配图链接（https:// 图床直链，留空不发图）</label>
+                <input
+                  className="input"
+                  value={draft.pmBot.welcomeImageUrl || ''}
+                  onChange={(e) => updateField('pmBot', 'welcomeImageUrl', e.target.value)}
+                  placeholder="https://example.com/welcome.jpg"
+                />
+                <div className="row-desc wrap" style={{ marginTop: 5 }}>
+                  💡 小贴士：若还想在陌生人未按「开始」前的介绍框顶部展示固定封面图，在 <code>@BotFather</code> → <code>Edit Bot</code> → <code>Edit Description Picture</code> 上传一张图片即可永久显示。
                 </div>
-              </>
-            )}
+              </div>
 
-            {/* Auto-Reply & Keyword Reply Section */}
-            <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--border)' }}>
+              <div className="list-row" style={{ marginTop: 6, paddingTop: 10, borderTop: '1px solid var(--border)' }}>
+                <div className="row-main">
+                  <div className="row-title" style={{ fontSize: 13 }}>点 /start 时展示欢迎引导语</div>
+                  <div className="row-desc wrap">
+                    陌生人点「开始」会立即弹出人机验证（开启本项时验证题上方会附带你的欢迎语；关闭则直接弹出纯净验证题）
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  className={`switch ${draft.pmBot.enableStartWelcome !== false ? 'on' : ''}`}
+                  onClick={() => updateField('pmBot', 'enableStartWelcome', draft.pmBot.enableStartWelcome === false)}
+                >
+                  <span className="switch-knob" />
+                </button>
+              </div>
+
+              <div className="list-row">
+                <div className="row-main">
+                  <div className="row-title" style={{ fontSize: 13 }}>验证通过后附带「查看个人面板」按钮</div>
+                  <div className="row-desc wrap">
+                    验证通过提示「现在可以打字给主人发消息了」下方是否附带个人面板入口按钮（纯私聊党可关闭）
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  className={`switch ${draft.pmBot.showPanelButtonInWelcome !== false ? 'on' : ''}`}
+                  onClick={() =>
+                    updateField('pmBot', 'showPanelButtonInWelcome', draft.pmBot.showPanelButtonInWelcome === false)
+                  }
+                >
+                  <span className="switch-knob" />
+                </button>
+              </div>
+
+              <div className="list-row">
+                <div className="row-main">
+                  <div className="row-title" style={{ fontSize: 13 }}>聊天框左下角显示「个人面板」按钮</div>
+                  <div className="row-desc wrap">
+                    关闭并保存后，左下角将恢复为普通命令菜单（隐藏面板入口；站长随时发 /panel 仍可打开面板后台）
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  className={`switch ${draft.pmBot.showChatMenuButton !== false ? 'on' : ''}`}
+                  onClick={() =>
+                    updateField('pmBot', 'showChatMenuButton', draft.pmBot.showChatMenuButton === false)
+                  }
+                >
+                  <span className="switch-knob" />
+                </button>
+              </div>
+
+              <div className="list-row">
+                <div className="row-main">
+                  <div className="row-title" style={{ fontSize: 13 }}>话题访客资料卡附带对方头像</div>
+                  <div className="row-desc wrap">
+                    开启后，新建话题及 /info 资料卡将附带访客 TG 头像大图（点击卡片昵称亦可直达资料页）
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  className={`switch ${draft.pmBot.showVisitorAvatarInCard ? 'on' : ''}`}
+                  onClick={() => updateField('pmBot', 'showVisitorAvatarInCard', !draft.pmBot.showVisitorAvatarInCard)}
+                >
+                  <span className="switch-knob" />
+                </button>
+              </div>
+            </div>
+
+            <div className="card">
               <div className="field-label" style={{ marginBottom: 6 }}>💬 自动回复与关键词回复</div>
 
               <div className="list-row">
@@ -1861,10 +1915,68 @@ export default function SettingsDrawer({
                 ))}
               </div>
             </div>
-          </div>
+
+            <div className="card">
+              <div className="list-row">
+                <div className="row-main">
+                  <div className="row-title" style={{ fontSize: 13 }}>🎁 群签到与积分徽章模式（社区群可选）</div>
+                  <div className="row-desc wrap">
+                    个人名片默认关闭；开启后支持群员每日 /checkin 签到、连签奖励、等级与徽章墙
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  className={`switch ${draft.community.enableCheckin ? 'on' : ''}`}
+                  onClick={() => updateField('community', 'enableCheckin', !draft.community.enableCheckin)}
+                >
+                  <span className="switch-knob" />
+                </button>
+              </div>
+
+              {draft.community.enableCheckin && (
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 12 }}>
+                  <div className="field">
+                    <label className="field-label">每日最低积分</label>
+                    <input
+                      className="input"
+                      type="number"
+                      value={draft.community.dailyMinPoints}
+                      onChange={(e) => updateField('community', 'dailyMinPoints', Number(e.target.value))}
+                    />
+                  </div>
+                  <div className="field">
+                    <label className="field-label">每日最高积分</label>
+                    <input
+                      className="input"
+                      type="number"
+                      value={draft.community.dailyMaxPoints}
+                      onChange={(e) => updateField('community', 'dailyMaxPoints', Number(e.target.value))}
+                    />
+                  </div>
+                  <div className="field">
+                    <label className="field-label">连签每日递增奖励</label>
+                    <input
+                      className="input"
+                      type="number"
+                      value={draft.community.streakStepBonus}
+                      onChange={(e) => updateField('community', 'streakStepBonus', Number(e.target.value))}
+                    />
+                  </div>
+                  <div className="field">
+                    <label className="field-label">积分单位名称</label>
+                    <input
+                      className="input"
+                      value={draft.community.currencyName}
+                      onChange={(e) => updateField('community', 'currencyName', e.target.value)}
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+          </>
         )}
 
-        {/* Section 5: Version Checker (Scheme A) & Optional 1-Click Fork Sync (Scheme B) */}
+        {/* Section 6: Version Checker (Scheme A) & Optional 1-Click Fork Sync (Scheme B) */}
         {section === 'update' && (() => {
           const updater = draft.updater || { forkRepo: '', branch: 'main', githubToken: '' };
           const cleanedFork = String(updater.forkRepo || '')
@@ -1959,6 +2071,32 @@ export default function SettingsDrawer({
                   </button>
                 </div>
 
+                <div style={{ display: 'flex', gap: 7, marginTop: 8, flexWrap: 'wrap' }}>
+                  <button
+                    type="button"
+                    className="btn btn-subtle btn-sm"
+                    onClick={() => openExternalUrl(REPO_URL)}
+                  >
+                    <Globe size={13} /> 项目主页
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-subtle btn-sm"
+                    onClick={() => openExternalUrl(CHANGELOG_URL)}
+                  >
+                    <ExternalLink size={13} /> 更新日志
+                  </button>
+                  {onOpenWhatsNew && (
+                    <button
+                      type="button"
+                      className="btn btn-subtle btn-sm"
+                      onClick={onOpenWhatsNew}
+                    >
+                      <Sparkles size={13} /> 近期更新
+                    </button>
+                  )}
+                </div>
+
                 <div className="row-desc wrap" style={{ marginTop: 10, lineHeight: 1.5 }}>
                   💡 <b>零密钥安全更新（推荐）</b>：打开你 <b>Fork</b> 的 GitHub 仓库 → 点击 <b>Sync fork → Update branch</b>，Cloudflare 约 30 秒自动完成构建，全部配置与访客数据 100% 保留。<br />
                   ⚠️ 仅通过 GitHub <b>Fork</b> 得到的仓库才有 Sync fork 按钮；若通过 Deploy to Cloudflare 一键按钮创建的是独立副本，请参考仓库教程 FAQ Q3 手动同步或改绑 Fork 仓库。
@@ -2037,9 +2175,28 @@ export default function SettingsDrawer({
           );
         })()}
 
-        <button className="btn btn-primary btn-block" disabled={saving} onClick={handleSave}>
-          <Check size={16} /> {saving ? '保存中…' : '保存全部设置'}
-        </button>
+        {(section !== 'update' || isDirty) && (
+          <button className="btn btn-primary btn-block" disabled={saving} onClick={handleSave}>
+            <Check size={16} /> {saving ? '保存中…' : '保存全部设置'}
+          </button>
+        )}
+
+        {(section === 'update' || !hideStarStrip) && (
+          <StarSupportBanner
+            onDismiss={
+              section === 'update'
+                ? null
+                : () => {
+                    try {
+                      localStorage.setItem(HIDE_STAR_STRIP_STORAGE_KEY, '1');
+                    } catch {
+                      // Ignore storage errors
+                    }
+                    setHideStarStrip(true);
+                  }
+            }
+          />
+        )}
       </div>
     </div>
   );

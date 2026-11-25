@@ -1,16 +1,16 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import { flushSync } from 'react-dom';
 import {
   Globe,
   IdCard,
-  Moon,
   RefreshCw,
   Server,
   Settings,
-  Sun,
   Ticket,
   Trophy,
   Users,
 } from 'lucide-react';
+import DayNightSlider, { THEME_MODES } from './components/DayNightSlider.jsx';
 import { TicketEmblem } from './components/Emblems.jsx';
 import LeaderboardTab from './components/LeaderboardTab.jsx';
 import ProbeTab from './components/ProbeTab.jsx';
@@ -18,6 +18,7 @@ import SettingsDrawer from './components/SettingsDrawer.jsx';
 import SitesTab from './components/SitesTab.jsx';
 import TicketTab from './components/TicketTab.jsx';
 import VisitorsTab from './components/VisitorsTab.jsx';
+import WhatsNewModal, { SEEN_VERSION_STORAGE_KEY } from './components/WhatsNewModal.jsx';
 import { apiRequest, getDevRole, setDevRole } from './lib/api.js';
 import {
   getLaunchTarget,
@@ -25,10 +26,22 @@ import {
   getTelegramUserId,
   haptic,
   initTelegramWebApp,
+  onColorSchemeChange,
   syncTelegramChrome,
 } from './lib/telegram.js';
 
 const BOOT_CACHE_PREFIX = 'rose_panel_boot_v1:';
+const THEME_MODE_STORAGE_KEY = 'rose_panel_theme_mode';
+
+function readThemeMode() {
+  try {
+    const saved = localStorage.getItem(THEME_MODE_STORAGE_KEY);
+    if (THEME_MODES.includes(saved)) return saved;
+  } catch {
+    // Storage may be unavailable in some WebViews
+  }
+  return 'auto';
+}
 const BOOT_CACHE_MAX_AGE_MS = 12 * 60 * 60 * 1000;
 
 function readSplashMeta() {
@@ -139,7 +152,9 @@ function SplashScreen({ splash }) {
 }
 
 export default function App() {
-  const [theme, setTheme] = useState(() => getTelegramColorScheme());
+  const [themeMode, setThemeMode] = useState(readThemeMode);
+  const [systemTheme, setSystemTheme] = useState(() => getTelegramColorScheme());
+  const theme = themeMode === 'auto' ? systemTheme : themeMode;
   const [bootstrap, setBootstrap] = useState(() => loadCachedBootstrap());
   const [loading, setLoading] = useState(() => !loadCachedBootstrap());
   const [error, setError] = useState('');
@@ -149,6 +164,11 @@ export default function App() {
   const [checkinLoading, setCheckinLoading] = useState(false);
   const [toast, setToast] = useState('');
   const [previewRole, setPreviewRole] = useState(() => getDevRole());
+  const [whatsNewState, setWhatsNewState] = useState({
+    open: false,
+    mode: 'auto',
+    previousVersion: '',
+  });
   const splashMeta = readSplashMeta();
 
   const showToast = useCallback((msg) => {
@@ -162,6 +182,47 @@ export default function App() {
     document.documentElement.setAttribute('data-theme', theme);
     syncTelegramChrome(theme);
   }, [theme]);
+
+  useEffect(() => onColorSchemeChange(setSystemTheme), []);
+
+  // Switch theme mode; when the visible theme flips, reveal it as a circle growing out of the slider bubble.
+  const changeThemeMode = useCallback(
+    (nextMode, origin) => {
+      try {
+        localStorage.setItem(THEME_MODE_STORAGE_KEY, nextMode);
+      } catch {
+        // Ignore storage failures
+      }
+      const nextTheme = nextMode === 'auto' ? systemTheme : nextMode;
+      const canAnimate =
+        nextTheme !== theme &&
+        origin &&
+        typeof document !== 'undefined' &&
+        typeof document.startViewTransition === 'function' &&
+        !window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+      if (!canAnimate) {
+        setThemeMode(nextMode);
+        return;
+      }
+      const transition = document.startViewTransition(() => {
+        flushSync(() => setThemeMode(nextMode));
+        document.documentElement.setAttribute('data-theme', nextTheme);
+      });
+      transition.ready
+        .then(() => {
+          const radius = Math.hypot(
+            Math.max(origin.x, window.innerWidth - origin.x),
+            Math.max(origin.y, window.innerHeight - origin.y),
+          );
+          document.documentElement.animate(
+            { clipPath: [`circle(16px at ${origin.x}px ${origin.y}px)`, `circle(${radius}px at ${origin.x}px ${origin.y}px)`] },
+            { duration: 560, easing: 'cubic-bezier(0.22, 0.8, 0.2, 1)', pseudoElement: '::view-transition-new(root)' },
+          );
+        })
+        .catch(() => {});
+    },
+    [systemTheme, theme],
+  );
 
   const loadBootstrap = useCallback(async ({ silent = false } = {}) => {
     try {
@@ -181,6 +242,24 @@ export default function App() {
         if (target.visitorId) setDeepVisitorId(target.visitorId);
       } else if (['profile', 'sites', 'probe'].includes(target.tab)) {
         setActiveTab(target.tab);
+      }
+
+      if (
+        res.isAdmin &&
+        res.appVersion &&
+        !res.isPreview &&
+        !(typeof navigator !== 'undefined' && navigator.webdriver) &&
+        !target.settings &&
+        !target.visitorId
+      ) {
+        try {
+          const seenVer = localStorage.getItem(SEEN_VERSION_STORAGE_KEY) || '';
+          if (seenVer !== String(res.appVersion)) {
+            setWhatsNewState({ open: true, mode: 'auto', previousVersion: seenVer });
+          }
+        } catch {
+          // Ignore storage errors
+        }
       }
     } catch (err) {
       setError(err.message || '加载失败');
@@ -250,6 +329,7 @@ export default function App() {
 
   const isAdmin = Boolean(bootstrap?.isAdmin);
   const enableCheckin = Boolean(bootstrap?.config?.community?.enableCheckin);
+  const showSitesTab = isAdmin || (bootstrap?.config?.sites || []).length > 0;
   const showProbeTab = isAdmin || Boolean(bootstrap?.config?.probe?.configured);
 
   const navItems = [
@@ -258,8 +338,11 @@ export default function App() {
       label: enableCheckin ? '票根' : '名片',
       icon: enableCheckin ? Ticket : IdCard,
     },
-    { id: 'sites', label: '小站', icon: Globe },
   ];
+
+  if (showSitesTab) {
+    navItems.push({ id: 'sites', label: '小站', icon: Globe });
+  }
 
   if (showProbeTab) {
     navItems.push({ id: 'probe', label: '探针', icon: Server });
@@ -275,6 +358,8 @@ export default function App() {
   } else if (enableCheckin) {
     navItems.push({ id: 'leaderboard', label: '榜单', icon: Trophy });
   }
+
+  const effectiveTab = navItems.some((item) => item.id === activeTab) ? activeTab : 'profile';
 
   return (
     <div className="app-shell">
@@ -298,20 +383,10 @@ export default function App() {
         <div className="top-brand">
           <span className="top-brand-dot" />
           <span className="top-title">{bootstrap?.config?.profile?.displayName || 'RosePanel'}</span>
-          <span className="top-sub">小程序</span>
         </div>
 
         <div className="top-actions">
-          <button
-            className="icon-btn"
-            title="切换深浅色主题"
-            onClick={() => {
-              haptic('light');
-              setTheme((t) => (t === 'dark' ? 'light' : 'dark'));
-            }}
-          >
-            {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
-          </button>
+          <DayNightSlider mode={themeMode} onChange={changeThemeMode} />
           {isAdmin && (
             <button
               className="icon-btn accent"
@@ -329,7 +404,7 @@ export default function App() {
 
       {/* Main View */}
       <main>
-        {activeTab === 'profile' && (
+        {effectiveTab === 'profile' && (
           <TicketTab
             data={bootstrap}
             onNavigate={(tab) => {
@@ -343,11 +418,14 @@ export default function App() {
             }}
             onCheckin={handleCheckin}
             checkinLoading={checkinLoading}
+            onOpenWhatsNew={() =>
+              setWhatsNewState({ open: true, mode: 'manual', previousVersion: '' })
+            }
             onToast={showToast}
           />
         )}
 
-        {activeTab === 'sites' && (
+        {effectiveTab === 'sites' && (
           <SitesTab
             sites={bootstrap?.config?.sites || []}
             isAdmin={isAdmin}
@@ -367,7 +445,7 @@ export default function App() {
           />
         )}
 
-        {activeTab === 'probe' && (
+        {effectiveTab === 'probe' && (
           <ProbeTab
             probeConfig={bootstrap?.config?.probe}
             isAdmin={isAdmin}
@@ -376,7 +454,7 @@ export default function App() {
           />
         )}
 
-        {activeTab === 'visitors' && isAdmin && (
+        {effectiveTab === 'visitors' && isAdmin && (
           <VisitorsTab
             initialVisitorId={deepVisitorId}
             onClearInitial={() => setDeepVisitorId('')}
@@ -384,7 +462,7 @@ export default function App() {
           />
         )}
 
-        {activeTab === 'leaderboard' && enableCheckin && (
+        {effectiveTab === 'leaderboard' && enableCheckin && (
           <LeaderboardTab
             currencyName={bootstrap?.config?.community?.currencyName || '积分'}
             onToast={showToast}
@@ -392,30 +470,32 @@ export default function App() {
         )}
       </main>
 
-      {/* Floating Glass Pill Bottom Dock */}
-      <nav className="bottom-dock-wrap" aria-label="主导航">
-        <div className="bottom-dock">
-          {navItems.map((item) => {
-            const Icon = item.icon;
-            const active = activeTab === item.id;
-            return (
-              <button
-                key={item.id}
-                type="button"
-                className={`dock-item ${active ? 'active' : ''}`}
-                onClick={() => {
-                  haptic('light');
-                  setActiveTab(item.id);
-                }}
-              >
-                <Icon size={20} strokeWidth={active ? 2.2 : 1.9} />
-                <span>{item.label}</span>
-                {item.badge > 0 && <span className="dock-badge">{item.badge > 99 ? '99+' : item.badge}</span>}
-              </button>
-            );
-          })}
-        </div>
-      </nav>
+      {/* Floating Glass Pill Bottom Dock — auto-hides when only 1 tab is visible */}
+      {navItems.length > 1 && (
+        <nav className="bottom-dock-wrap" aria-label="主导航">
+          <div className="bottom-dock">
+            {navItems.map((item) => {
+              const Icon = item.icon;
+              const active = effectiveTab === item.id;
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  className={`dock-item ${active ? 'active' : ''}`}
+                  onClick={() => {
+                    haptic('light');
+                    setActiveTab(item.id);
+                  }}
+                >
+                  <Icon size={20} strokeWidth={active ? 2.2 : 1.9} />
+                  <span>{item.label}</span>
+                  {item.badge > 0 && <span className="dock-badge">{item.badge > 99 ? '99+' : item.badge}</span>}
+                </button>
+              );
+            })}
+          </div>
+        </nav>
+      )}
 
       {/* Admin Visual Settings Drawer */}
       {isAdmin && settingsSection && bootstrap?.adminConfig && (
@@ -423,6 +503,9 @@ export default function App() {
           initialSection={settingsSection}
           adminConfig={bootstrap.adminConfig}
           appVersion={bootstrap.appVersion}
+          onOpenWhatsNew={() =>
+            setWhatsNewState({ open: true, mode: 'manual', previousVersion: '' })
+          }
           onClose={() => setSettingsSection(null)}
           onSaved={(savedRes) => {
             setBootstrap((prev) =>
@@ -437,6 +520,24 @@ export default function App() {
             loadBootstrap();
           }}
           onToast={showToast}
+        />
+      )}
+
+      {isAdmin && whatsNewState.open && (
+        <WhatsNewModal
+          appVersion={bootstrap?.appVersion}
+          previousVersion={whatsNewState.previousVersion}
+          mode={whatsNewState.mode}
+          onClose={() => {
+            try {
+              if (bootstrap?.appVersion) {
+                localStorage.setItem(SEEN_VERSION_STORAGE_KEY, String(bootstrap.appVersion));
+              }
+            } catch {
+              // Ignore storage errors
+            }
+            setWhatsNewState((prev) => ({ ...prev, open: false }));
+          }}
         />
       )}
     </div>

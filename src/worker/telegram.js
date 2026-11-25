@@ -27,6 +27,32 @@ export async function tgCall(env, method, payload = {}) {
   }
 }
 
+export async function tgCallForm(env, method, formData) {
+  if (!env.BOT_TOKEN) {
+    throw new Error('BOT_TOKEN is not configured');
+  }
+  const url = `https://api.telegram.org/bot${env.BOT_TOKEN}/${method}`;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 20000);
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      body: formData,
+      signal: controller.signal,
+    });
+    const data = await res.json();
+    if (!res.ok || !data.ok) {
+      const err = new Error(data?.description || `Telegram API error (${res.status})`);
+      err.code = data?.error_code || res.status;
+      err.response = data;
+      throw err;
+    }
+    return data;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 export function buildMiniAppDirectLink(env, startParam = '') {
   const botUsername = (env.BOT_USERNAME || '').replace(/^@/, '');
   const shortName = (env.APP_SHORT_NAME || '').replace(/^\/+|\/+$/g, '');

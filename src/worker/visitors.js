@@ -16,6 +16,7 @@ const VISITOR_SUMMARY_TTL_MS = 10 * 60 * 1000;
 const MAX_PHOTOS = 150;
 const MAX_LINKS = 200;
 const MAX_PM_IDS = 200;
+const MAX_MESSAGES = 60;
 
 export async function invalidateVisitorSummaryCache(env) {
   if (!env?.TOPIC_MAP) return;
@@ -159,7 +160,9 @@ export async function recordVisitorExchange(env, userId, msg, options = {}) {
     photos: [],
     links: [],
     pmMessageIds: [],
+    messages: [],
   };
+  if (!Array.isArray(history.messages)) history.messages = [];
 
   const photo = extractPhotoFromMessage(msg);
   if (photo) {
@@ -189,9 +192,49 @@ export async function recordVisitorExchange(env, userId, msg, options = {}) {
     history.links = history.links.slice(0, MAX_LINKS);
   }
 
-  if (pmMessageId && Number.isFinite(Number(pmMessageId))) {
-    history.pmMessageIds.unshift({ id: Number(pmMessageId), at: nowMs });
+  const numericPmId = pmMessageId && Number.isFinite(Number(pmMessageId)) ? Number(pmMessageId) : null;
+  const numericTopicId = msg?.message_id && Number.isFinite(Number(msg.message_id)) ? Number(msg.message_id) : null;
+
+  if (numericPmId) {
+    history.pmMessageIds.unshift({
+      id: numericPmId,
+      topicMsgId: numericTopicId,
+      sender,
+      at: nowMs,
+    });
     history.pmMessageIds = history.pmMessageIds.slice(0, MAX_PM_IDS);
+  }
+
+  const rawMsgText = String(msg?.text || msg?.caption || '').trim();
+  const mediaTag = !photo
+    ? msg?.video
+      ? '[视频]'
+      : msg?.voice
+        ? '[语音]'
+        : msg?.sticker
+          ? `[贴纸 ${msg.sticker.emoji || ''}]`.trim()
+          : msg?.document
+            ? `[文件 ${msg.document.file_name || ''}]`.trim()
+            : ''
+    : '';
+
+  let addedMessage = null;
+  if (rawMsgText || photo || mediaTag) {
+    addedMessage = {
+      id: `m_${nowMs}_${Math.floor(Math.random() * 10000)}`,
+      sender,
+      text: rawMsgText.slice(0, 1500),
+      mediaTag,
+      photoFileId: photo?.fileId || '',
+      thumbFileId: photo?.thumbFileId || '',
+      pmMessageId: numericPmId,
+      topicMsgId: numericTopicId,
+      at: nowIso,
+    };
+    history.messages.push(addedMessage);
+    if (history.messages.length > MAX_MESSAGES) {
+      history.messages = history.messages.slice(-MAX_MESSAGES);
+    }
   }
 
   await safePutJSON(env.TOPIC_MAP, historyKey, history);
@@ -235,23 +278,26 @@ export async function recordVisitorExchange(env, userId, msg, options = {}) {
     photoCount: history.photos.length,
     linkCount: history.links.length,
     totalCount: rec.msg_count,
+    message: addedMessage,
   };
 }
 
 export async function getVisitorHistory(env, userId) {
   const uid = String(userId || '');
   if (!env.TOPIC_MAP || !/^\d+$/.test(uid)) {
-    return { photos: [], links: [], pmMessageIds: [] };
+    return { photos: [], links: [], pmMessageIds: [], messages: [] };
   }
   const history = (await safeGetJSON(env.TOPIC_MAP, `history:${uid}`, null)) || {
     photos: [],
     links: [],
     pmMessageIds: [],
+    messages: [],
   };
   return {
     photos: Array.isArray(history.photos) ? history.photos : [],
     links: Array.isArray(history.links) ? history.links : [],
     pmMessageIds: Array.isArray(history.pmMessageIds) ? history.pmMessageIds : [],
+    messages: Array.isArray(history.messages) ? history.messages : [],
   };
 }
 
@@ -595,4 +641,104 @@ export async function applyVisitorAction(env, userId, action, payload = {}) {
   await addToVisitorIndex(env, uid);
   await invalidateVisitorSummaryCache(env);
   return await getVisitorDetail(env, uid);
+}
+
+/**
+ * Recalls an admin reply sent to a visitor in private chat (either matching a replied-to topic message
+ * or falling back to the most recent admin reply within 48 hours).
+ */
+export async function recallAdminVisitorMessage(
+  env,
+  userId,
+  replyToTopicMsgId = null,
+  tgCallFn = null,
+  explicitPmMessageId = null
+) {
+  const uid = String(userId || '');
+  if (!env.TOPIC_MAP || !/^\d+$/.test(uid) || typeof tgCallFn !== 'function') {
+    return { ok: false, error: '参数无效' };
+  }
+  const historyKey = `history:${uid}`;
+  const history = (await safeGetJSON(env.TOPIC_MAP, historyKey, null)) || {
+    photos: [],
+    links: [],
+    pmMessageIds: [],
+    messages: [],
+  };
+  const list = Array.isArray(history.pmMessageIds) ? history.pmMessageIds : [];
+  const idx = explicitPmMessageId
+    ? list.findIndex((m) => Number(m?.id) === Number(explicitPmMessageId) && m?.sender !== 'visitor')
+    : replyToTopicMsgId
+      ? list.findIndex((m) => Number(m?.topicMsgId) === Number(replyToTopicMsgId) && m?.sender !== 'visitor')
+      : list.findIndex((m) => m?.sender === 'admin');
+
+  if (idx === -1) {
+    return {
+      ok: false,
+      error: replyToTopicMsgId
+        ? '未找到该条消息对应的私聊记录（仅支持撤回站长发出的近期消息）'
+        : '暂无可撤回的站长近期回复记录',
+    };
+  }
+
+  const target = list[idx];
+  try {
+    await tgCallFn(env, 'deleteMessage', {
+      chat_id: Number(uid),
+      message_id: Number(target.id),
+    });
+  } catch (err) {
+    return { ok: false, error: `撤回失败（可能已超过 Telegram 48 小时撤回时限）：${err.message}` };
+  }
+
+  // If recalled from Mini App (`explicitPmMessageId`) and a mirrored topic message exists, clean it up too
+  if (explicitPmMessageId && target.topicMsgId) {
+    const supergroupId = await resolveSupergroupId(env);
+    if (supergroupId) {
+      await tgCallFn(env, 'deleteMessage', {
+        chat_id: supergroupId,
+        message_id: Number(target.topicMsgId),
+      }).catch(() => {});
+    }
+  }
+
+  // Re-read after the (slow) Telegram round-trips so messages archived concurrently by the webhook
+  // are not overwritten by the stale snapshot taken above.
+  const fresh = (await safeGetJSON(env.TOPIC_MAP, historyKey, null)) || history;
+  const targetId = Number(target.id);
+  const freshMessages = Array.isArray(fresh.messages) ? fresh.messages : [];
+  const recalledEntry = freshMessages.find(
+    (m) => Number(m?.pmMessageId) === targetId && m?.sender !== 'visitor'
+  );
+
+  fresh.pmMessageIds = (Array.isArray(fresh.pmMessageIds) ? fresh.pmMessageIds : []).filter(
+    (m) => !(Number(m?.id) === targetId && m?.sender !== 'visitor')
+  );
+  fresh.messages = freshMessages.filter((m) => !(Number(m?.pmMessageId) === targetId && m?.sender !== 'visitor'));
+
+  // Drop the recalled photo / links from the archive too, so the gallery doesn't keep serving
+  // signed URLs for content the visitor can no longer see.
+  if (recalledEntry) {
+    if (Array.isArray(fresh.photos) && recalledEntry.photoFileId) {
+      fresh.photos = fresh.photos.filter(
+        (p) => !(p?.sender === 'admin' && p?.fileId === recalledEntry.photoFileId && p?.at === recalledEntry.at)
+      );
+    }
+    if (Array.isArray(fresh.links)) {
+      fresh.links = fresh.links.filter((l) => !(l?.sender === 'admin' && l?.at === recalledEntry.at));
+    }
+  }
+  await safePutJSON(env.TOPIC_MAP, historyKey, fresh);
+
+  if (recalledEntry) {
+    const userKey = `user:${uid}`;
+    const rec = await safeGetJSON(env.TOPIC_MAP, userKey, null);
+    if (rec) {
+      rec.photo_count = Array.isArray(fresh.photos) ? fresh.photos.length : 0;
+      rec.link_count = Array.isArray(fresh.links) ? fresh.links.length : 0;
+      await safePutJSON(env.TOPIC_MAP, userKey, rec);
+      await invalidateVisitorSummaryCache(env);
+    }
+  }
+  return { ok: true, deletedPmMessageId: target.id };
 }
