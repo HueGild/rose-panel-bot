@@ -14,6 +14,41 @@ import {
 import { apiRequest } from '../lib/api.js';
 import { TgStickerMedia, TicketEmblem } from './Emblems.jsx';
 
+const PROBE_PROVIDER_OPTIONS = [
+  {
+    id: 'komari',
+    label: 'Komari 探针',
+    urlLabel: 'Komari 探针地址（自动兼容 v2 /api/rpc2 与 v1 /api/nodes）',
+    urlPlaceholder: 'https://status.example.com',
+    tokenLabel: 'API Token / Cookie（公开 Komari 留空即可）',
+    tokenPlaceholder: '公开探针无需填写；私有站点可填 Bearer Token 或 session_token=...',
+  },
+  {
+    id: 'nezha',
+    label: '哪吒探针 (Nezha v1 / v0)',
+    urlLabel: '哪吒面板地址（自动兼容 v1 公开 WS、v1 REST 与 v0 API）',
+    urlPlaceholder: 'https://nezha.example.com',
+    tokenLabel: 'API Token / Cookie（公开 v1 留空即可；私有或 v0 填 Token）',
+    tokenPlaceholder: '公开哪吒 v1 无需填写；私有 v1/v0 可填 API Token',
+  },
+  {
+    id: 'nodeget',
+    label: 'NodeGet (NodeSeek 官方探针)',
+    urlLabel: 'NodeGet 后端 WebSocket 地址（支持 wss:// 或 https://）',
+    urlPlaceholder: 'wss://nodeget-backend.example.com',
+    tokenLabel: 'NodeGet 访问 Token（与 StatusShow 配置中的 token 一致）',
+    tokenPlaceholder: '填入 NodeGet site_tokens 中的只读 Token',
+  },
+  {
+    id: 'json',
+    label: '其他探针：极简 / CF / ServerStatus 等（通用 JSON）',
+    urlLabel: '探针 JSON 接口完整地址（返回节点列表的 URL）',
+    urlPlaceholder: 'https://probe.example.com/api/stats.json',
+    tokenLabel: 'API Token / Cookie（公开接口留空即可）',
+    tokenPlaceholder: '公开接口无需填写；私有接口可填 Token 或 Cookie',
+  },
+];
+
 export default function SettingsDrawer({
   initialSection = 'profile',
   adminConfig,
@@ -300,7 +335,7 @@ export default function SettingsDrawer({
           {[
             { id: 'profile', label: '名片与徽章' },
             { id: 'sites', label: '个人小站' },
-            { id: 'probe', label: 'Komari 探针' },
+            { id: 'probe', label: '节点探针' },
             { id: 'modes', label: '社区与防骚扰' },
           ].map((tab) => (
             <button
@@ -761,16 +796,37 @@ export default function SettingsDrawer({
           </div>
         )}
 
-        {/* Section 3: Komari Probe */}
-        {section === 'probe' && (
+        {/* Section 3: Server Probe (Komari / Nezha / NodeGet / Generic JSON) */}
+        {section === 'probe' && (() => {
+          const activeProvider =
+            PROBE_PROVIDER_OPTIONS.find((o) => o.id === (draft.probe.provider || 'komari')) ||
+            PROBE_PROVIDER_OPTIONS[0];
+          return (
           <div className="card">
             <div className="field">
-              <label className="field-label">Komari 探针地址（自动兼容 v2 /api/rpc2 与 v1 /api/nodes）</label>
+              <label className="field-label">探针类型</label>
+              <select
+                className="input"
+                value={draft.probe.provider || 'komari'}
+                onChange={(e) => {
+                  updateField('probe', 'provider', e.target.value);
+                  setProbeTestResult(null);
+                }}
+              >
+                {PROBE_PROVIDER_OPTIONS.map((opt) => (
+                  <option key={opt.id} value={opt.id}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="field">
+              <label className="field-label">{activeProvider.urlLabel}</label>
               <input
                 className="input"
                 value={draft.probe.url}
                 onChange={(e) => updateField('probe', 'url', e.target.value)}
-                placeholder="https://status.example.com"
+                placeholder={activeProvider.urlPlaceholder}
               />
             </div>
             <div className="field">
@@ -783,13 +839,13 @@ export default function SettingsDrawer({
               />
             </div>
             <div className="field">
-              <label className="field-label">API Token / Cookie（公开 Komari 留空即可）</label>
+              <label className="field-label">{activeProvider.tokenLabel}</label>
               <input
                 className="input"
                 type="password"
                 value={draft.probe.apiKey}
                 onChange={(e) => updateField('probe', 'apiKey', e.target.value)}
-                placeholder="公开探针无需填写；私有站点可填 Bearer Token 或 session_token=..."
+                placeholder={activeProvider.tokenPlaceholder}
               />
             </div>
 
@@ -829,7 +885,7 @@ export default function SettingsDrawer({
               disabled={testingProbe}
               onClick={handleTestProbe}
             >
-              <RefreshCw size={15} className={testingProbe ? 'spin' : ''} /> 测试 Komari 连接
+              <RefreshCw size={15} className={testingProbe ? 'spin' : ''} /> 测试探针连接
             </button>
 
             {probeTestResult && (
@@ -848,7 +904,8 @@ export default function SettingsDrawer({
               </div>
             )}
           </div>
-        )}
+          );
+        })()}
 
         {/* Section 4: Community Check-in & PM Anti-Spam */}
         {section === 'modes' && (

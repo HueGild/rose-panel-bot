@@ -4,6 +4,33 @@
 
 ---
 
+## [v1.3.0] - 2026-11-25
+
+**可插拔多协议节点探针版**：全面升级节点探针架构，一次内置四大主流探针协议，并在小程序设置内支持一键切换与实时连接测试。
+
+### ✨ 新增功能 (Added)
+- **可插拔探针注册表 (`src/worker/komari.js`)**：
+  - **`komari`**：Komari v2 (`/api/rpc2`) + v1 (`/api/nodes`)，保留全部既有功能与演示模式；
+  - **`nezha`（哪吒探针）**：原生兼容 **v1 公开 WebSocket (`/api/v1/ws/server`)**（无需 Token 即可直连公开哪吒 v1 面板）、**v1 鉴权 REST (`/api/v1/server`)** 与 **v0 REST (`/api/v1/server/details`)**，并自动将国家代码转为国旗 Emoji；
+  - **`nodeget`（NodeSeek 官方探针 NodeGet）**：原生支持 WebSocket JSON-RPC 2.0 协议，自动过滤隐藏节点并采用与上游一致的 30 秒在线判定阈值；
+  - **`json`（通用 JSON 探针）**：适配极简探针、CF Workers 探针、ServerStatus 等任意提供 JSON 节点列表的接口，自动识别常见字段与 0~1 比例值；
+  - KV 缓存键按 `provider` 隔离，切换探针类型绝不串读旧缓存；保留 `fetchKomariStatus` 兼容导出别名。
+- **小程序可视化切换与「测试探针连接」校验 (`SettingsDrawer.jsx` / `ProbeTab.jsx` / `api.js`)**：
+  - 子菜单升级为 **「节点探针」**，顶部可自由切换 4 档探针类型并动态展示对应地址/Token 提示；
+  - 新增 `PROBE_PROVIDER` / `PROBE_URL` / `PROBE_API_KEY` 环境变量（100% 向后兼容 `KOMARI_URL` / `KOMARI_API_KEY`）；
+  - 空地址点击「测试探针连接」明确拦截报错，避免误以为配置成功。
+- **AI 模块化安装探针选配 (`AGENTS.md` Step 1b)**：AI 部署时会主动询问用户所用的探针类型及轻量版/全量版。
+
+### 🛠️ 体验修复与文档完善 (Fixed & Docs)
+- 清空 `.dev.vars.example` 中的 `ADMIN_IDS` 示例值，避免一键部署按钮预填占位 ID 导致站长无法识别；
+- 新增暗黑玫瑰瓷主题与访客资料卡双机展示图 (`docs/assets/preview-row3.png`)；
+- 简/繁/英三语文档 FAQ 置顶补充「右上角没有 ⚙️ 设置按钮」排查步骤；
+- 新增 4 组多协议探针与接口校验单元测试（**27/27 全部通过**）。
+
+> **⬆️ 旧版升级提醒**：如果此前你的 Telegram Webhook 仍指向根路径 `/`，升级后请重新访问一次 `https://<你的域名>/setup?secret=<你的WEBHOOK_SECRET>` 以完成密钥同步。
+
+---
+
 ## [v1.2.2] - 2026-11-25
 
 **安全加固 & 三语文档完善版**：强化 Webhook 与本地预览边界鉴权，新增繁体中文教程与社区规范。

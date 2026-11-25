@@ -40,7 +40,7 @@ export default function ProbeTab({ probeConfig, isAdmin, onOpenSettings, onToast
 
   useEffect(() => {
     loadProbe(false);
-  }, [probeConfig?.configured, probeConfig?.demoMode, probeConfig?.publicUrl]);
+  }, [probeConfig?.configured, probeConfig?.demoMode, probeConfig?.publicUrl, probeConfig?.provider]);
 
   const nodes = probe?.nodes || [];
   const summary = probe?.summary || {
@@ -72,7 +72,7 @@ export default function ProbeTab({ probeConfig, isAdmin, onOpenSettings, onToast
     return (
       <div className="card empty-state">
         <RefreshCw size={22} className="spin" color="var(--accent)" />
-        <div style={{ marginTop: 10 }}>正在拉取 Komari 节点状态…</div>
+        <div style={{ marginTop: 10 }}>正在拉取探针节点状态…</div>
       </div>
     );
   }
@@ -82,15 +82,15 @@ export default function ProbeTab({ probeConfig, isAdmin, onOpenSettings, onToast
       <div className="card empty-state">
         <div style={{ fontSize: 30, marginBottom: 8 }}>📡</div>
         <div style={{ fontWeight: 700, color: 'var(--text)', fontSize: 15 }}>
-          尚未配置 Komari 探针地址
+          尚未配置节点探针
         </div>
         <div style={{ marginTop: 6, lineHeight: 1.5 }}>
-          兼容 Komari v2 (`/api/rpc2`) 与 v1 (`/api/nodes`)，支持公开或私有 Token 访问。
+          支持 Komari、哪吒探针 (v1/v0)、NodeGet (NodeSeek 探针)，以及极简 / CF 等通用 JSON 探针。
         </div>
         {isAdmin && (
           <div style={{ display: 'flex', justifyContent: 'center', gap: 8, marginTop: 14 }}>
             <button className="btn btn-primary btn-sm" onClick={() => onOpenSettings('probe')}>
-              <Settings size={14} /> 立即配置 Komari
+              <Settings size={14} /> 立即配置探针
             </button>
           </div>
         )}
@@ -172,7 +172,7 @@ export default function ProbeTab({ probeConfig, isAdmin, onOpenSettings, onToast
               justifyContent: 'space-between',
             }}
           >
-            <span>当前为 Komari 演示节点数据</span>
+            <span>当前为演示节点数据</span>
             {isAdmin && (
               <button
                 className="btn btn-sm"

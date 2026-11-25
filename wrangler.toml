@@ -21,8 +21,9 @@ binding = "TOPIC_MAP"
 # - SUPERGROUP_ID      (可选) 管理员话题群 ID（推荐部署后直接在话题群内发 /bind 一键绑定）
 # - ADMIN_IDS          (必填) 管理员 Telegram UID，多个用英文逗号分隔
 # - WEBHOOK_SECRET     (必填 Secret) Webhook 校验密钥（保护 / 与 /webhook），同时保护 /setup（未配置时 /setup 拒绝执行）
-# - KOMARI_URL         (可选) Komari 探针地址（也可部署后在小程序后台直接填写）
-# - KOMARI_API_KEY     (可选 Secret) Komari 私有站点 Token 或 Cookie
+# - PROBE_PROVIDER     (可选) 探针类型：komari | nezha | nodeget | json（默认 komari）
+# - PROBE_URL          (可选) 探针地址（旧名 KOMARI_URL 仍兼容，也可部署后在小程序内直接填写）
+# - PROBE_API_KEY      (可选 Secret) 私有探针 Token 或 Cookie（旧名 KOMARI_API_KEY 仍兼容）
 # - ENABLE_CHECKIN     (可选) "true" 开启群签到积分徽章模式，默认 "false"（极简个人名片）
 [vars]
 ENABLE_CHECKIN = "false"
