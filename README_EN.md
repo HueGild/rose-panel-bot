@@ -65,6 +65,8 @@
   <img src="docs/assets/preview-row1.png" alt="1 Personal Card & Contact Etiquette · 2 Public & Private Sites" width="94%" />
   <br /><br />
   <img src="docs/assets/preview-row2.png" alt="3 Komari Server Probe · 4 Visitors & 4-Layer Anti-Spam Shield" width="94%" />
+  <br /><br />
+  <img src="docs/assets/preview-row3.png" alt="Dark Rose-Obsidian Theme & Visitor Detail Drawer" width="94%" />
 </div>
 
 ---
