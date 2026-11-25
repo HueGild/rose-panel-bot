@@ -2048,3 +2048,38 @@ describe('v1.5.0 edge cases: caption limits, fallbacks, welcome toggles & pendin
     expect(calls.some((c) => c.method === 'copyMessage' && c.body.message_id === 11)).toBe(true);
   });
 });
+
+describe('Card labels cleanup (labelsRev 2)', () => {
+  it('ships empty owner title/subtitle and clears legacy default labels once without touching custom ones', async () => {
+    expect(DEFAULT_CONFIG.profile.badgeTitle).toBe('');
+    expect(DEFAULT_CONFIG.profile.joinedText).toBe('');
+    expect('showCardName' in DEFAULT_CONFIG.profile).toBe(false);
+
+    const kv = createMemoryKV();
+    const env = { TOPIC_MAP: kv, BOT_TOKEN: '123:LABELS', ADMIN_IDS: '10001' };
+
+    // Config saved by an older version still carries the shipped defaults verbatim
+    await kv.put(
+      'config:panel',
+      JSON.stringify({ profile: { displayName: 'Legacy', badgeTitle: '站长 · Owner', joinedText: 'Cloudflare Edge', ownerTag: '个人名片' } })
+    );
+    const migrated = await loadPanelConfig(env);
+    expect(migrated.profile.badgeTitle).toBe('');
+    expect(migrated.profile.joinedText).toBe('');
+    expect(migrated.profile.ownerTag).toBe('个人名片');
+    expect(migrated.profile.displayName).toBe('Legacy');
+
+    // Labels the owner customised before the upgrade are kept
+    await kv.put('config:panel', JSON.stringify({ profile: { badgeTitle: '群主 · VIP', joinedText: 'Tokyo' } }));
+    const custom = await loadPanelConfig(env);
+    expect(custom.profile.badgeTitle).toBe('群主 · VIP');
+    expect(custom.profile.joinedText).toBe('Tokyo');
+
+    // After saving once (labelsRev 2), typing the old default back in is respected
+    await kv.put('config:panel', JSON.stringify({ profile: { badgeTitle: '站长 · Owner' } }));
+    await savePanelConfig(env, { profile: { badgeTitle: '站长 · Owner' } });
+    const stored = JSON.parse(await kv.get('config:panel'));
+    expect(stored.profile.labelsRev).toBe(2);
+    expect((await loadPanelConfig(env)).profile.badgeTitle).toBe('站长 · Owner');
+  });
+});
