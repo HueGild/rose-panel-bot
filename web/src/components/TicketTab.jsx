@@ -389,10 +389,16 @@ export default function TicketTab({
         </div>
 
         <div className="ticket-right">
-          <div className="stub-label">{profile.ownerTag || '个人名片'}</div>
+          {String(profile.ownerTag || '').trim() && (
+            <div className="stub-label">{String(profile.ownerTag).trim()}</div>
+          )}
           <TicketEmblem emblem={profile.emblem} size={64} />
-          <div className="stub-rank">{profile.badgeTitle || '站长'}</div>
-          <div className="stub-sub">{profile.joinedText || 'RosePanel'}</div>
+          {String(profile.badgeTitle || '').trim() && (
+            <div className="stub-rank">{String(profile.badgeTitle).trim()}</div>
+          )}
+          {String(profile.joinedText || '').trim() && (
+            <div className="stub-sub">{String(profile.joinedText).trim()}</div>
+          )}
         </div>
       </div>
 

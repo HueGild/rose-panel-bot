@@ -712,6 +712,35 @@ export default function SettingsDrawer({
                   placeholder="例如：VPS 折腾, 自托管, 开源, ACG"
                 />
               </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                <div className="field">
+                  <label className="field-label">右侧票根顶部小标（留空隐藏）</label>
+                  <input
+                    className="input"
+                    value={draft.profile.ownerTag ?? ''}
+                    onChange={(e) => updateField('profile', 'ownerTag', e.target.value)}
+                    placeholder="例如：个人名片"
+                  />
+                </div>
+                <div className="field">
+                  <label className="field-label">右侧票根主头衔（留空隐藏）</label>
+                  <input
+                    className="input"
+                    value={draft.profile.badgeTitle ?? ''}
+                    onChange={(e) => updateField('profile', 'badgeTitle', e.target.value)}
+                    placeholder="例如：站长 · Owner"
+                  />
+                </div>
+              </div>
+              <div className="field">
+                <label className="field-label">右侧票根副标（留空隐藏）</label>
+                <input
+                  className="input"
+                  value={draft.profile.joinedText ?? ''}
+                  onChange={(e) => updateField('profile', 'joinedText', e.target.value)}
+                  placeholder="可选：留空则不显示，也可填写城市或个性短句"
+                />
+              </div>
               <div className="field">
                 <label className="field-label">下方说明卡标题（如「来信礼仪」「关于我」）</label>
                 <input

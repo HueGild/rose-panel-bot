@@ -49,7 +49,7 @@ export const DEFAULT_CONFIG = {
     avatarUrl: '',
     ownerTag: '个人名片',
     badgeTitle: '站长 · Owner',
-    joinedText: 'Cloudflare Edge',
+    joinedText: '',
     notice: '',
     tags: '',
     noteTitle: '来信礼仪',
@@ -364,6 +364,10 @@ export async function savePanelConfig(env, nextConfig) {
   merged.updater.forkRepo = String(merged.updater.forkRepo || '').trim().slice(0, 120);
   merged.updater.branch = String(merged.updater.branch || 'main').trim().slice(0, 64) || 'main';
   merged.updater.githubToken = String(merged.updater.githubToken || '').trim().slice(0, 256);
+
+  merged.profile.ownerTag = String(merged.profile.ownerTag ?? '').trim().slice(0, 32);
+  merged.profile.badgeTitle = String(merged.profile.badgeTitle ?? '').trim().slice(0, 32);
+  merged.profile.joinedText = String(merged.profile.joinedText ?? '').trim().slice(0, 48);
 
   // Clamp numeric settings
   merged.probe.cacheTtlSeconds = Math.min(Math.max(Number(merged.probe.cacheTtlSeconds) || 15, 5), 300);
