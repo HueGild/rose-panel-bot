@@ -28,11 +28,11 @@
   </a>
 </p>
 
-<sub><b>四層防廣告 Telegram 雙向私訊機器人</b> — CAS 全球黑名單靜默攔截 · 攔截未驗證首則廣告海報圖 · 一鍵傳送靜/動態貼圖快捷設定圖形題 · 附送 <b>0 秒啟動個人面板</b>（小站 / Komari 探針 / 訪客相簿），Cloudflare Workers 0 元部署</sub>
+<sub><b>四層防廣告 Telegram 雙向私訊機器人</b> — CAS 全球黑名單靜默攔截 · 攔截未驗證首則廣告海報圖 · 一鍵傳送靜/動態貼圖快捷設定圖形題 · 免會員自動回覆與關鍵字秒回 · 附送 <b>0 秒啟動個人面板</b>（小站 / 多協定探針 / 訪客相簿），Cloudflare Workers 0 元部署</sub>
 
 </div>
 
-> **🔒 零資料收集承諾**：本專案 **不收集任何使用者資料、不經過作者或任何第三方中轉伺服器**；所有 Bot Token、設定、小站與訪客紀錄全部儲存在**你自己的 Cloudflare Workers 與 KV** 中，程式碼 100% 開源可審計（可選的 CAS 反垃圾黑名單查詢為公開唯讀介面，也可在設定內隨時關閉）。
+> **🔒 零資料收集承諾**：本專案 **不收集任何使用者資料、不經過作者或任何第三方中轉伺服器**；所有 Bot Token、設定、小站與訪客紀錄全部儲存在**你自己的 Cloudflare Workers 與 KV** 中，程式碼 100% 開源可審計（除 Telegram 官方 Bot API 外，僅在對應功能開啟時請求公開唯讀的 CAS 黑名單、CF Turnstile 校驗，以及站長開啟設定時向 GitHub 公開介面檢查新版本）。
 
 > **🧭 快速上手分流（老手 / 新手各走各的，不繞路！）**：
 > - **⚡ 老手（已有 TG 機器人 Token + Cloudflare 帳號）**：直接點上方 **Deploy to Cloudflare**，或把倉庫交給 AI（準備好 `BOT_TOKEN`，等 AI 問你要時貼給它）→ **[查看 1 分鐘老手速通](docs/SETUP_GUIDE_ZH_TW.md#-老手速通通道已有-bot-token--cloudflare)**
@@ -151,9 +151,9 @@ flowchart LR
 
 > **🐣 第一次申請 Telegram 機器人？** 請直接跟著 **[零基礎 5 分鐘保姆教學](docs/SETUP_GUIDE_ZH_TW.md)** 一步步操作，從 `@BotFather` 拿到第一個 Token 到群內 `/bind` 上線零門檻！
 
-### 方式一：一鍵點擊 Deploy to Cloudflare（最無腦 ★，免裝本機環境）
+### 方式一：網頁零環境部署（最省心 ★，免裝本機環境）
 
-1. 點擊頂部 **Deploy to Cloudflare** 按鈕（或 Fork 後在 Cloudflare Dashboard → **Workers & Pages → Create → Workers → Import a repository** 選擇 `rose-panel-bot`）：
+1. **推薦先點擊右上角 Fork** 再到 Cloudflare Dashboard → **Workers & Pages → Create → Workers → Import a repository** 選擇你 Fork 的 `rose-panel-bot`（之後永久支援 `Sync fork` 與面板站內一鍵更新）；也可直接點頂部 **Deploy to Cloudflare** 按鈕快速體驗：
    - **Build command**：`npm run build`
    - **Deploy command**：`npx wrangler deploy`
 2. 在 Worker 的 **Settings → Variables & Bindings** 確認綁定了 `TOPIC_MAP` KV，並填入 4 個核心變數：`BOT_TOKEN`（Secret）、`WEBHOOK_SECRET`（Secret）、`ADMIN_IDS`（**務必選 Text 純文字變數**，填你的純數字 UID；若一鍵部署預設建成了 Secret 金鑰請刪掉重加為 Text）、`BOT_USERNAME`（不含 `@`）。

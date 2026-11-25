@@ -28,11 +28,11 @@
   </a>
 </p>
 
-<sub><b>4-Layer Anti-Spam Telegram Bidirectional PM Bot</b> — Silent CAS Global Blacklist · Blocks Unverified Spam Flyers · Turn Any Static/Animated TG Sticker Into a Visual Quiz in 3s · Includes a <b>0-Second Personal Mini App Panel</b> (Sites / Komari Probe / Visitor Photo Archive) on Cloudflare Workers Free Tier</sub>
+<sub><b>4-Layer Anti-Spam Telegram Bidirectional PM Bot</b> — Silent CAS Blacklist · Blocks Unverified Spam Flyers · 3-Second Sticker Visual Quizzes · Auto-Reply & Keyword Rules · Includes a <b>0-Second Personal Mini App Panel</b> (Sites / Multi-Protocol Server Probe / Visitor Archive) on Cloudflare Workers Free Tier</sub>
 
 </div>
 
-> **🔒 Zero Data Collection Promise**: This project **collects zero user data and never relays traffic through the author or any third-party server**. Your Bot Token, settings, sites, and visitor archive live 100% inside **your own Cloudflare Workers & KV** (the optional read-only CAS spam lookup can be toggled off anytime in Settings).
+> **🔒 Zero Data Collection Promise**: This project **collects zero user data and never relays traffic through the author or any third-party server**. Your Bot Token, settings, sites, and visitor archive live 100% inside **your own Cloudflare Workers & KV** (aside from Telegram Bot API, external requests only occur when enabled for read-only CAS lookups, Cloudflare Turnstile verification, and admin-only GitHub release checks in Settings).
 
 > **🤖 AI-Guided Modular Setup** (works with Antigravity / Claude Code / Codex / Cursor via [AGENTS.md](AGENTS.md)):
 > ```text
@@ -139,9 +139,9 @@ Unused modules stay completely hidden and add zero overhead; includes [AGENTS.md
 
 ## 🚀 Fast Deployment (Free in 5 Minutes)
 
-### Option 1: One-Click Deploy to Cloudflare (Easiest ★, Zero Local Setup)
+### Option 1: Zero-Local-Setup Web Deploy (Easiest ★)
 
-1. Click **Deploy to Cloudflare** at the top (or fork & import in Cloudflare Dashboard → **Workers & Pages → Create → Workers → Import a repository**):
+1. **Recommended for effortless future upgrades**: Click **Fork** at the top right, then import your fork in Cloudflare Dashboard → **Workers & Pages → Create → Workers → Import a repository** (enables `Sync fork` & in-app 1-click updates). Or click **Deploy to Cloudflare** at the top for an instant first-time try:
    - **Build command**: `npm run build`
    - **Deploy command**: `npx wrangler deploy`
 2. In **Settings → Variables & Bindings**, confirm `TOPIC_MAP` KV is bound and set 4 core variables: `BOT_TOKEN` (Secret), `WEBHOOK_SECRET` (Secret), `ADMIN_IDS` (**Text variable** with your numeric UID — if 1-click deploy created it as a Secret, delete and re-add as Text), `BOT_USERNAME` (without `@`).
