@@ -151,20 +151,20 @@ https://你的網域/setup?secret=你剛填的WEBHOOK_SECRET
 **解決**：Cloudflare 控制台 → 你的網域 → **Rules → Configuration Rules** 新建規則，條件符合探針網域和面板網域，把 **SSL** 單獨改為 **Full** 即可，不影響同網域下其他子站。
 
 ### Q3：後續專案發布新版本，怎麼更新？需要改 Cloudflare KV 嗎？
-**完全不需要去 Cloudflare KV 裡改任何東西！** 你的 KV 資料（名片、小站、探針、訪客紀錄、通知群綁定）與環境變數在任何更新方式下都會 **100% 保留**，新選項升級後直接在面板 **⚙️ 設定** 裡調整即可：
-- **方式 A · 直接交給 AI 一鍵覆蓋更新（最省事）**：
+**完全不需要去 Cloudflare KV 裡改任何東西！** 升級只更新程式碼，原有的名片、小站、探針、訪客紀錄與通知群綁定都會 **100% 原樣保留**（⚠️ **請勿重新點擊 Deploy to Cloudflare 按鈕**，那會新建一個空的 Worker 和 KV）。升級完後如舊版存下的 `Cloudflare Edge` 副標仍在，進 **⚙️ 設定 → 名片與徽章** 清空「右側票根副標」儲存即可。
+- **方式 A · 透過 GitHub Fork 部署（最簡單）**：
+  - 前往你的 GitHub Fork 頁面點擊 **`Sync fork → Update branch`**（升至 `v1.4.0+` 後也可直接在面板 **⚙️ 設定 → 版本更新** 內查看紅點並一鍵同步），Cloudflare 約 30 秒自動完成重建上線。
+- **方式 B · 直接交給 AI 一鍵更新（適合一鍵按鈕獨立副本 / AI 部署用戶）**：
   - 直接對你的 AI 助手（Antigravity / Claude Code / Codex / Cursor）說：
     ```text
-    請閱讀 https://github.com/mango0114/rose-panel-bot 的 AGENTS.md，幫我把之前部署的 RosePanel Bot 升級到最新版：拉取最新程式碼原地覆蓋部署到我原來的 Cloudflare Worker，務必使用 --keep-vars 保留原有的 KV 綁定和環境變數，不要重建 KV 和 Telegram Bot。
+    請閱讀 https://github.com/mango0114/rose-panel-bot 的 AGENTS.md，幫我把之前部署的 RosePanel Bot 升級到最新版：把上游最新程式碼合併進我自己的 GitHub 倉庫並推送，讓 Cloudflare 自動重建。不要新建 Worker、KV 或 Bot；如果必須用 wrangler 部署，先確認 Worker 名稱和 wrangler.toml 裡的 KV ID 與我原來的一致並用 --keep-vars。
     ```
-- **方式 B · 透過 GitHub Fork 部署的倉庫**：
-  - 站長開啟面板 → **⚙️ 設定 → 版本更新** 自動查看新版，點「前往我的 Fork」在 GitHub 頁面點擊 **`Sync fork → Update branch`**（或在設定裡選填單倉庫 GitHub Token 站內一鍵同步），Cloudflare 約 30 秒自動完成重建上線。
-- **方式 C · 透過 Deploy to Cloudflare 一鍵按鈕建立的獨立副本（沒有 `Sync fork` 按鈕）**：
-  - 既可以直接用上面的 **方式 A（交給 AI 原地覆蓋）**，也可以到 [官方倉庫](https://github.com/mango0114/rose-panel-bot) 點一次右上角 **Fork**，再進 Cloudflare Worker → **Settings → Build** 斷開舊副本、重新連接到剛 Fork 出來的倉庫，之後即可永久享有 `Sync fork` 與站內一鍵同步；
+- **方式 C · 手動處理一鍵按鈕獨立副本（沒有 `Sync fork` 按鈕）**：
+  - **推薦（一勞永逸）**：先到 [官方倉庫](https://github.com/mango0114/rose-panel-bot) 點一次右上角 **Fork**，再進 Cloudflare Worker → **Settings → Build** 斷開舊副本、重新連接到剛 Fork 出來的倉庫，之後即可永久享有 `Sync fork` 與站內一鍵同步；
   - 或本機 Git 手動同步：
     ```bash
     git clone https://github.com/<你的帳號>/<你的倉庫名>.git && cd <你的倉庫名>
     git remote add upstream https://github.com/mango0114/rose-panel-bot.git
     git fetch upstream && git merge upstream/main --allow-unrelated-histories && git push origin main
     ```
-- **方式 D · 本機 CLI 部署**：執行 `git pull && npm install && npm run build && npx wrangler deploy --keep-vars`。
+- **方式 D · 本機 CLI 部署**：執行 `git pull && npm install && npm run build && npx wrangler deploy --keep-vars`（`v1.2.1` 及更早版本若 webhook 仍指向根路徑 `/`，升級後請再開啟一次 `https://<你的網域>/setup?secret=<WEBHOOK_SECRET>`）。

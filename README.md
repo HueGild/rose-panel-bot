@@ -231,15 +231,15 @@ npx wrangler dev --ip 127.0.0.1 --port 8787 --persist-to ./.wrangler/state --sho
 
 ## 🔄 老用户如何升级到最新版（100% 保留 KV 数据）
 
-> **✅ 无需修改 Cloudflare KV！** 无论用哪种方式升级，你原有的名片、小站、探针、访客记录、通知群绑定与验证状态都会 **100% 原样保留**，所有新选项升级后直接进小程序 **⚙️ 设置** 调整即可。
+> **✅ 无需修改 Cloudflare KV！** 升级只更新代码，你原有的名片、小站、探针、访客记录与通知群绑定都会 **100% 原样保留**（⚠️ 请勿重新点击「Deploy to Cloudflare」按钮，那会新建一个空的 Worker 和 KV）。
 
-- **🤖 方式 A · 直接交给 AI 一键覆盖更新（最省事，适合 AI 部署 / 一键按钮老用户）**  
-  直接把下面这段话发给你的 AI 助手（Antigravity / Claude Code / Codex / Cursor 等），它会自动拉取最新代码并原地覆盖原来的 Worker：
+- **🔀 方式 A · GitHub Fork 用户（最简单）**  
+  到你的 GitHub Fork 仓库点击 **`Sync fork → Update branch`**（升至 `v1.4.0+` 后也可在小程序 **⚙️ 设置 → 版本更新** 内一键同步），Cloudflare 约 30 秒自动完成重建上线。
+- **🤖 方式 B · 直接交给 AI 一键更新（适合一键按钮独立副本 / AI 部署用户）**  
+  把下面这段话发给你的 AI 助手（Antigravity / Claude Code / Codex / Cursor 等）：
   ```text
-  请阅读 https://github.com/mango0114/rose-panel-bot 的 AGENTS.md，帮我把之前部署的 RosePanel Bot 升级到最新版：拉取最新代码原地覆盖部署到我原来的 Cloudflare Worker，务必使用 --keep-vars 保留原有的 KV 绑定和环境变量，不要重建 KV 和 Telegram Bot。
+  请阅读 https://github.com/mango0114/rose-panel-bot 的 AGENTS.md，帮我把之前部署的 RosePanel Bot 升级到最新版：把上游最新代码合并进我自己的 GitHub 仓库并推送，让 Cloudflare 自动重建。不要新建 Worker、KV 或 Bot；如果必须用 wrangler 部署，先确认 Worker 名称和 wrangler.toml 里的 KV ID 与我原来的一致并用 --keep-vars。
   ```
-- **🔀 方式 B · GitHub Fork 部署用户**  
-  打开小程序 **⚙️ 设置 → 版本更新** 查看新版并一键同步（或前往你的 GitHub Fork 仓库点击 **`Sync fork → Update branch`**），Cloudflare 约 30 秒自动完成重建上线。
 - **💻 方式 C · 本地 CLI 部署用户**  
   在项目目录执行：`git pull && npm install && npm run build && npx wrangler deploy --keep-vars`。
 

@@ -251,13 +251,13 @@ The panel recognized you as a regular guest — almost always because `ADMIN_IDS
 3. Save & redeploy, then close and reopen the Mini App **inside Telegram** (if you rely on forum-group admin detection without `ADMIN_IDS`, make sure you ran `/bind` inside your Topics group).
 
 **Q: How do I update an existing deployment? Do I need to edit Cloudflare KV?**  
-**No — you never need to touch Cloudflare KV!** All profile data, sites, probe settings, visitor history, and verification state are **100% preserved** across upgrades:
-- **Let an AI Assistant upgrade in-place (easiest for CLI / Deploy-button users)**: Send this prompt to Antigravity / Claude Code / Codex / Cursor:
+**No — upgrades only update code and never touch Cloudflare KV!** All profile data, sites, probe settings, visitor history, and verification state are **100% preserved** (⚠️ do **not** click the *Deploy to Cloudflare* button again, as that creates a brand-new empty Worker & KV):
+- **GitHub Fork (easiest)**: Click **Sync fork → Update branch** on your fork (from `v1.4.0+` you can also sync right inside **⚙️ Settings → 版本更新**); Cloudflare rebuilds automatically in ~30s.
+- **Let an AI Assistant upgrade in-place (for Deploy-button copies / CLI users)**: Send this prompt to Antigravity / Claude Code / Codex / Cursor:
   ```text
-  Read AGENTS.md in https://github.com/mango0114/rose-panel-bot and upgrade my existing RosePanel Bot deployment to the latest release. Pull upstream changes and deploy in-place to my existing Cloudflare Worker using --keep-vars so all KV bindings and secrets stay intact — do not recreate KV or the Telegram Bot.
+  Read AGENTS.md in https://github.com/mango0114/rose-panel-bot and upgrade my existing RosePanel Bot deployment to the latest release: merge upstream/main into my own GitHub repo and push so Cloudflare rebuilds automatically. Do NOT create a new Worker, KV, or Bot; if deploying via wrangler, verify the Worker name and TOPIC_MAP KV ID match my existing setup first and use --keep-vars.
   ```
-- **GitHub Fork**: Open Mini App → **⚙️ Settings → 版本更新**, or click **Sync fork → Update branch** on your fork (Cloudflare rebuilds automatically).
-- **Standalone copy (Deploy button) / Local CLI**: Either Fork the upstream repo once and reconnect Cloudflare Build to your fork, or sync via Git (`git fetch upstream && git merge upstream/main --allow-unrelated-histories`) and run `npm run build && npx wrangler deploy --keep-vars`.
+- **Standalone copy (Deploy button) / Local CLI**: Either Fork the upstream repo once and reconnect Cloudflare Build to your fork, or sync via Git (`git fetch upstream && git merge upstream/main --allow-unrelated-histories && git push origin main`).
 
 ---
 
