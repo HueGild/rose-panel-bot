@@ -79,6 +79,7 @@ function usePixelTick() {
     tickListeners.add(setTick);
     if (!sharedTimer) {
       sharedTimer = setInterval(() => {
+        if (typeof document !== 'undefined' && document.hidden) return;
         sharedTick = (sharedTick + 1) % 720;
         tickListeners.forEach((fn) => fn(sharedTick));
       }, 145);
@@ -514,6 +515,27 @@ const BUSH_LIGHT_PATH = rectsPath([
   [194, 53, 8, 4],
 ]);
 
+// Precomputed stepped pitched gable roof paths (18px tall, y = 24..42, peak at x = 40)
+const { ROOF_STEPS_PATH, ROOF_HIGHLIGHT_PATH } = (() => {
+  const steps = [];
+  const highlights = [];
+  for (let row = 0; row < 18; row += 1) {
+    const half = 3 + Math.floor(row * 1.45);
+    const rx = 40 - half;
+    const rw = half * 2;
+    steps.push([rx, 24 + row, rw, 1]);
+    if (row % 3 === 1 && row > 1) {
+      for (let sx = rx + 3; sx < rx + rw - 4; sx += 6) {
+        highlights.push([sx, 24 + row, 3, 1]);
+      }
+    }
+  }
+  return {
+    ROOF_STEPS_PATH: rectsPath(steps),
+    ROOF_HIGHLIGHT_PATH: rectsPath(highlights),
+  };
+})();
+
 // Architectural Lineless Rose-Porcelain Cottage (x = 14..68, y = 20..68)
 function PixelCottage({ cp, tick }) {
   const lampOn = cp < 0.72;
@@ -527,21 +549,6 @@ function PixelCottage({ cp, tick }) {
   const woodHi = mix3(C.mulberry, C.crimson, C.accent, cp);
   const winGlass = lampOn ? (flicker ? C.cream : C.honey) : C.petal;
   const winHi = lampOn ? C.cream : C.white;
-
-  // Stepped pitched gable roof (18px tall, y = 24..42, peak at x = 40)
-  const roofSteps = [];
-  const roofHighlight = [];
-  for (let row = 0; row < 18; row += 1) {
-    const half = 3 + Math.floor(row * 1.45);
-    const rx = 40 - half;
-    const rw = half * 2;
-    roofSteps.push([rx, 24 + row, rw, 1]);
-    if (row % 3 === 1 && row > 1) {
-      for (let sx = rx + 3; sx < rx + rw - 4; sx += 6) {
-        roofHighlight.push([sx, 24 + row, 3, 1]);
-      }
-    }
-  }
 
   // Rising chimney smoke puffs (6-step continuous drift when idle!)
   const smokePhase = tick % 6;
@@ -583,8 +590,8 @@ function PixelCottage({ cp, tick }) {
       <rect x={18} y={65} width={44} height={3} fill={wood} />
 
       {/* Pitched Scalloped Tile Roof */}
-      <path d={rectsPath(roofSteps)} fill={roofMain} />
-      <path d={rectsPath(roofHighlight)} fill={roofHi} />
+      <path d={ROOF_STEPS_PATH} fill={roofMain} />
+      <path d={ROOF_HIGHLIGHT_PATH} fill={roofHi} />
       <rect x={13} y={41} width={54} height={2} fill={roofShade} />
 
       {/* Hanging Porch Lantern on Left Eave (x = 13..17, y = 43..52) */}
