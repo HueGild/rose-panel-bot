@@ -6,7 +6,7 @@ compatibility_date = "2025-02-01"
 directory = "./dist"
 binding = "ASSETS"
 not_found_handling = "single-page-application"
-run_worker_first = ["/", "/api/*", "/webhook", "/setup", "/health"]
+run_worker_first = ["/", "/api/*", "/webhook", "/setup", "/health", "/verify", "/verify-submit"]
 
 # Wrangler v4 支持自动创建 KV，或在 Cloudflare Dashboard / 下方填入已有 KV 的 id
 # （如需复用原 telegram_private_chatbot 的 TOPIC_MAP 数据，取消注释 id 并填入你的 KV ID 即可）

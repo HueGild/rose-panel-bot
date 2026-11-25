@@ -6,325 +6,167 @@
 
 [🇨🇳 简体中文](README.md) | 🇺🇸 **English**
 
-A sleek, zero-cost **Telegram Mini App Personal Panel**, **Public/Private Bookmark Hub**, **Komari Server Probe Monitor**, **Bidirectional Anti-Spam PM Bot with Media Archive**, and **Optional Group Check-in / Points / Badges System** — running natively on **Cloudflare Workers** with built-in HTTPS.
-
-Designed with a warm rose-porcelain "cinema ticket stub" aesthetic, floating frosted-glass bottom dock, and automatic light/dark mode support.
+An all-in-one **Telegram Mini App Personal Panel**, **Public/Private Site Directory**, **Komari Server Probe Monitor**, **Bidirectional Anti-Spam PM Bot with Photo/Link Archive**, and **Optional Group Check-in & Badges System** running on **Cloudflare Workers**.
 
 ---
 
-## 📑 Table of Contents
+## ✨ Key Features
 
-- [✨ Highlights](#-highlights)
-- [📋 Prerequisites (All Platforms)](#-prerequisites-all-platforms)
-- [🚀 Method 1: Cloudflare Dashboard Git Integration (Recommended ★)](#-method-1-cloudflare-dashboard-git-integration-recommended-)
-- [🪟 Method 2: Deploy from Windows](#-method-2-deploy-from-windows)
-- [🍎 Method 3: Deploy from macOS](#-method-3-deploy-from-macos)
-- [🐧 Method 4: Deploy from Linux VPS (Debian / Ubuntu / CentOS / Rocky / Arch / Docker)](#-method-4-deploy-from-linux-vps-debian--ubuntu--centos--rocky--arch--docker)
-- [⚙️ Environment Variables & KV Bindings](#️-environment-variables--kv-bindings)
-- [🌐 Custom Domain & One-Click Bot Activation](#-custom-domain--one-click-bot-activation)
-- [🤖 Bot Commands](#-bot-commands)
-- [🔒 Privacy & Security](#-privacy--security)
-- [❓ FAQ](#-faq)
-
----
-
-## ✨ Highlights
-
-1. **🎫 Cinema Ticket Stub Profile & Dual-Mode Switch**
-   - **Minimal Personal Card Mode (Default)**: Clean owner ticket stub with avatar, live status pill, bio, social links, and optional notice banner — zero check-in clutter.
-   - **Group Community Check-in Mode (1-Click Toggle in Settings)**: Supports `/me`, `/panel`, `/checkin`, `/rank` in Telegram groups and Mini App with daily check-in rewards, streak bonuses, 7-tier level progression, 8 auto-unlocked achievement badges, point ledger, and leaderboard.
-2. **✨ Telegram Stickers & Custom Emojis as Ticket Emblem**
-   - Supports **static stickers (`.webp`)**, **video stickers (`.webm`)**, **animated vector stickers (`.tgs` auto-decompressed at the edge to 60fps Lottie JSON)**, and **Telegram Premium Custom Emojis**.
-   - Send `/setbadge` to your bot in private chat followed by any sticker, custom emoji, or sticker pack URL (`t.me/addstickers/...` / `t.me/addemoji/...`), or browse & pick visually inside the Mini App Settings!
-3. **🌐 Personal Sites & Private Bookmarks (Server-Side Isolated)**
-   - Category filter chips, instant search, drag/arrow reordering, and per-site **`Public` vs `🔒 Private (Owner Only)`** visibility with 1-tap Eye button toggle.
-   - Private sites are strictly stripped on the Worker backend for non-admin visitors.
-4. **📡 Komari Server Probe Integration**
-   - Automatically supports **Komari v2 JSON-RPC (`/api/rpc2`)** and **Komari v1 REST (`/api/nodes` + `/api/recent/{uuid}`)**, both public and private token/cookie instances.
-   - 10-segment rose health bar, live CPU / RAM / Disk / Network speeds, expandable hardware specs, and built-in demo mode.
-5. **👤 Bidirectional Anti-Spam PM Bot + Photo Gallery / Link Archive / Quick Clear (Admin Only)**
-   - 100% KV-compatible with `telegram_private_chatbot`; zero-latency local verification + isolated Telegram Forum Topics per visitor.
-   - Bidirectional message counter (`Visitor · Me`), auto-archived **Photo Gallery** (HMAC-signed private proxy + fullscreen lightbox) and **Links Archive**, private admin notes, 1-tap Ban / Unban / Trust / Close, and two-tier **Clear Chat History** (archive-only or full topic wipe + <48h PM deletion).
+- **🎫 Ticket Stub Profile & Dual Mode**
+  - **Personal Card Mode (Default)**: Clean profile card with avatar, status badge, bio, social links, and optional notice banner.
+  - **Group Community Mode (1-Click Toggle)**: Enables `/me`, `/panel`, `/checkin`, `/rank` in groups and Mini App with daily points, streak bonuses, 7-tier levels, 8 achievement badges, and leaderboard.
+- **✨ Telegram Stickers & Custom Emojis as Ticket Emblem**
+  - Supports static `.webp`, video `.webm`, animated `.tgs` (edge-decompressed 60fps Lottie JSON), and Telegram Premium Custom Emojis.
+  - Send `/setbadge` to the bot with any sticker, custom emoji, or pack link, or browse `t.me/addstickers/...` / `t.me/addemoji/...` visually inside Settings.
+- **🌐 Public Sites & Private Bookmarks (Server-Side Isolated)**
+  - Categories, search, reordering, and 1-tap **`Public` vs `🔒 Private`** visibility toggle. Non-admin responses strictly omit private sites at the Worker layer.
+- **📡 Komari Server Probe Monitor**
+  - Native adapter for **Komari v2 (`/api/rpc2`)** and **v1 (`/api/nodes`)**, supporting public and private instances, 10-segment online meter, CPU/RAM/Disk/network metrics, and hardware details.
+- **👤 Bidirectional PM Bot + Photo Gallery / Link Archive / Quick Clear (Admin Only)**
+  - Dedicated Telegram Forum Topic per visitor, bidirectional message counter (`Visitor · Me`), auto-archived **Photo Gallery** (HMAC-signed private proxy + lightbox) & **Links List**, private notes, 1-tap Ban/Unban/Trust/Close, and two-tier **Clear Chat History** (archive-only or full topic wipe + <48h PM deletion).
 
 ---
 
-## 📋 Prerequisites (All Platforms)
+## 🛡️ How Anti-Spam Verification Works
 
-Before deploying, prepare 3 items in Telegram:
+Switch freely between **3 verification modes** inside **⚙️ Settings → Community & Anti-Spam**:
 
-1. **Create a Telegram Bot & get `BOT_TOKEN`**
-   - Chat with [@BotFather](https://t.me/BotFather) → send `/newbot` → save your `BOT_TOKEN` and username (without `@`).
-   - Send `/mybots` → select your bot → **Bot Settings** → **Allow Groups** → Enable.
-2. **Create an Admin Forum Group (for bidirectional PM forwarding)**
-   - Create a Telegram group and enable **Topics** in Group Settings.
-   - Add your bot as an **Administrator** (grant **Manage Topics** and **Delete Messages**).
-   - Find the group's `SUPERGROUP_ID` (starts with `-100`, e.g. `-1001234567890`).
-3. **Find your numeric Telegram UID**
-   - Message `@userinfobot` to get your numeric ID for `ADMIN_IDS` (optional: administrators of `SUPERGROUP_ID` are also auto-detected).
+| Mode | Experience & Mechanism | Anti-Abuse Protection |
+| :--- | :--- | :--- |
+| **🎯 Emoji Odd-One-Out / Pick (Default)** | 3×3 pure-icon inline grid alternating odd-one-out and semantic pick. **Zero latency, ~0.5s for humans** | 1st wrong tap reshuffles a new challenge; 2 consecutive failures trigger silent 10-min cooldown (configurable) |
+| **📝 Local Quiz** | 2×2 local commonsense buttons, zero external API calls | Same reshuffle-on-error + cooldown protection |
+| **🛡️ CF Turnstile Strict Mode** | 1-tap escalation during heavy bot raids; runs Cloudflare Turnstile natively inside Telegram WebApp overlay | Server-side `siteverify` validation; auto-falls back to Emoji mode if Turnstile keys aren't configured |
+
+- **30-Day Grace Period**: Verified users stay verified for 30 days; admins can also grant **⭐ Permanent Trust** or **🚫 Silent Ban** anytime.
+- **End-to-End Security**: Official Telegram `initData` HMAC-SHA256 verification on APIs, server-side filtering for private sites, and 30-minute HMAC-signed proxy URLs for private chat photos (`BOT_TOKEN` never reaches clients).
 
 ---
 
-## 🚀 Method 1: Cloudflare Dashboard Git Integration (Recommended ★)
+## 💎 Why RosePanel?
 
-> **100% free tier, zero local tooling required, automatic deploys on every Git push.**
+1. **Zero Server Cost & Native HTTPS**: Runs on Cloudflare Workers' free tier with global edge speed and instant TLS.
+2. **100% Visual Management Inside Telegram**: Edit bio, public/private sites, Komari URL, sticker badges, verification mode, and check-in rules right from your phone — no redeploy needed.
+3. **Zero-Downtime Migration**: Directly compatible with `telegram_private_chatbot`'s `TOPIC_MAP` KV schema and root `POST /` webhooks.
+4. **Privacy-Clean Repository**: Zero hardcoded tokens, group IDs, KV IDs, or private bookmarks in Git.
 
-1. Click **Fork** at the top right of this repository to copy it into your own GitHub account.
-2. Open [Cloudflare Dashboard](https://dash.cloudflare.com/) → **Workers & Pages** → **Create** → **Workers** → **Import a repository**.
-3. Authorize GitHub and select your forked `rose-panel-bot` repo:
+---
+
+## 🚀 Fast Deployment (4 Options)
+
+> **Prerequisites**: Get a `BOT_TOKEN` from [@BotFather](https://t.me/BotFather). For PM forwarding, create a Telegram group with **Topics** enabled, add the bot as Administrator (**Manage Topics** & **Delete Messages**), and note its `-100...` `SUPERGROUP_ID`.
+
+### Option 1: Cloudflare Dashboard Git Deploy (Easiest ★, Zero Local Setup)
+
+1. Fork this repository to your GitHub account.
+2. Open [Cloudflare Dashboard](https://dash.cloudflare.com/) → **Workers & Pages** → **Create** → **Workers** → **Import a repository** → choose `rose-panel-bot`:
    - **Build command**: `npm run build`
    - **Deploy command**: `npx wrangler deploy`
    - Click **Save and Deploy**.
-4. Open your Worker's **Settings → Variables and Secrets & Bindings**:
-   - Ensure KV Namespace binding `TOPIC_MAP` is attached (Wrangler v4 auto-provisions one, or bind your existing `TOPIC_MAP` KV to migrate seamlessly).
-   - Add `BOT_TOKEN` (Secret), `SUPERGROUP_ID`, `ADMIN_IDS`, `BOT_USERNAME`, `APP_SHORT_NAME`, and `WEBHOOK_SECRET` (Secret).
-5. Finish with [Custom Domain & One-Click Activation](#-custom-domain--one-click-bot-activation).
+3. In **Settings → Variables & Bindings**, confirm `TOPIC_MAP` KV is bound and add your variables below.
 
----
+### Option 2: Windows (PowerShell)
 
-## 🪟 Method 2: Deploy from Windows
-
-> Once deployed to Cloudflare Workers, you can turn off your PC — the bot stays online 24/7 at the edge.
-
-### 1. Install Git & Node.js LTS (PowerShell)
 ```powershell
 winget install --id Git.Git -e
 winget install --id OpenJS.NodeJS.LTS -e
-```
-Restart PowerShell and verify Node.js >= 20:
-```powershell
-node -v
-npm -v
-```
 
-### 2. Clone, Authenticate & Deploy
-```powershell
 git clone https://github.com/mango0114/rose-panel-bot.git
 cd rose-panel-bot
 npm install
-
-# Opens browser to log in to Cloudflare
 npx wrangler login
-
-# Build frontend & deploy Worker + static assets
 npm run deploy
 
-# Add encrypted secrets
 npx wrangler secret put BOT_TOKEN
 npx wrangler secret put WEBHOOK_SECRET
 ```
-Add non-secret variables (`SUPERGROUP_ID`, `ADMIN_IDS`, `BOT_USERNAME`, `APP_SHORT_NAME`) in Cloudflare Dashboard → **Settings → Variables**.
 
----
+### Option 3: macOS (Terminal)
 
-## 🍎 Method 3: Deploy from macOS
-
-### 1. Install Node.js & Git
 ```bash
 brew install git node
-node -v && npm -v
-```
-
-### 2. Clone, Test & Deploy
-```bash
 git clone https://github.com/mango0114/rose-panel-bot.git
 cd rose-panel-bot
 npm install
-npm test
-
 npx wrangler login
 npm run deploy
-
 npx wrangler secret put BOT_TOKEN
 npx wrangler secret put WEBHOOK_SECRET
 ```
 
-### 3. Local Browser Preview (Development)
-```bash
-cp .dev.vars.example .dev.vars
-# DEV_PREVIEW="true" enables Admin/Guest role switcher at http://127.0.0.1:8787
-npm run preview
-```
+### Option 4: Linux VPS (All Major Distros & Docker)
 
----
+#### 1. Install Git & Node.js 22
+- **Debian / Ubuntu**:
+  ```bash
+  sudo apt update && sudo apt install -y curl git ca-certificates
+  curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash - && sudo apt install -y nodejs
+  ```
+- **CentOS Stream / Rocky Linux / AlmaLinux / RHEL**:
+  ```bash
+  sudo dnf install -y curl git
+  curl -fsSL https://rpm.nodesource.com/setup_22.x | sudo bash - && sudo dnf install -y nodejs
+  ```
+- **Arch Linux**: `sudo pacman -Syu --noconfirm git nodejs npm`
+- **Alpine Linux**: `apk add --no-cache git nodejs npm`
 
-## 🐧 Method 4: Deploy from Linux VPS (Debian / Ubuntu / CentOS / Rocky / Arch / Docker)
-
-> 💡 You can either use your VPS as a **one-shot deployer** to Cloudflare Workers (Option A/B — bot stays online even if you shut down the VPS) OR **self-host persistently** on your own VPS behind Caddy/Nginx HTTPS (Option C).
-
-### Step 1: Install Git & Node.js 22 for your Linux distro
-
-#### Debian / Ubuntu (20.04 / 22.04 / 24.04)
-```bash
-sudo apt update && sudo apt install -y curl git ca-certificates
-curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
-sudo apt install -y nodejs
-```
-
-#### CentOS Stream / Rocky Linux / AlmaLinux / RHEL (8 / 9)
-```bash
-sudo dnf install -y curl git
-curl -fsSL https://rpm.nodesource.com/setup_22.x | sudo bash -
-sudo dnf install -y nodejs
-```
-
-#### Arch Linux
-```bash
-sudo pacman -Syu --noconfirm git nodejs npm
-```
-
-#### Alpine Linux
-```bash
-apk add --no-cache git nodejs npm
-```
-
----
-
-### Option A: Headless Deploy to Cloudflare Workers via API Token
-Create an API Token using the **Edit Cloudflare Workers** template at [Cloudflare API Tokens](https://dash.cloudflare.com/profile/api-tokens):
-
+#### 2. Headless Deploy to Cloudflare Workers via API Token
 ```bash
 git clone https://github.com/mango0114/rose-panel-bot.git
-cd rose-panel-bot
-npm ci
-
+cd rose-panel-bot && npm ci
 export CLOUDFLARE_API_TOKEN="YOUR_CLOUDFLARE_API_TOKEN"
 npm run deploy
-
 echo "YOUR_BOT_TOKEN" | npx wrangler secret put BOT_TOKEN
 echo "YOUR_RANDOM_SECRET" | npx wrangler secret put WEBHOOK_SECRET
 ```
 
----
-
-### Option B: Zero-Footprint Docker Deploy (Any Linux Distro)
+#### 3. One-Line Docker Deploy (Any OS)
 ```bash
-git clone https://github.com/mango0114/rose-panel-bot.git
-cd rose-panel-bot
-
-docker run --rm -it \
-  -v "$PWD":/app -w /app \
-  -e CLOUDFLARE_API_TOKEN="YOUR_CLOUDFLARE_API_TOKEN" \
-  node:22-alpine sh -c "npm ci && npm run deploy"
+git clone https://github.com/mango0114/rose-panel-bot.git && cd rose-panel-bot
+docker run --rm -it -v "$PWD":/app -w /app -e CLOUDFLARE_API_TOKEN="YOUR_API_TOKEN" node:22-alpine sh -c "npm ci && npm run deploy"
 ```
 
----
-
-### Option C: Self-Host Persistently on Your Own VPS (No Cloudflare Workers Required)
-
-1. Build and configure `.dev.vars` (make sure `DEV_PREVIEW="false"` or removed in production!):
+#### 4. Self-Host Persistently on Your Own VPS (with Caddy HTTPS)
 ```bash
-git clone https://github.com/mango0114/rose-panel-bot.git
-cd rose-panel-bot
-npm ci && npm run build
-cp .dev.vars.example .dev.vars
-nano .dev.vars
+npm ci && npm run build && cp .dev.vars.example .dev.vars
+# Edit .dev.vars with real secrets (remove DEV_PREVIEW="true" in production!)
+npx wrangler dev --ip 127.0.0.1 --port 8787 --persist-to ./.wrangler/state --show-interactive-dev-session=false
 ```
-2. Run persistently with `systemd`:
-```bash
-sudo tee /etc/systemd/system/rose-panel-bot.service > /dev/null <<'EOF'
-[Unit]
-Description=RosePanel Telegram Mini App Bot
-After=network.target
-
-[Service]
-Type=simple
-WorkingDirectory=/root/rose-panel-bot
-ExecStart=/usr/bin/npx wrangler dev --ip 127.0.0.1 --port 8787 --persist-to ./.wrangler/state --show-interactive-dev-session=false
-Restart=always
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-sudo systemctl daemon-reload
-sudo systemctl enable --now rose-panel-bot
-```
-3. Add automatic HTTPS via **Caddy** (Telegram Mini Apps require HTTPS):
-```caddyfile
-panel.yourdomain.com {
-    reverse_proxy 127.0.0.1:8787
-}
-```
+Reverse-proxy `127.0.0.1:8787` with Caddy (`reverse_proxy 127.0.0.1:8787`) for automatic HTTPS and run under `systemd`.
 
 ---
 
-## ⚙️ Environment Variables & KV Bindings
+## ⚙️ Environment Variables & Final Activation
 
-| Name | Type | Required | Description |
+| Variable | Type | Required | Notes |
 | :--- | :--- | :---: | :--- |
-| `TOPIC_MAP` | KV Binding | ✅ | Stores panel config, sites, visitor profiles, media/link archive, and check-ins |
-| `BOT_TOKEN` | Secret | ✅ | Telegram Bot Token (never commit to Git) |
-| `SUPERGROUP_ID` | Text | For PM Bot | Admin group ID with Forum Topics enabled (e.g. `-1001234567890`) |
-| `ADMIN_IDS` | Text | Recommended | Comma-separated numeric admin UIDs (admins of `SUPERGROUP_ID` are also auto-detected) |
-| `BOT_USERNAME` | Text | Recommended | Bot username without `@` (used for group Direct-Link Mini App buttons) |
-| `APP_SHORT_NAME` | Text | Recommended | Mini App short name created via BotFather `/newapp` (e.g. `panel`) |
-| `WEBHOOK_SECRET` | Secret | Recommended | Random alphanumeric token validating Telegram webhooks & `/setup` |
-| `KOMARI_URL` | Text | Optional | Komari server URL (can also be edited live inside Mini App Settings) |
-| `KOMARI_API_KEY` | Secret | Optional | Optional Bearer token or Cookie for private Komari instances |
-| `ENABLE_CHECKIN` | Text | Optional | `"true"` enables group check-in & badges mode; default `"false"` |
+| `TOPIC_MAP` | KV Binding | ✅ | Stores config, sites, visitor archive, and check-ins |
+| `BOT_TOKEN` | Secret | ✅ | Telegram Bot Token |
+| `SUPERGROUP_ID` | Text | PM Bot | Admin Forum Group ID (`-100...`) |
+| `ADMIN_IDS` | Text | Recommended | Comma-separated numeric UIDs (supergroup admins are also auto-detected) |
+| `BOT_USERNAME` | Text | Recommended | Bot username without `@` |
+| `APP_SHORT_NAME` | Text | Recommended | BotFather `/newapp` short name (e.g. `panel`) |
+| `WEBHOOK_SECRET` | Secret | Recommended | Random secret protecting `/webhook` & `/setup` |
+| `TURNSTILE_SITE_KEY` / `TURNSTILE_SECRET` | Text / Secret | Optional | Required only for CF Turnstile strict mode |
+| `KOMARI_URL` / `KOMARI_API_KEY` | Text / Secret | Optional | Komari endpoint & optional private auth (also editable in-app) |
+
+**Final Activation (10s)**:
+1. (Recommended) Attach a Custom Domain (e.g. `panel.yourdomain.com`) in Cloudflare Worker Settings.
+2. Open `https://<your-domain>/setup?secret=<YOUR_WEBHOOK_SECRET>` once in your browser until you see `"ok": true`.
+3. (For group pop-up launch) Run `/newapp` in `@BotFather` pointing to `https://<your-domain>/` with short name `panel`.
 
 ---
 
-## 🌐 Custom Domain & One-Click Bot Activation
+## 🤖 Commands
 
-1. **Attach a Custom Domain (recommended)** in Cloudflare Dashboard → Worker → **Settings → Domains & Routes → Custom Domain** (e.g. `panel.yourdomain.com`).
-2. **Activate Webhook & Menu Button** by opening once in your browser:
-   ```text
-   https://<your-domain>/setup?secret=<YOUR_WEBHOOK_SECRET>
-   ```
-   When you see `"ok": true`, your bot's bottom-left menu button automatically launches the Mini App!
-3. **Register Group Direct-Link Mini App** in [@BotFather](https://t.me/BotFather):
-   Send `/newapp` → select your bot → set URL `https://<your-domain>/` → set short name `panel` (matching `APP_SHORT_NAME`).
+- **Everyone**: `/start`, `/panel`, `/me`, `/checkin` (community mode), `/rank` (community mode)
+- **Admin Private Chat**: `/setbadge` (capture sticker / Custom Emoji / pack link), `/resetbadge`
+- **Admin Forum Topics**: `/info`, `/ban`, `/unban`, `/trust`, `/reset`, `/close`, `/open`
 
 ---
 
-## 🤖 Bot Commands
+## 🙏 Credits & Tech Stack
 
-### Private & Group Chats
-| Command | Action |
-| :--- | :--- |
-| `/start`, `/panel`, `/me` | Open the Mini App panel (or show member check-in ticket stub in community mode) |
-| `/checkin` | Instant daily check-in (when community mode is enabled) |
-| `/rank` | Top 10 points leaderboard (when community mode is enabled) |
-
-### Admin Private Chat
-| Command | Action |
-| :--- | :--- |
-| `/setbadge` | Capture any Telegram sticker, Custom Emoji, or sticker pack URL as your Ticket Emblem |
-| `/resetbadge` | Restore default rose vector emblem |
-
-### Admin Supergroup Topics (inside a visitor's topic)
-| Command | Action |
-| :--- | :--- |
-| `/info` | Show visitor profile card with message/photo/link stats, Mini App link & quick moderation buttons |
-| `/ban` / `/unban` | Silently ban / unban visitor |
-| `/trust` / `/reset` | Permanently trust / reset anti-spam verification |
-| `/close` / `/open` | Close / reopen conversation |
-
----
-
-## 🔒 Privacy & Security
-
-- **Zero Secrets in Git**: All tokens, KV IDs, group IDs, private bookmarks, and visitor logs live strictly in your private Cloudflare account — never in the repository.
-- **Official Telegram `initData` Verification**: Every authenticated Mini App API call is validated via HMAC-SHA256 using `WebAppData` key derivation and expiration checks.
-- **Strict Server-Side Isolation**:
-  - Private sites (`visibility: "private"`) are stripped server-side before responding to non-admin users.
-  - Private visitor chat photos are served exclusively via 30-minute HMAC-signed proxy URLs issued only to authenticated admins — `BOT_TOKEN` is never exposed to clients.
-
----
-
-## ❓ FAQ
-
-- **Can I migrate seamlessly from `telegram_private_chatbot`?**
-  Yes! Bind the same `TOPIC_MAP` KV namespace to inherit all existing visitors, topics, and bans with zero downtime (`POST /` and `POST /webhook` are both supported).
-- **Why don't old photos/links from before upgrading appear in the gallery?**
-  Telegram's Bot API does not allow bots to fetch historical messages retroactively; all new messages, photos, and links sent after upgrading are archived automatically.
-- **What does "Full Clear" delete?**
-  It deletes the visitor's entire Forum Topic in your admin supergroup (no 48-hour limit!), clears all KV stats/photo/link archives, and attempts to delete recorded private-chat messages within Telegram's 48-hour deletion window.
-
----
-
-## 📄 License
+- Integrations & Compatibility: [Komari Monitor](https://github.com/komari-monitor/komari) · [jikssha/telegram_private_chatbot](https://github.com/jikssha/telegram_private_chatbot)
+- Built With: [Cloudflare Workers](https://workers.cloudflare.com/) · [Telegram Mini Apps](https://core.telegram.org/bots/webapps) · [React](https://react.dev/) · [Vite](https://vitejs.dev/) · [Lucide Icons](https://lucide.dev/) · [lottie-web](https://github.com/airbnb/lottie-web)
 
 MIT License © 2026 [mango0114](https://github.com/mango0114)

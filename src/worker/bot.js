@@ -1,8 +1,9 @@
 // Telegram Webhook Handler:
 // 1. Bidirectional Anti-Spam PM Bot with Forum Topics (compatible with telegram_private_chatbot)
-// 2. Topic Visitor Info Card + Direct Mini App Profile & Moderation Buttons
-// 3. Group & Private Personal Panel + Optional Check-in / Points / Leaderboard Commands
-// 4. Admin /setbadge & /resetbadge for capturing Telegram Stickers / Custom Emojis as Ticket Emblem
+// 2. 3-Mode Verification: Emoji Odd-One-Out/Pick (0-latency) | Local Quiz | Cloudflare Turnstile Strict Mode + Cooldown
+// 3. Topic Visitor Info Card + Direct Mini App Profile, Photos/Links Archive & Moderation Buttons
+// 4. Group & Private Personal Panel + Optional Check-in / Points / Leaderboard Commands
+// 5. Admin /setbadge & /resetbadge for capturing Telegram Stickers / Custom Emojis as Ticket Emblem
 
 import { isUserAdmin } from './auth.js';
 import { getLeaderboard, getMemberTicket, performCheckin } from './checkin.js';
@@ -37,6 +38,39 @@ const LOCAL_QUESTIONS = [
   { q: '我们用什么器官听声音？', ok: '耳朵', bad: ['眼睛', '鼻子', '嘴巴'] },
 ];
 
+const EMOJI_ITEMS = [
+  { icon: '🍓', label: '草莓' },
+  { icon: '🍉', label: '西瓜' },
+  { icon: '🍊', label: '橘子' },
+  { icon: '🍌', label: '香蕉' },
+  { icon: '🍇', label: '葡萄' },
+  { icon: '🌹', label: '玫瑰花' },
+  { icon: '🌻', label: '向日葵' },
+  { icon: '🐱', label: '小猫' },
+  { icon: '🐶', label: '小狗' },
+  { icon: '🐼', label: '熊猫' },
+  { icon: '🚀', label: '火箭' },
+  { icon: '✈️', label: '飞机' },
+  { icon: '🌙', label: '月亮' },
+  { icon: '⭐', label: '星星' },
+  { icon: '☂️', label: '雨伞' },
+  { icon: '🎁', label: '礼物盒' },
+  { icon: '🎧', label: '耳机' },
+  { icon: '🍰', label: '蛋糕' },
+];
+
+const ODD_ONE_PAIRS = [
+  ['🌸', '🌺'],
+  ['🌕', '🌙'],
+  ['🍎', '🍓'],
+  ['🐱', '🦊'],
+  ['💙', '💗'],
+  ['🍀', '🍁'],
+  ['⭐', '🌟'],
+  ['🍩', '🍪'],
+  ['🧁', '🍰'],
+];
+
 function randomInt(max) {
   const buf = new Uint32Array(1);
   crypto.getRandomValues(buf);
@@ -59,6 +93,61 @@ function shuffle(arr) {
   return copy;
 }
 
+/**
+ * Generates an inline-button anti-spam challenge for either `emoji` (odd-one-out / semantic pick, 3x3)
+ * or `quiz` (local commonsense 2x2).
+ */
+export function generateInlineChallenge(mode = 'emoji', verifyId = 'test') {
+  if (mode === 'quiz') {
+    const q = LOCAL_QUESTIONS[randomInt(LOCAL_QUESTIONS.length)];
+    const options = shuffle([q.ok, ...q.bad]);
+    const correctIndex = options.indexOf(q.ok);
+    const keyboard = [
+      options.slice(0, 2).map((opt, idx) => ({ text: opt, callback_data: `v:${verifyId}:${idx}` })),
+      options.slice(2, 4).map((opt, idx) => ({ text: opt, callback_data: `v:${verifyId}:${idx + 2}` })),
+    ];
+    return {
+      correctIndex,
+      promptHtml: `🛡️ <b>首次联系需要简单人机验证</b>\n\n请问：<b>${escapeHtml(q.q)}</b>\n\n<i>验证通过后 30 天内免验证，消息将自动送达。</i>`,
+      keyboard,
+    };
+  }
+
+  // Default: `emoji` mode — randomly alternates between Odd-One-Out (3x3) and Semantic Emoji Pick (3x3)
+  const useOddOneOut = randomInt(2) === 0;
+  if (useOddOneOut) {
+    const [common, odd] = ODD_ONE_PAIRS[randomInt(ODD_ONE_PAIRS.length)];
+    const correctIndex = randomInt(9);
+    const cells = Array.from({ length: 9 }, (_, i) => (i === correctIndex ? odd : common));
+    const keyboard = [0, 3, 6].map((rowStart) =>
+      cells.slice(rowStart, rowStart + 3).map((icon, offset) => ({
+        text: icon,
+        callback_data: `v:${verifyId}:${rowStart + offset}`,
+      }))
+    );
+    return {
+      correctIndex,
+      promptHtml: `🎯 <b>极速人机验证（找不同）</b>\n\n请点击下方 <b>唯一不同</b> 的那个图标 👇\n\n<i>0 延迟秒过 · 通过后 30 天内免验证。</i>`,
+      keyboard,
+    };
+  }
+
+  const picked = shuffle(EMOJI_ITEMS).slice(0, 9);
+  const correctIndex = randomInt(9);
+  const target = picked[correctIndex];
+  const keyboard = [0, 3, 6].map((rowStart) =>
+    picked.slice(rowStart, rowStart + 3).map((item, offset) => ({
+      text: item.icon,
+      callback_data: `v:${verifyId}:${rowStart + offset}`,
+    }))
+  );
+  return {
+    correctIndex,
+    promptHtml: `🎯 <b>极速人机验证（图标点选）</b>\n\n请点击下方表示「<b>${escapeHtml(target.label)}</b>」的图标 👇\n\n<i>0 延迟秒过 · 通过后 30 天内免验证。</i>`,
+    keyboard,
+  };
+}
+
 function extractCommand(text = '') {
   const trimmed = String(text || '').trim();
   if (!trimmed.startsWith('/')) return null;
@@ -77,6 +166,20 @@ function previewTextOfMessage(msg) {
   if (msg.sticker) return `[贴纸 ${msg.sticker.emoji || ''}]`.trim();
   if (msg.document) return `[文件 ${msg.document.file_name || ''}]`.trim();
   return '[消息]';
+}
+
+function serializePendingMessage(msg) {
+  return {
+    chatId: msg.chat.id,
+    messageId: msg.message_id,
+    preview: previewTextOfMessage(msg),
+    text: msg.text || '',
+    caption: msg.caption || '',
+    entities: msg.entities || [],
+    caption_entities: msg.caption_entities || [],
+    photo: msg.photo || null,
+    document: msg.document || null,
+  };
 }
 
 function buildVisitorCardText(detail) {
@@ -133,14 +236,9 @@ async function checkRateLimit(env, key, limit = 40, windowSec = 60) {
   return true;
 }
 
-/**
- * Extracts a Telegram Sticker or Custom Emoji from a message (or its replied message)
- * or imports stickers from a t.me/addstickers/... / t.me/addemoji/... URL.
- */
 async function extractStickersFromMessage(env, msg) {
   const sources = [msg, msg.reply_to_message].filter(Boolean);
 
-  // 1. Direct sticker object
   for (const src of sources) {
     if (src.sticker?.file_id) {
       const normalized = normalizeStickerObject(src.sticker);
@@ -148,7 +246,6 @@ async function extractStickersFromMessage(env, msg) {
     }
   }
 
-  // 2. Telegram Premium Custom Emoji entities inside text or caption
   for (const src of sources) {
     const entities = [...(src.entities || []), ...(src.caption_entities || [])];
     const customIds = entities
@@ -165,7 +262,6 @@ async function extractStickersFromMessage(env, msg) {
     }
   }
 
-  // 3. Sticker / Emoji pack link or name in command args or plain text
   const rawText = String(msg.text || msg.caption || '').trim();
   const parsedCmd = extractCommand(rawText);
   const candidate = parsedCmd ? parsedCmd.args : rawText;
@@ -305,33 +401,94 @@ async function forwardMessageToTopic(env, requestOrigin, msg) {
   }).catch(() => {});
 }
 
-async function startVerificationChallenge(env, msg) {
+async function flushPendingMessages(env, requestOrigin, state) {
+  const pending = Array.isArray(state.pending) ? state.pending : [];
+  for (const item of pending) {
+    await forwardMessageToTopic(env, requestOrigin, {
+      from: state.user,
+      chat: { id: item.chatId },
+      message_id: item.messageId,
+      text: item.text || item.preview || '',
+      caption: item.caption || '',
+      entities: item.entities || [],
+      caption_entities: item.caption_entities || [],
+      photo: item.photo || null,
+      document: item.document || null,
+    }).catch(() => {});
+  }
+}
+
+/**
+ * Completes a Cloudflare Turnstile strict verification session from `/verify-submit`.
+ */
+export async function completeTurnstileVerification(env, requestOrigin, verifyId) {
+  const state = await safeGetJSON(env.TOPIC_MAP, `chal:${verifyId}`, null);
+  if (!state) {
+    return { ok: false, error: '验证会话已过期，请重新发送消息' };
+  }
+  const config = await loadPanelConfig(env);
+  const ttlDays = Math.max(1, Number(config.pmBot.verifiedDays || 30));
+
+  await env.TOPIC_MAP.put(`verified:${state.userId}`, 'turnstile:v1', { expirationTtl: ttlDays * 86400 });
+  await env.TOPIC_MAP.delete(`needs_verify:${state.userId}`);
+  await env.TOPIC_MAP.delete(`chal:${verifyId}`);
+  await env.TOPIC_MAP.delete(`user_challenge:${state.userId}`);
+  await env.TOPIC_MAP.delete(`verify_cool:${state.userId}`);
+
+  if (state.challengeChatId && state.challengeMessageId) {
+    await tgCall(env, 'editMessageText', {
+      chat_id: state.challengeChatId,
+      message_id: state.challengeMessageId,
+      text: '✅ <b>Cloudflare 人机验证已通过</b>，您的消息已自动送达，请耐心等待回复。',
+      parse_mode: 'HTML',
+    }).catch(() => {});
+  } else if (state.user?.id) {
+    await tgCall(env, 'sendMessage', {
+      chat_id: Number(state.user.id),
+      text: '✅ Cloudflare 人机验证已通过，您的消息已送达。',
+    }).catch(() => {});
+  }
+
+  await flushPendingMessages(env, requestOrigin, state);
+  return { ok: true };
+}
+
+async function startVerificationChallenge(env, requestOrigin, msg, config) {
   const uid = String(msg.from.id);
+
+  // Check cooldown lock (after repeated failed attempts)
+  const inCooldown = await env.TOPIC_MAP.get(`verify_cool:${uid}`);
+  if (inCooldown) {
+    return;
+  }
+
   const existingChalId = await env.TOPIC_MAP.get(`user_challenge:${uid}`);
   if (existingChalId) {
     const existingState = await safeGetJSON(env.TOPIC_MAP, `chal:${existingChalId}`, null);
     if (existingState) {
       const pending = Array.isArray(existingState.pending) ? existingState.pending : [];
-      if (pending.length < 5) {
-        pending.push({ chatId: msg.chat.id, messageId: msg.message_id, preview: previewTextOfMessage(msg) });
+      if (pending.length < 3) {
+        pending.push(serializePendingMessage(msg));
         existingState.pending = pending;
         await safePutJSON(env.TOPIC_MAP, `chal:${existingChalId}`, existingState, { expirationTtl: 300 });
       }
       await tgCall(env, 'sendMessage', {
         chat_id: msg.chat.id,
-        text: '🛡️ 请先点击上方验证按钮完成人机验证，验证通过后会自动转发您的消息。',
+        text: '🛡️ 请先点击上方验证按钮完成人机核验，通过后会自动送达您的消息。',
       });
       return;
     }
   }
 
-  const q = LOCAL_QUESTIONS[randomInt(LOCAL_QUESTIONS.length)];
-  const options = shuffle([q.ok, ...q.bad]);
-  const correctIndex = options.indexOf(q.ok);
-  const verifyId = randomId(10);
+  const desiredMode = config.pmBot.verificationMode || 'emoji';
+  const turnstileReady = Boolean(env.TURNSTILE_SITE_KEY && env.TURNSTILE_SECRET);
+  const mode = desiredMode === 'turnstile' && !turnstileReady ? 'emoji' : desiredMode;
+  const verifyId = randomId(12);
 
-  const state = {
+  const baseState = {
+    mode,
     userId: uid,
+    failures: 0,
     user: {
       id: msg.from.id,
       first_name: msg.from.first_name || '',
@@ -339,23 +496,39 @@ async function startVerificationChallenge(env, msg) {
       username: msg.from.username || '',
       language_code: msg.from.language_code || '',
     },
-    correctIndex,
-    pending: [{ chatId: msg.chat.id, messageId: msg.message_id, preview: previewTextOfMessage(msg) }],
+    pending: [serializePendingMessage(msg)],
   };
 
-  await safePutJSON(env.TOPIC_MAP, `chal:${verifyId}`, state, { expirationTtl: 300 });
-  await env.TOPIC_MAP.put(`user_challenge:${uid}`, verifyId, { expirationTtl: 300 });
+  // Strict Mode: Cloudflare Turnstile inside Telegram WebApp overlay
+  if (mode === 'turnstile') {
+    const verifyUrl = `${requestOrigin.replace(/\/$/, '')}/verify?vid=${encodeURIComponent(verifyId)}`;
+    const sent = await tgCall(env, 'sendMessage', {
+      chat_id: msg.chat.id,
+      text: `🛡️ <b>安全验证（严格模式）</b>\n\n请点击下方按钮完成 Cloudflare 人机核验，验证通过后您的消息将自动送达（30 天内免重复验证）。`,
+      parse_mode: 'HTML',
+      reply_markup: {
+        inline_keyboard: [[{ text: '🛡️ 点击完成人机验证', web_app: { url: verifyUrl } }]],
+      },
+    });
+    baseState.challengeChatId = msg.chat.id;
+    baseState.challengeMessageId = sent?.result?.message_id || null;
+    await safePutJSON(env.TOPIC_MAP, `chal:${verifyId}`, baseState, { expirationTtl: 300 });
+    await env.TOPIC_MAP.put(`user_challenge:${uid}`, verifyId, { expirationTtl: 300 });
+    return;
+  }
 
-  const keyboard = [
-    options.slice(0, 2).map((opt, idx) => ({ text: opt, callback_data: `v:${verifyId}:${idx}` })),
-    options.slice(2, 4).map((opt, idx) => ({ text: opt, callback_data: `v:${verifyId}:${idx + 2}` })),
-  ];
+  // Zero-latency Inline Mode (`emoji` or `quiz`)
+  const chal = generateInlineChallenge(mode, verifyId);
+  baseState.correctIndex = chal.correctIndex;
+
+  await safePutJSON(env.TOPIC_MAP, `chal:${verifyId}`, baseState, { expirationTtl: 300 });
+  await env.TOPIC_MAP.put(`user_challenge:${uid}`, verifyId, { expirationTtl: 300 });
 
   await tgCall(env, 'sendMessage', {
     chat_id: msg.chat.id,
-    text: `🛡️ <b>首次联系需要简单人机验证</b>\n\n请问：<b>${escapeHtml(q.q)}</b>\n\n<i>验证通过后 30 天内免验证，消息将自动送达。</i>`,
+    text: chal.promptHtml,
     parse_mode: 'HTML',
-    reply_markup: { inline_keyboard: keyboard },
+    reply_markup: { inline_keyboard: chal.keyboard },
   });
 }
 
@@ -600,14 +773,14 @@ async function handleAdminSupergroupMessage(env, requestOrigin, msg, config) {
 async function handleCallbackQuery(env, requestOrigin, cq, config) {
   const data = String(cq.data || '');
 
-  // 1. Verification quiz button: v:<verifyId>:<choiceIdx>
+  // 1. Verification inline button (Emoji or Quiz): v:<verifyId>:<choiceIdx>
   if (data.startsWith('v:')) {
     const [, verifyId, idxStr] = data.split(':');
     const state = await safeGetJSON(env.TOPIC_MAP, `chal:${verifyId}`, null);
     if (!state) {
       await tgCall(env, 'answerCallbackQuery', {
         callback_query_id: cq.id,
-        text: '验证已过期，请重新发送一条消息触发新验证。',
+        text: '验证已过期，请重新发送消息触发新验证。',
         show_alert: true,
       });
       return;
@@ -618,21 +791,60 @@ async function handleCallbackQuery(env, requestOrigin, cq, config) {
     }
 
     if (Number(idxStr) !== Number(state.correctIndex)) {
+      const maxFails = Math.max(1, Number(config.pmBot.maxVerifyFailures || 2));
+      const cooldownMins = Math.max(1, Number(config.pmBot.cooldownMinutes || 10));
+      const nextFails = (Number(state.failures) || 0) + 1;
+
+      if (nextFails >= maxFails) {
+        await env.TOPIC_MAP.put(`verify_cool:${state.userId}`, '1', { expirationTtl: cooldownMins * 60 });
+        await env.TOPIC_MAP.delete(`chal:${verifyId}`);
+        await env.TOPIC_MAP.delete(`user_challenge:${state.userId}`);
+
+        await tgCall(env, 'answerCallbackQuery', {
+          callback_query_id: cq.id,
+          text: `❌ 连续答错 ${maxFails} 次，已进入 ${cooldownMins} 分钟冷却。`,
+          show_alert: true,
+        });
+        await tgCall(env, 'editMessageText', {
+          chat_id: cq.message.chat.id,
+          message_id: cq.message.message_id,
+          text: `⏳ <b>验证失败次数过多</b>，请于 ${cooldownMins} 分钟后再试。`,
+          parse_mode: 'HTML',
+        }).catch(() => {});
+        return;
+      }
+
+      // 1st mistake -> reshuffle brand new challenge to defeat brute-force scripts!
+      const refreshed = generateInlineChallenge(state.mode || 'emoji', verifyId);
+      state.failures = nextFails;
+      state.correctIndex = refreshed.correctIndex;
+      await safePutJSON(env.TOPIC_MAP, `chal:${verifyId}`, state, { expirationTtl: 300 });
+
+      const remaining = maxFails - nextFails;
       await tgCall(env, 'answerCallbackQuery', {
         callback_query_id: cq.id,
-        text: '❌ 回答不对，请再选一次~',
+        text: `❌ 选错了，已换新题！还剩 ${remaining} 次机会`,
         show_alert: true,
       });
+      await tgCall(env, 'editMessageText', {
+        chat_id: cq.message.chat.id,
+        message_id: cq.message.message_id,
+        text: `${refreshed.promptHtml}\n⚠️ <i>上次回答有误，还剩 ${remaining} 次机会。</i>`,
+        parse_mode: 'HTML',
+        reply_markup: { inline_keyboard: refreshed.keyboard },
+      }).catch(() => {});
       return;
     }
 
     const ttlDays = Math.max(1, Number(config.pmBot.verifiedDays || 30));
-    await env.TOPIC_MAP.put(`verified:${state.userId}`, 'quiz:v1', { expirationTtl: ttlDays * 86400 });
+    await env.TOPIC_MAP.put(`verified:${state.userId}`, `${state.mode || 'emoji'}:v1`, {
+      expirationTtl: ttlDays * 86400,
+    });
     await env.TOPIC_MAP.delete(`needs_verify:${state.userId}`);
     await env.TOPIC_MAP.delete(`chal:${verifyId}`);
     await env.TOPIC_MAP.delete(`user_challenge:${state.userId}`);
 
-    await tgCall(env, 'answerCallbackQuery', { callback_query_id: cq.id, text: '✅ 验证通过！正在转发您的消息…' });
+    await tgCall(env, 'answerCallbackQuery', { callback_query_id: cq.id, text: '✅ 验证通过！正在送达您的消息…' });
     await tgCall(env, 'editMessageText', {
       chat_id: cq.message.chat.id,
       message_id: cq.message.message_id,
@@ -640,15 +852,7 @@ async function handleCallbackQuery(env, requestOrigin, cq, config) {
       parse_mode: 'HTML',
     }).catch(() => {});
 
-    const pending = Array.isArray(state.pending) ? state.pending : [];
-    for (const item of pending) {
-      await forwardMessageToTopic(env, requestOrigin, {
-        from: state.user,
-        chat: { id: item.chatId },
-        message_id: item.messageId,
-        text: item.preview,
-      }).catch(() => {});
-    }
+    await flushPendingMessages(env, requestOrigin, state);
     return;
   }
 
@@ -806,7 +1010,6 @@ export async function handleTelegramUpdate(update, env, requestOrigin) {
       return;
     }
 
-    // If admin is in /setbadge capture window, intercept their next sticker / custom emoji / pack URL
     if (isAdmin && !parsed) {
       const waitingBadge = await env.TOPIC_MAP.get(`await_badge:${uid}`);
       if (waitingBadge === '1') {
@@ -846,25 +1049,20 @@ export async function handleTelegramUpdate(update, env, requestOrigin) {
         await handleRankCommand(env, requestOrigin, msg, config);
         return;
       }
-      // Intercept unknown slash commands from regular visitors so they don't spam the owner
       if (!isAdmin) return;
     }
 
-    // If SUPERGROUP_ID is not configured, just offer the panel button
     if (!supergroupId) {
       await handlePrivatePanelCommand(env, requestOrigin, msg, config);
       return;
     }
 
-    // Check banned
     const isBanned = (await env.TOPIC_MAP.get(`banned:${uid}`)) === '1';
     if (isBanned) return;
 
-    // Rate limit
     const allowed = await checkRateLimit(env, `rl:msg:${uid}`, 40, 60);
     if (!allowed) return;
 
-    // Check closed conversation
     const rec = await safeGetJSON(env.TOPIC_MAP, `user:${uid}`, null);
     if (rec?.closed) {
       await tgCall(env, 'sendMessage', {
@@ -874,12 +1072,12 @@ export async function handleTelegramUpdate(update, env, requestOrigin) {
       return;
     }
 
-    // Check anti-spam verification
     const verified = await env.TOPIC_MAP.get(`verified:${uid}`);
     const needsVerify = await env.TOPIC_MAP.get(`needs_verify:${uid}`);
+    const verifyMode = config.pmBot.verificationMode || (config.pmBot.enableVerification ? 'emoji' : 'off');
 
-    if (!isAdmin && config.pmBot.enableVerification && (!verified || needsVerify)) {
-      await startVerificationChallenge(env, msg);
+    if (!isAdmin && verifyMode !== 'off' && (!verified || needsVerify)) {
+      await startVerificationChallenge(env, requestOrigin, msg, config);
       return;
     }
 

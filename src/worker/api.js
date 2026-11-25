@@ -102,7 +102,7 @@ export async function handleApiRequest(request, env, url) {
       isPreview: auth.isPreview,
       startParam: auth.startParam,
       config: sanitizePublicConfig(config, env, auth.isAdmin),
-      adminConfig: auth.isAdmin ? sanitizeAdminConfig(config) : null,
+      adminConfig: auth.isAdmin ? sanitizeAdminConfig(config, env) : null,
       checkin,
       levels: LEVELS,
       badges: BADGE_CATALOG,
@@ -258,7 +258,7 @@ export async function handleApiRequest(request, env, url) {
       return json({
         ok: true,
         config: sanitizePublicConfig(saved, env, true),
-        adminConfig: sanitizeAdminConfig(saved),
+        adminConfig: sanitizeAdminConfig(saved, env),
       });
     }
 
@@ -294,7 +294,7 @@ export async function handleApiRequest(request, env, url) {
 
     // GET /api/admin/config
     if (path === '/api/admin/config' && method === 'GET') {
-      return json({ ok: true, config: sanitizeAdminConfig(config) });
+      return json({ ok: true, config: sanitizeAdminConfig(config, env) });
     }
 
     // PUT /api/admin/config
@@ -307,7 +307,7 @@ export async function handleApiRequest(request, env, url) {
       return json({
         ok: true,
         config: sanitizePublicConfig(saved, env, true),
-        adminConfig: sanitizeAdminConfig(saved),
+        adminConfig: sanitizeAdminConfig(saved, env),
       });
     }
 

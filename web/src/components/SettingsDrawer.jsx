@@ -745,18 +745,79 @@ export default function SettingsDrawer({
               </div>
             )}
 
-            <div className="list-row" style={{ marginTop: 8 }}>
-              <div className="row-main">
-                <div className="row-title" style={{ fontSize: 14 }}>私聊防骚扰人机验证</div>
-                <div className="row-desc wrap">陌生人首次私聊需通过 0 延迟常识题库验证</div>
+            <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--border)' }}>
+              <label className="field-label">私聊防骚扰人机验证模式</label>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10 }}>
+                {[
+                  { id: 'emoji', label: '🎯 Emoji 找茬/点选', desc: '0延迟推荐' },
+                  { id: 'quiz', label: '📝 常识题库', desc: '0延迟四选一' },
+                  { id: 'turnstile', label: '🛡️ CF Turnstile', desc: '严格防扫号' },
+                  { id: 'off', label: '关闭验证', desc: '直接转发' },
+                ].map((opt) => {
+                  const active = (draft.pmBot.verificationMode || 'emoji') === opt.id;
+                  return (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      className={`sticker-cell ${active ? 'selected' : ''}`}
+                      style={{ padding: '10px 8px', textAlign: 'center' }}
+                      onClick={() => {
+                        updateField('pmBot', 'verificationMode', opt.id);
+                        updateField('pmBot', 'enableVerification', opt.id !== 'off');
+                      }}
+                    >
+                      <span style={{ fontSize: 12, fontWeight: 700 }}>{opt.label}</span>
+                      <span style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>
+                        {opt.desc}
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
-              <button
-                type="button"
-                className={`switch ${draft.pmBot.enableVerification ? 'on' : ''}`}
-                onClick={() => updateField('pmBot', 'enableVerification', !draft.pmBot.enableVerification)}
-              >
-                <span className="switch-knob" />
-              </button>
+
+              {draft.pmBot.verificationMode === 'turnstile' && (
+                <div
+                  style={{
+                    fontSize: 12,
+                    padding: '8px 10px',
+                    borderRadius: 12,
+                    marginBottom: 10,
+                    background: draft.pmBot.turnstileReady ? 'var(--green-soft)' : 'var(--amber-soft)',
+                    color: draft.pmBot.turnstileReady ? 'var(--green)' : 'var(--amber)',
+                  }}
+                >
+                  {draft.pmBot.turnstileReady
+                    ? '✅ 已检测到 Cloudflare Turnstile 密钥，严格模式就绪！'
+                    : '⚠️ 尚未配置 TURNSTILE_SITE_KEY / TURNSTILE_SECRET，未配置前将自动回退至 Emoji 点选。'}
+                </div>
+              )}
+
+              {draft.pmBot.verificationMode !== 'off' && draft.pmBot.verificationMode !== 'turnstile' && (
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
+                  <div className="field" style={{ marginBottom: 0 }}>
+                    <label className="field-label">最多容错次数</label>
+                    <input
+                      className="input"
+                      type="number"
+                      min="1"
+                      max="5"
+                      value={draft.pmBot.maxVerifyFailures ?? 2}
+                      onChange={(e) => updateField('pmBot', 'maxVerifyFailures', Number(e.target.value))}
+                    />
+                  </div>
+                  <div className="field" style={{ marginBottom: 0 }}>
+                    <label className="field-label">失败冷却（分钟）</label>
+                    <input
+                      className="input"
+                      type="number"
+                      min="1"
+                      max="1440"
+                      value={draft.pmBot.cooldownMinutes ?? 10}
+                      onChange={(e) => updateField('pmBot', 'cooldownMinutes', Number(e.target.value))}
+                    />
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="field" style={{ marginTop: 10 }}>

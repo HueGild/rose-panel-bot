@@ -1,10 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
 import { signMediaToken, verifyMediaToken, verifyTelegramInitData } from '../src/worker/auth.js';
+import { generateInlineChallenge } from '../src/worker/bot.js';
 import { getLeaderboard, getMemberTicket, performCheckin, resolveLevel } from '../src/worker/checkin.js';
 import { DEFAULT_CONFIG, loadPanelConfig, savePanelConfig } from '../src/worker/config.js';
 import worker from '../src/worker/index.js';
 import { fetchKomariStatus, normalizeNodeMetrics } from '../src/worker/komari.js';
 import { normalizeStickerObject, parseStickerPackName } from '../src/worker/telegram.js';
+import { renderTurnstileVerifyPage } from '../src/worker/turnstile.js';
 import {
   applyVisitorAction,
   clearVisitorHistory,
@@ -530,5 +532,31 @@ describe('Visitor bidirectional archive, signed media proxy & clear history', ()
     expect((await getVisitorHistory(env, '30003')).photos).toHaveLength(0);
     expect(calls.map((c) => c.method)).toContain('deleteForumTopic');
     expect(calls.map((c) => c.method)).toContain('deleteMessages');
+  });
+});
+
+describe('3-Mode Anti-Spam Verification (Emoji / Quiz / CF Turnstile)', () => {
+  it('generates valid 3x3 Emoji challenges and 2x2 Quiz challenges', () => {
+    const emojiChal = generateInlineChallenge('emoji', 'vid123');
+    expect(emojiChal.keyboard).toHaveLength(3);
+    expect(emojiChal.keyboard.flat()).toHaveLength(9);
+    expect(emojiChal.correctIndex).toBeGreaterThanOrEqual(0);
+    expect(emojiChal.correctIndex).toBeLessThan(9);
+    expect(emojiChal.keyboard.flat()[emojiChal.correctIndex].callback_data).toBe(`v:vid123:${emojiChal.correctIndex}`);
+
+    const quizChal = generateInlineChallenge('quiz', 'vid456');
+    expect(quizChal.keyboard).toHaveLength(2);
+    expect(quizChal.keyboard.flat()).toHaveLength(4);
+    expect(quizChal.correctIndex).toBeGreaterThanOrEqual(0);
+    expect(quizChal.correctIndex).toBeLessThan(4);
+  });
+
+  it('renders Cloudflare Turnstile strict verification page cleanly', async () => {
+    const res = renderTurnstileVerifyPage('0xTEST_SITE_KEY', 'vid789');
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain('challenges.cloudflare.com/turnstile/v0/api.js');
+    expect(html).toContain('0xTEST_SITE_KEY');
+    expect(html).toContain('vid789');
   });
 });

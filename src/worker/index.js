@@ -1,10 +1,11 @@
 // Main Cloudflare Worker Entrypoint for RosePanel Bot
 
 import { handleApiRequest } from './api.js';
-import { handleTelegramUpdate } from './bot.js';
-import { loadPanelConfig } from './config.js';
+import { completeTurnstileVerification, handleTelegramUpdate } from './bot.js';
+import { loadPanelConfig, safeGetJSON } from './config.js';
 import { serveEmbeddedAsset } from './embedded-assets.js';
 import { tgCall } from './telegram.js';
+import { renderTurnstileVerifyPage, verifyTurnstileToken } from './turnstile.js';
 
 function jsonResponse(data, status = 200) {
   return new Response(JSON.stringify(data, null, 2), {
@@ -106,6 +107,47 @@ export default {
       } catch (err) {
         return jsonResponse({ ok: false, error: err.message }, 500);
       }
+    }
+
+    // Cloudflare Turnstile strict verification page (opens cleanly inside Telegram WebView)
+    if (url.pathname === '/verify' && request.method === 'GET') {
+      const vid = url.searchParams.get('vid') || '';
+      if (!env.TURNSTILE_SITE_KEY || !vid) {
+        return new Response('Turnstile verification is not configured or link expired.', { status: 400 });
+      }
+      const state = await safeGetJSON(env.TOPIC_MAP, `chal:${vid}`, null);
+      if (!state) {
+        return new Response('验证链接已过期，请回到私聊重新发送消息触发新验证。', {
+          status: 410,
+          headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+        });
+      }
+      return renderTurnstileVerifyPage(env.TURNSTILE_SITE_KEY, vid);
+    }
+
+    // Cloudflare Turnstile server-side token verification
+    if (url.pathname === '/verify-submit' && request.method === 'POST') {
+      let body;
+      try {
+        body = await request.json();
+      } catch {
+        return jsonResponse({ ok: false, error: '无效请求' }, 400);
+      }
+      const vid = String(body?.verifyId || '');
+      const token = String(body?.token || '');
+      if (!vid || !token || !env.TURNSTILE_SECRET) {
+        return jsonResponse({ ok: false, error: '验证参数缺失' }, 400);
+      }
+      const remoteIp = request.headers.get('CF-Connecting-IP') || '';
+      const check = await verifyTurnstileToken(env.TURNSTILE_SECRET, token, remoteIp);
+      if (!check.success) {
+        return jsonResponse({ ok: false, error: 'Cloudflare 人机核验未通过，请重试' }, 403);
+      }
+      const result = await completeTurnstileVerification(env, url.origin, vid);
+      if (!result.ok) {
+        return jsonResponse({ ok: false, error: result.error || '验证会话已过期' }, 410);
+      }
+      return jsonResponse({ ok: true });
     }
 
     // Telegram Bot Webhook: supports BOTH `/webhook` and legacy root `POST /`

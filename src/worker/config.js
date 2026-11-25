@@ -96,6 +96,9 @@ export const DEFAULT_CONFIG = {
   },
   pmBot: {
     enableVerification: true,
+    verificationMode: 'emoji', // emoji | quiz | turnstile | off
+    maxVerifyFailures: 2,
+    cooldownMinutes: 10,
     welcomeText: '你好呀 🌸 这里是我的私聊助手。直接发送消息即可联系我，也可以点击下方按钮打开我的个人面板查看小站与探针。',
     autoAckEnabled: true,
     verifiedDays: 30,
@@ -222,6 +225,12 @@ export async function savePanelConfig(env, nextConfig) {
   );
   merged.community.streakStepBonus = Math.min(Math.max(Number(merged.community.streakStepBonus) || 0, 0), 100);
   merged.community.streakMaxBonus = Math.min(Math.max(Number(merged.community.streakMaxBonus) || 0, 0), 500);
+  if (!['emoji', 'quiz', 'turnstile', 'off'].includes(merged.pmBot.verificationMode)) {
+    merged.pmBot.verificationMode = merged.pmBot.enableVerification ? 'emoji' : 'off';
+  }
+  merged.pmBot.enableVerification = merged.pmBot.verificationMode !== 'off';
+  merged.pmBot.maxVerifyFailures = Math.min(Math.max(Number(merged.pmBot.maxVerifyFailures) || 2, 1), 5);
+  merged.pmBot.cooldownMinutes = Math.min(Math.max(Number(merged.pmBot.cooldownMinutes) || 10, 1), 1440);
 
   await safePutJSON(env.TOPIC_MAP, CONFIG_KV_KEY, merged);
   return merged;
@@ -277,7 +286,7 @@ export function sanitizePublicConfig(config, env, isAdmin = false) {
   };
 }
 
-export function sanitizeAdminConfig(config) {
+export function sanitizeAdminConfig(config, env = {}) {
   const cloned = structuredClone(config);
   if (cloned.probe.apiKey) {
     cloned.probe.apiKey = '********';
@@ -285,5 +294,6 @@ export function sanitizeAdminConfig(config) {
   } else {
     cloned.probe.hasApiKey = false;
   }
+  cloned.pmBot.turnstileReady = Boolean(env.TURNSTILE_SITE_KEY && env.TURNSTILE_SECRET);
   return cloned;
 }
