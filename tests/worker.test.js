@@ -251,6 +251,70 @@ describe('Komari probe adapter', () => {
     expect(node.tags).toEqual(['jp', 'bgp']);
   });
 
+  it('normalizes Komari v2 flat numeric RPC2 status fields (ram, disk, load, online)', () => {
+    const node = normalizeNodeMetrics(
+      {
+        uuid: 'node-v2',
+        name: 'Tokyo VPS',
+        region: '🇯🇵',
+        mem_total: 456126464,
+        disk_total: 3227110400,
+        os: 'Alpine Linux',
+        arch: 'amd64',
+      },
+      {
+        client: 'node-v2',
+        cpu: 12.5,
+        ram: 228063232,
+        ram_total: 456126464,
+        disk: 806777600,
+        disk_total: 3227110400,
+        load: 0.42,
+        net_in: 436,
+        net_out: 562,
+        net_total_up: 5000,
+        net_total_down: 6000,
+        online: true,
+        uptime: 4101474,
+      }
+    );
+
+    expect(node.online).toBe(true);
+    expect(node.cpuUsage).toBe(12.5);
+    expect(node.ramUsed).toBe(228063232);
+    expect(node.ramUsage).toBe(50);
+    expect(node.diskUsed).toBe(806777600);
+    expect(node.diskUsage).toBe(25);
+    expect(node.load1).toBe(0.42);
+    expect(node.netDown).toBe(436);
+    expect(node.netUp).toBe(562);
+  });
+
+  it('detects redirect loops immediately without exhausting subrequests', async () => {
+    const origFetch = globalThis.fetch;
+    const mockFetch = vi.fn(async (url) => {
+      return new Response(null, {
+        status: 301,
+        headers: { Location: url },
+      });
+    });
+    globalThis.fetch = mockFetch;
+
+    try {
+      const env = { TOPIC_MAP: createMemoryKV() };
+      const res = await fetchKomariStatus(env, {
+        ...DEFAULT_CONFIG.probe,
+        url: 'https://probe.example.com',
+      });
+      expect(res.protocol).toBe('error');
+      expect(res.error).toContain('重定向循环');
+      // Only 2 parallel RPC2 probes sent (no 20-hop loop, no wasted REST fallback)
+      expect(mockFetch.mock.calls.length).toBeLessThanOrEqual(2);
+    } finally {
+      globalThis.fetch = origFetch;
+    }
+  });
+
   it('returns demo nodes when demoMode is enabled without URL', async () => {
     const env = { TOPIC_MAP: createMemoryKV() };
     const status = await fetchKomariStatus(env, { ...DEFAULT_CONFIG.probe, demoMode: true, url: '' });

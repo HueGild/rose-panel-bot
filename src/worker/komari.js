@@ -30,18 +30,57 @@ async function fetchJsonWithTimeout(url, options = {}, timeoutMs = 7000) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const res = await fetch(url, { ...options, signal: controller.signal });
-    if (!res.ok) {
-      throw new Error(`HTTP ${res.status}`);
+    let currentUrl = url;
+    let currentOptions = { ...options };
+    const visited = new Set([currentUrl]);
+
+    for (let hop = 0; hop <= 3; hop += 1) {
+      const res = await fetch(currentUrl, {
+        ...currentOptions,
+        redirect: 'manual',
+        signal: controller.signal,
+      });
+
+      if (res.status >= 300 && res.status < 400) {
+        const location = res.headers?.get?.('location');
+        if (!location) {
+          throw new Error(`HTTP ${res.status}`);
+        }
+        const nextUrl = new URL(location, currentUrl).toString();
+        if (visited.has(nextUrl)) {
+          const loopErr = new Error(
+            '检测到重定向循环：若探针与面板在同一 Cloudflare 域名下，请为探针子域将 SSL/TLS 模式从 Flexible 改为 Full'
+          );
+          loopErr.isRedirectLoop = true;
+          throw loopErr;
+        }
+        visited.add(nextUrl);
+        currentUrl = nextUrl;
+        if (res.status === 301 || res.status === 302 || res.status === 303) {
+          const method = String(currentOptions.method || 'GET').toUpperCase();
+          if (method !== 'GET' && method !== 'HEAD') {
+            currentOptions = { ...currentOptions, method: 'GET', body: undefined };
+          }
+        }
+        continue;
+      }
+
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+      return await res.json();
     }
-    return await res.json();
+
+    const tooManyErr = new Error('重定向次数过多（超过 3 次）');
+    tooManyErr.isRedirectLoop = true;
+    throw tooManyErr;
   } finally {
     clearTimeout(timer);
   }
 }
 
 export function normalizeNodeMetrics(nodeMeta = {}, status = {}) {
-  const uuid = String(nodeMeta.uuid || status.uuid || nodeMeta.id || '');
+  const uuid = String(nodeMeta.uuid || status.uuid || status.client || nodeMeta.id || '');
   const cpuRaw = status?.cpu;
   const cpuUsage = Number(
     typeof cpuRaw === 'number'
@@ -49,16 +88,40 @@ export function normalizeNodeMetrics(nodeMeta = {}, status = {}) {
       : cpuRaw?.usage ?? status?.cpu_usage ?? status?.cpu_percent ?? 0
   );
 
-  const ramTotal = Number(status?.ram?.total ?? status?.mem?.total ?? nodeMeta?.mem_total ?? 0);
-  const ramUsed = Number(status?.ram?.used ?? status?.mem?.used ?? status?.ram_used ?? 0);
+  const ramRaw = status?.ram;
+  const ramTotal = Number(
+    (typeof ramRaw === 'object' ? ramRaw?.total : undefined) ??
+      status?.ram_total ??
+      status?.mem?.total ??
+      status?.mem_total ??
+      nodeMeta?.mem_total ??
+      0
+  );
+  const ramUsed = Number(
+    typeof ramRaw === 'number'
+      ? ramRaw
+      : ramRaw?.used ?? status?.mem?.used ?? status?.ram_used ?? 0
+  );
   const ramUsage = Number(
-    status?.ram?.usage ?? (ramTotal > 0 ? (ramUsed / ramTotal) * 100 : 0)
+    (typeof ramRaw === 'object' ? ramRaw?.usage : undefined) ??
+      (ramTotal > 0 ? (ramUsed / ramTotal) * 100 : 0)
   );
 
-  const diskTotal = Number(status?.disk?.total ?? nodeMeta?.disk_total ?? 0);
-  const diskUsed = Number(status?.disk?.used ?? status?.disk_used ?? 0);
+  const diskRaw = status?.disk;
+  const diskTotal = Number(
+    (typeof diskRaw === 'object' ? diskRaw?.total : undefined) ??
+      status?.disk_total ??
+      nodeMeta?.disk_total ??
+      0
+  );
+  const diskUsed = Number(
+    typeof diskRaw === 'number'
+      ? diskRaw
+      : diskRaw?.used ?? status?.disk_used ?? 0
+  );
   const diskUsage = Number(
-    status?.disk?.usage ?? (diskTotal > 0 ? (diskUsed / diskTotal) * 100 : 0)
+    (typeof diskRaw === 'object' ? diskRaw?.usage : undefined) ??
+      (diskTotal > 0 ? (diskUsed / diskTotal) * 100 : 0)
   );
 
   const net = status?.network || status?.net || {};
@@ -67,7 +130,12 @@ export function normalizeNodeMetrics(nodeMeta = {}, status = {}) {
   const totalUp = Number(net.totalUp ?? net.tx_total ?? status?.net_total_up ?? 0);
   const totalDown = Number(net.totalDown ?? net.rx_total ?? status?.net_total_down ?? 0);
 
-  const load1 = Number(status?.load?.load1 ?? status?.cpu?.load1 ?? status?.load1 ?? 0);
+  const loadRaw = status?.load;
+  const load1 = Number(
+    typeof loadRaw === 'number'
+      ? loadRaw
+      : loadRaw?.load1 ?? status?.cpu?.load1 ?? status?.load1 ?? 0
+  );
   const uptime = Number(status?.uptime ?? nodeMeta?.uptime ?? 0);
 
   const online =
@@ -381,6 +449,18 @@ export async function fetchKomariStatus(env, probeConfig, options = {}) {
     nodes = await fetchViaKomariRpc2(baseUrl, headers);
   } catch (err) {
     lastError = err;
+    if (err?.isRedirectLoop) {
+      return {
+        configured: true,
+        demo: false,
+        protocol: 'error',
+        error: `无法连接 Komari 探针 (${err.message})`,
+        fetchedAt: new Date().toISOString(),
+        publicUrl: probeConfig.publicUrl || baseUrl,
+        summary: summarizeNodes([]),
+        nodes: [],
+      };
+    }
     protocol = 'rest';
     try {
       nodes = await fetchViaKomariRest(baseUrl, headers);
