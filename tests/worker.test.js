@@ -2,9 +2,12 @@ import { describe, expect, it, vi } from 'vitest';
 import { assessIncomingRisk, checkCasBlacklist, normalizeAntiSpamText } from '../src/worker/antispam.js';
 import { signMediaToken, verifyMediaToken, verifyTelegramInitData } from '../src/worker/auth.js';
 import {
+  buildVisitorCardCaption,
+  completeTurnstileVerification,
   generateInlineChallenge,
   generateStickerChallenge,
   handleTelegramUpdate,
+  matchKeywordReply,
   parseStickerQuizInput,
 } from '../src/worker/bot.js';
 import { getLeaderboard, getMemberTicket, performCheckin, resolveLevel } from '../src/worker/checkin.js';
@@ -1457,5 +1460,591 @@ describe('Privacy-safe 3-way owner/bot card avatar proxy (/api/avatar/owner)', (
     } finally {
       globalThis.fetch = origFetch;
     }
+  });
+});
+
+describe('Topic visitor profile card clickable mention & optional avatar photo mode', () => {
+  it('links visitor display name via tg://user?id= and sends compact text card by default', async () => {
+    const kv = createMemoryKV();
+    const env = {
+      TOPIC_MAP: kv,
+      BOT_TOKEN: '777000:CARD_TEST_TOKEN',
+      ADMIN_IDS: '10001',
+      SUPERGROUP_ID: '-100999888',
+    };
+    await upsertVisitorProfile(
+      env,
+      { id: 424242, first_name: 'NoHandleUser' },
+      { threadId: 77, incrementMsg: false }
+    );
+    await kv.put('thread:77', '424242');
+
+    const tgCalls = [];
+    const origFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn(async (url, init) => {
+      const method = String(url).split('/').pop();
+      const body = init?.body ? JSON.parse(init.body) : {};
+      tgCalls.push({ method, body });
+      return new Response(JSON.stringify({ ok: true, result: { message_id: 10 } }), { status: 200 });
+    });
+
+    try {
+      await handleTelegramUpdate(
+        {
+          message: {
+            message_id: 50,
+            message_thread_id: 77,
+            from: { id: 10001, first_name: 'Owner' },
+            chat: { id: -100999888, type: 'supergroup' },
+            text: '/info',
+          },
+        },
+        env,
+        'https://panel.test'
+      );
+
+      expect(tgCalls.some((c) => c.method === 'getUserProfilePhotos')).toBe(false);
+      const sent = tgCalls.find((c) => c.method === 'sendMessage');
+      expect(sent).toBeTruthy();
+      expect(sent.body.text).toContain('<a href="tg://user?id=424242"><b>NoHandleUser</b></a>');
+      expect(sent.body.text).toContain('未设置');
+    } finally {
+      globalThis.fetch = origFetch;
+    }
+  });
+
+  it('sends photo visitor card when enabled, falls back when avatar hidden, and edits caption on moderation button', async () => {
+    const kv = createMemoryKV();
+    const env = {
+      TOPIC_MAP: kv,
+      BOT_TOKEN: '777000:CARD_TEST_TOKEN',
+      ADMIN_IDS: '10001',
+      SUPERGROUP_ID: '-100999888',
+    };
+    await savePanelConfig(env, { pmBot: { showVisitorAvatarInCard: true } });
+    await upsertVisitorProfile(
+      env,
+      { id: 515151, first_name: 'Alice', username: 'alice_tg' },
+      { threadId: 88, incrementMsg: false }
+    );
+    await kv.put('thread:88', '515151');
+
+    let returnAvatar = true;
+    const tgCalls = [];
+    const origFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn(async (url, init) => {
+      const method = String(url).split('/').pop();
+      const body = init?.body ? JSON.parse(init.body) : {};
+      tgCalls.push({ method, body });
+      if (method === 'getUserProfilePhotos') {
+        return new Response(
+          JSON.stringify({
+            ok: true,
+            result: {
+              photos: returnAvatar
+                ? [[{ file_id: 'small_id' }, { file_id: 'hd_avatar_file_id' }]]
+                : [],
+            },
+          }),
+          { status: 200 }
+        );
+      }
+      return new Response(JSON.stringify({ ok: true, result: { message_id: 20 } }), { status: 200 });
+    });
+
+    try {
+      // 1. Visitor with public avatar -> sendPhoto with sharpest file_id + HTML caption
+      await handleTelegramUpdate(
+        {
+          message: {
+            message_id: 60,
+            message_thread_id: 88,
+            from: { id: 10001, first_name: 'Owner' },
+            chat: { id: -100999888, type: 'supergroup' },
+            text: '/info',
+          },
+        },
+        env,
+        'https://panel.test'
+      );
+      const photoCall = tgCalls.find((c) => c.method === 'sendPhoto');
+      expect(photoCall).toBeTruthy();
+      expect(photoCall.body.photo).toBe('hd_avatar_file_id');
+      expect(photoCall.body.caption).toContain('<a href="tg://user?id=515151"><b>Alice</b></a>');
+
+      // 2. Moderation button click on photo card -> editMessageCaption (not editMessageText)
+      await handleTelegramUpdate(
+        {
+          callback_query: {
+            id: 'cb_1',
+            from: { id: 10001, first_name: 'Owner' },
+            data: 'mod:trust:515151',
+            message: {
+              message_id: 20,
+              chat: { id: -100999888, type: 'supergroup' },
+              photo: [{ file_id: 'hd_avatar_file_id' }],
+              caption: photoCall.body.caption,
+            },
+          },
+        },
+        env,
+        'https://panel.test'
+      );
+      const editCap = tgCalls.find((c) => c.method === 'editMessageCaption');
+      expect(editCap).toBeTruthy();
+      expect(editCap.body.caption).toContain('永久信任');
+      expect(tgCalls.some((c) => c.method === 'editMessageText')).toBe(false);
+
+      // 3. Visitor with hidden/no avatar -> gracefully falls back to sendMessage
+      tgCalls.length = 0;
+      returnAvatar = false;
+      await handleTelegramUpdate(
+        {
+          message: {
+            message_id: 61,
+            message_thread_id: 88,
+            from: { id: 10001, first_name: 'Owner' },
+            chat: { id: -100999888, type: 'supergroup' },
+            text: '/info',
+          },
+        },
+        env,
+        'https://panel.test'
+      );
+      expect(tgCalls.some((c) => c.method === 'sendPhoto')).toBe(false);
+      expect(tgCalls.some((c) => c.method === 'sendMessage')).toBe(true);
+    } finally {
+      globalThis.fetch = origFetch;
+    }
+  });
+});
+
+describe('Configurable /start welcome card & panel button visibility', () => {
+  it('supports default welcome card, text-only welcome without panel button, silent /start, and always-available /panel', async () => {
+    const kv = createMemoryKV();
+    const env = {
+      TOPIC_MAP: kv,
+      BOT_TOKEN: '888000:WELCOME_TEST_TOKEN',
+      ADMIN_IDS: '10001',
+      SUPERGROUP_ID: '-100999888',
+    };
+
+    const tgCalls = [];
+    const origFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn(async (url, init) => {
+      const method = String(url).split('/').pop();
+      const body = init?.body ? JSON.parse(init.body) : {};
+      tgCalls.push({ method, body });
+      return new Response(JSON.stringify({ ok: true, result: { message_id: 1 } }), { status: 200 });
+    });
+
+    const mkPrivateMsg = (text, uid = 20002) => ({
+      message: {
+        message_id: 100,
+        from: { id: uid, first_name: 'Visitor' },
+        chat: { id: uid, type: 'private' },
+        text,
+      },
+    });
+
+    try {
+      // 1. Legacy/default config -> both toggles default to true; /start sends welcome + inline panel button
+      const defaultCfg = await loadPanelConfig(env);
+      expect(defaultCfg.pmBot.enableStartWelcome).toBe(true);
+      expect(defaultCfg.pmBot.showPanelButtonInWelcome).toBe(true);
+
+      await handleTelegramUpdate(mkPrivateMsg('/start'), env, 'https://panel.test');
+      expect(tgCalls).toHaveLength(1);
+      expect(tgCalls[0].method).toBe('sendMessage');
+      expect(tgCalls[0].body.reply_markup?.inline_keyboard?.length).toBe(1);
+
+      // 2. Keep welcome text, hide panel button -> /start sends plain text welcome without reply_markup
+      tgCalls.length = 0;
+      await savePanelConfig(env, { pmBot: { enableStartWelcome: true, showPanelButtonInWelcome: false } });
+      await handleTelegramUpdate(mkPrivateMsg('/start'), env, 'https://panel.test');
+      expect(tgCalls).toHaveLength(1);
+      expect(tgCalls[0].body.text).toContain('私聊助手');
+      expect(tgCalls[0].body.reply_markup).toBeUndefined();
+
+      // 3. Disable /start welcome completely -> /start is silent, while /panel still opens panel with buttons
+      tgCalls.length = 0;
+      await savePanelConfig(env, { pmBot: { enableStartWelcome: false } });
+      await handleTelegramUpdate(mkPrivateMsg('/start'), env, 'https://panel.test');
+      expect(tgCalls).toHaveLength(0);
+
+      await handleTelegramUpdate(mkPrivateMsg('/panel', 10001), env, 'https://panel.test');
+      expect(tgCalls).toHaveLength(1);
+      expect(tgCalls[0].body.reply_markup?.inline_keyboard?.length).toBe(2); // panel + admin visitor dashboard
+    } finally {
+      globalThis.fetch = origFetch;
+    }
+  });
+});
+
+describe('Auto-reply & keyword reply engine', () => {
+  it('matches contains/exact keyword rules case-insensitively and skips disabled rules', () => {
+    const rules = [
+      { id: 'r1', keywords: '停用词', matchMode: 'contains', reply: 'nope', enabled: false },
+      { id: 'r2', keywords: '菜单, menu', matchMode: 'exact', reply: '菜单列表', enabled: true },
+      { id: 'r3', keywords: '友链，交换友链 | blog', matchMode: 'contains', reply: '欢迎互换友链', enabled: true },
+    ];
+
+    expect(matchKeywordReply('这是停用词', rules)).toBeNull();
+    expect(matchKeywordReply('我要菜单', rules)).toBeNull(); // exact mode shouldn't match substring
+    expect(matchKeywordReply('  MENU ', rules)?.rule.reply).toBe('菜单列表');
+    const hit = matchKeywordReply('请问怎么交换友链呀？', rules);
+    expect(hit?.matchedKeyword).toBe('友链');
+    expect(hit?.rule.reply).toBe('欢迎互换友链');
+    expect(matchKeywordReply('check my BLOG link', rules)?.matchedKeyword).toBe('blog');
+  });
+
+  it('replies to verified visitors via keyword rules (with optional silent no-forward) and enforces general auto-reply cooldown', async () => {
+    const kv = createMemoryKV();
+    const env = {
+      TOPIC_MAP: kv,
+      BOT_TOKEN: '999000:AUTOREPLY_TEST_TOKEN',
+      ADMIN_IDS: '10001',
+      SUPERGROUP_ID: '-100777666',
+    };
+
+    await savePanelConfig(env, {
+      pmBot: {
+        autoReplyEnabled: true,
+        autoReplyText: '站长暂时忙碌，稍后回复你～',
+        autoReplyCooldownMinutes: 30,
+        keywordReplies: [
+          {
+            id: 'k-silent',
+            keywords: '菜单',
+            matchMode: 'exact',
+            reply: '这里是自助菜单',
+            forwardToAdmin: false,
+            enabled: true,
+          },
+          {
+            id: 'k-forward',
+            keywords: '友链, 合作',
+            matchMode: 'contains',
+            reply: '友链请发站名和链接',
+            forwardToAdmin: true,
+            enabled: true,
+          },
+          {
+            id: 'k-invalid',
+            keywords: ' , ， ',
+            reply: 'should be filtered out',
+          },
+        ],
+      },
+    });
+    const savedCfg = await loadPanelConfig(env);
+    expect(savedCfg.pmBot.keywordReplies).toHaveLength(2);
+
+    // Pre-verify visitor 30001 and bind existing topic 55
+    await kv.put('verified:30001', 'emoji:v1');
+    await upsertVisitorProfile(env, { id: 30001, first_name: 'Bob' }, { threadId: 55, incrementMsg: false });
+    await kv.put('thread:55', '30001');
+
+    const tgCalls = [];
+    const origFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn(async (url, init) => {
+      const method = String(url).split('/').pop();
+      const body = init?.body ? JSON.parse(init.body) : {};
+      tgCalls.push({ method, body });
+      return new Response(JSON.stringify({ ok: true, result: { message_id: 99 } }), { status: 200 });
+    });
+
+    const sendFromBob = (message_id, text) =>
+      handleTelegramUpdate(
+        {
+          message: {
+            message_id,
+            from: { id: 30001, first_name: 'Bob' },
+            chat: { id: 30001, type: 'private' },
+            text,
+          },
+        },
+        env,
+        'https://panel.test'
+      );
+
+    try {
+      // 1. Silent keyword rule (forwardToAdmin: false) -> replies to visitor, zero copyMessage to supergroup
+      await sendFromBob(1, '菜单');
+      expect(tgCalls.some((c) => c.method === 'copyMessage')).toBe(false);
+      expect(tgCalls.some((c) => c.method === 'sendMessage' && c.body.chat_id === 30001 && c.body.text === '这里是自助菜单')).toBe(true);
+
+      // 2. Forwarding keyword rule -> forwards to topic, replies to visitor, leaves silent topic note, does NOT trigger generic auto-reply
+      tgCalls.length = 0;
+      await sendFromBob(2, '你好想交换友链');
+      expect(tgCalls.some((c) => c.method === 'copyMessage')).toBe(true);
+      expect(tgCalls.some((c) => c.method === 'sendMessage' && c.body.chat_id === 30001 && c.body.text === '友链请发站名和链接')).toBe(true);
+      expect(tgCalls.some((c) => c.method === 'sendMessage' && c.body.chat_id === '-100777666' && c.body.disable_notification === true)).toBe(true);
+      expect(tgCalls.some((c) => c.body.text === '站长暂时忙碌，稍后回复你～')).toBe(false);
+
+      // 3. Normal message -> forwards & sends general auto-reply ONCE; second message within cooldown does NOT repeat auto-reply
+      tgCalls.length = 0;
+      await sendFromBob(3, '请问服务器稳定吗？');
+      expect(tgCalls.some((c) => c.method === 'copyMessage')).toBe(true);
+      expect(tgCalls.filter((c) => c.method === 'sendMessage' && c.body.chat_id === 30001 && c.body.text === '站长暂时忙碌，稍后回复你～')).toHaveLength(1);
+
+      tgCalls.length = 0;
+      await sendFromBob(4, '补充问一下带宽');
+      expect(tgCalls.some((c) => c.method === 'copyMessage')).toBe(true);
+      expect(tgCalls.some((c) => c.method === 'sendMessage' && c.body.chat_id === 30001)).toBe(false);
+    } finally {
+      globalThis.fetch = origFetch;
+    }
+  });
+
+  it('never triggers keyword or general auto-reply for unverified strangers before verification passes', async () => {
+    const kv = createMemoryKV();
+    const env = {
+      TOPIC_MAP: kv,
+      BOT_TOKEN: '999000:AUTOREPLY_TEST_TOKEN',
+      ADMIN_IDS: '10001',
+      SUPERGROUP_ID: '-100777666',
+    };
+    await savePanelConfig(env, {
+      pmBot: {
+        verificationMode: 'emoji',
+        enableCasCheck: false,
+        autoReplyEnabled: true,
+        autoReplyText: '通用自动回复',
+        keywordReplies: [{ id: 'k1', keywords: '菜单', matchMode: 'contains', reply: '自助菜单', forwardToAdmin: false }],
+      },
+    });
+
+    const tgCalls = [];
+    const origFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn(async (url, init) => {
+      const method = String(url).split('/').pop();
+      const body = init?.body ? JSON.parse(init.body) : {};
+      tgCalls.push({ method, body });
+      return new Response(JSON.stringify({ ok: true, result: { message_id: 10 } }), { status: 200 });
+    });
+
+    try {
+      await handleTelegramUpdate(
+        {
+          message: {
+            message_id: 1,
+            from: { id: 40001, first_name: 'Unverified' },
+            chat: { id: 40001, type: 'private' },
+            text: '菜单',
+          },
+        },
+        env,
+        'https://panel.test'
+      );
+      expect(tgCalls.some((c) => c.body.text === '自助菜单')).toBe(false);
+      expect(tgCalls.some((c) => c.body.text === '通用自动回复')).toBe(false);
+      expect(tgCalls.some((c) => c.body.text?.includes('人机验证'))).toBe(true);
+    } finally {
+      globalThis.fetch = origFetch;
+    }
+  });
+});
+
+describe('v1.5.0 edge cases: caption limits, fallbacks, welcome toggles & pending keyword replay', () => {
+  const visible = (html) => String(html).replace(/<[^>]*>/g, '').replace(/&(?:amp|lt|gt|quot);/g, '_').length;
+  const baseDetail = {
+    userId: '313131',
+    displayName: 'Bob',
+    username: '',
+    status: 'verified',
+    msg_count: 1,
+  };
+
+  function mockTelegram(overrides = {}) {
+    const calls = [];
+    const fetchMock = vi.fn(async (url, init) => {
+      const method = String(url).split('/').pop();
+      const body = init?.body ? JSON.parse(init.body) : {};
+      calls.push({ method, body });
+      if (overrides[method]) return overrides[method](body);
+      if (method === 'getUserProfilePhotos') {
+        return new Response(
+          JSON.stringify({ ok: true, result: { photos: [[{ file_id: 'small' }, { file_id: 'big_avatar' }]] } }),
+          { status: 200 }
+        );
+      }
+      return new Response(JSON.stringify({ ok: true, result: { message_id: 5, message_thread_id: 99 } }), {
+        status: 200,
+      });
+    });
+    return { calls, fetchMock };
+  }
+
+  async function withFetch(fetchMock, fn) {
+    const origFetch = globalThis.fetch;
+    globalThis.fetch = fetchMock;
+    try {
+      await fn();
+    } finally {
+      globalThis.fetch = origFetch;
+    }
+  }
+
+  const tgError = () =>
+    new Response(JSON.stringify({ ok: false, error_code: 400, description: 'Bad Request' }), { status: 400 });
+
+  it('fits captions to the 1024 visible-char limit by trimming, then dropping the note, else returns null', () => {
+    const shortNote = buildVisitorCardCaption({ ...baseDetail, note: 'VIP 客户' });
+    expect(shortNote).toContain('VIP 客户');
+    expect(shortNote).not.toContain('…');
+
+    const longNote = buildVisitorCardCaption({ ...baseDetail, note: '备'.repeat(2000) });
+    expect(longNote).toContain('…');
+    expect(visible(longNote)).toBeLessThanOrEqual(1024);
+
+    // HTML escaping must not count against the limit: 700 "&" render as 700 visible chars
+    const escaped = buildVisitorCardCaption({ ...baseDetail, note: '&'.repeat(700) });
+    expect(escaped).toContain('&amp;');
+    expect(visible(escaped)).toBeLessThanOrEqual(1024);
+
+    expect(buildVisitorCardCaption({ ...baseDetail, displayName: 'N'.repeat(1200) })).toBeNull();
+  });
+
+  it('sends a photo card when a brand-new visitor topic is created', async () => {
+    const kv = createMemoryKV();
+    const env = { TOPIC_MAP: kv, BOT_TOKEN: '999000:EDGE', ADMIN_IDS: '10001', SUPERGROUP_ID: '-100777' };
+    await savePanelConfig(env, {
+      pmBot: { showVisitorAvatarInCard: true, verificationMode: 'off', enableCasCheck: false },
+    });
+    const { calls, fetchMock } = mockTelegram();
+
+    await withFetch(fetchMock, async () => {
+      await handleTelegramUpdate(
+        {
+          message: {
+            message_id: 1,
+            from: { id: 616161, first_name: 'Newbie' },
+            chat: { id: 616161, type: 'private' },
+            text: 'hello',
+          },
+        },
+        env,
+        'https://panel.test'
+      );
+    });
+
+    expect(calls.some((c) => c.method === 'createForumTopic')).toBe(true);
+    const photo = calls.find((c) => c.method === 'sendPhoto');
+    expect(photo).toBeTruthy();
+    expect(photo.body.message_thread_id).toBe(99);
+    expect(photo.body.photo).toBe('big_avatar');
+    expect(photo.body.caption).toContain('tg://user?id=616161');
+  });
+
+  it('falls back to a text card when sendPhoto fails, and to editMessageReplyMarkup when a caption edit fails', async () => {
+    const kv = createMemoryKV();
+    const env = { TOPIC_MAP: kv, BOT_TOKEN: '999000:EDGE', ADMIN_IDS: '10001', SUPERGROUP_ID: '-100777' };
+    await savePanelConfig(env, { pmBot: { showVisitorAvatarInCard: true } });
+    await upsertVisitorProfile(env, { id: 717171, first_name: 'Carol' }, { threadId: 55, incrementMsg: false });
+    await kv.put('thread:55', '717171');
+    const { calls, fetchMock } = mockTelegram({ sendPhoto: tgError, editMessageCaption: tgError });
+
+    await withFetch(fetchMock, async () => {
+      await handleTelegramUpdate(
+        {
+          message: {
+            message_id: 2,
+            message_thread_id: 55,
+            from: { id: 10001, first_name: 'Owner' },
+            chat: { id: -100777, type: 'supergroup' },
+            text: '/info',
+          },
+        },
+        env,
+        'https://panel.test'
+      );
+      expect(calls.some((c) => c.method === 'sendPhoto')).toBe(true);
+      const textCard = calls.find((c) => c.method === 'sendMessage');
+      expect(textCard?.body.text).toContain('tg://user?id=717171');
+
+      await handleTelegramUpdate(
+        {
+          callback_query: {
+            id: 'cb_edge',
+            from: { id: 10001, first_name: 'Owner' },
+            data: 'mod:trust:717171',
+            message: {
+              message_id: 5,
+              chat: { id: -100777, type: 'supergroup' },
+              photo: [{ file_id: 'big_avatar' }],
+              caption: 'old',
+            },
+          },
+        },
+        env,
+        'https://panel.test'
+      );
+    });
+
+    expect(calls.some((c) => c.method === 'editMessageCaption')).toBe(true);
+    const markup = calls.find((c) => c.method === 'editMessageReplyMarkup');
+    expect(markup).toBeTruthy();
+    expect(markup.body.reply_markup?.inline_keyboard?.length).toBeGreaterThan(0);
+  });
+
+  it('honors the welcome toggles before a notification group is bound, and handles /start with a payload', async () => {
+    const kv = createMemoryKV();
+    const env = { TOPIC_MAP: kv, BOT_TOKEN: '999000:EDGE', ADMIN_IDS: '10001' };
+    const { calls, fetchMock } = mockTelegram();
+    const privateMsg = (text) => ({
+      message: { message_id: 3, from: { id: 818181, first_name: 'Dan' }, chat: { id: 818181, type: 'private' }, text },
+    });
+
+    await withFetch(fetchMock, async () => {
+      await handleTelegramUpdate(privateMsg('/start ref_forum'), env, 'https://panel.test');
+      expect(calls.filter((c) => c.method === 'sendMessage')).toHaveLength(1);
+
+      calls.length = 0;
+      await savePanelConfig(env, { pmBot: { enableStartWelcome: true, showPanelButtonInWelcome: false } });
+      await handleTelegramUpdate(privateMsg('hi there'), env, 'https://panel.test');
+      const sent = calls.filter((c) => c.method === 'sendMessage');
+      expect(sent).toHaveLength(1);
+      expect(sent[0].body.reply_markup).toBeUndefined();
+
+      calls.length = 0;
+      await savePanelConfig(env, { pmBot: { enableStartWelcome: false } });
+      await handleTelegramUpdate(privateMsg('hi again'), env, 'https://panel.test');
+      expect(calls.filter((c) => c.method === 'sendMessage')).toHaveLength(0);
+    });
+  });
+
+  it('does not match keyword rules against the placeholder preview of replayed media messages', async () => {
+    const kv = createMemoryKV();
+    const env = { TOPIC_MAP: kv, BOT_TOKEN: '999000:EDGE', ADMIN_IDS: '10001', SUPERGROUP_ID: '-100777' };
+    await savePanelConfig(env, {
+      pmBot: {
+        keywordReplies: [{ keywords: '图片', reply: '图片请发原图哦', matchMode: 'contains', forwardToAdmin: false }],
+      },
+    });
+    const user = { id: 919191, first_name: 'Eve' };
+    await kv.put(
+      'chal:v_edge',
+      JSON.stringify({
+        userId: '919191',
+        user,
+        pending: [
+          { chatId: 919191, messageId: 11, preview: '[图片]', text: '', caption: '', photo: [{ file_id: 'p1' }] },
+          { chatId: 919191, messageId: 12, preview: '有图片吗', text: '有图片吗', caption: '' },
+        ],
+      })
+    );
+    const { calls, fetchMock } = mockTelegram();
+
+    await withFetch(fetchMock, async () => {
+      const res = await completeTurnstileVerification(env, 'https://panel.test', 'v_edge');
+      expect(res.ok).toBe(true);
+    });
+
+    const keywordReplies = calls.filter((c) => c.method === 'sendMessage' && c.body.text === '图片请发原图哦');
+    expect(keywordReplies).toHaveLength(1);
+    expect(keywordReplies[0].body.reply_to_message_id).toBe(12);
+    // The photo-only message is forwarded normally instead of being swallowed by the keyword rule
+    expect(calls.some((c) => c.method === 'copyMessage' && c.body.message_id === 11)).toBe(true);
   });
 });
