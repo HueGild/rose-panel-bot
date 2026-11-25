@@ -3,6 +3,7 @@
 import { handleApiRequest } from './api.js';
 import { handleTelegramUpdate } from './bot.js';
 import { loadPanelConfig } from './config.js';
+import { serveEmbeddedAsset } from './embedded-assets.js';
 import { tgCall } from './telegram.js';
 
 function jsonResponse(data, status = 200) {
@@ -107,9 +108,10 @@ export default {
       }
     }
 
-    // Telegram Bot Webhook
-    if (url.pathname === '/webhook' && request.method === 'POST') {
-      if (env.WEBHOOK_SECRET) {
+    // Telegram Bot Webhook: supports BOTH `/webhook` and legacy root `POST /`
+    // for zero-downtime upgrade from telegram_private_chatbot.
+    if ((url.pathname === '/webhook' || url.pathname === '/') && request.method === 'POST') {
+      if (url.pathname === '/webhook' && env.WEBHOOK_SECRET) {
         const tokenHeader = request.headers.get('X-Telegram-Bot-Api-Secret-Token') || '';
         if (tokenHeader !== env.WEBHOOK_SECRET) {
           return new Response('Unauthorized', { status: 401 });
@@ -121,6 +123,10 @@ export default {
         update = await request.json();
       } catch {
         return new Response('Bad Request', { status: 400 });
+      }
+
+      if (!update || typeof update !== 'object') {
+        return new Response('OK', { status: 200 });
       }
 
       const work = handleTelegramUpdate(update, env, url.origin).catch((err) => {
@@ -144,10 +150,14 @@ export default {
       }
     }
 
-    // Static Mini App frontend served via Cloudflare Workers Assets
+    // Static Mini App frontend served via Cloudflare Workers Assets binding
     if (env.ASSETS) {
       return env.ASSETS.fetch(request);
     }
+
+    // Fallback: embedded static assets (used for single-module Cloudflare API uploads)
+    const embedded = serveEmbeddedAsset(url.pathname);
+    if (embedded) return embedded;
 
     return new Response('Not Found', { status: 404 });
   },
