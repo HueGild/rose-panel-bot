@@ -750,6 +750,11 @@ export default function SettingsDrawer({
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10 }}>
                 {[
                   { id: 'emoji', label: '🎯 Emoji 找茬/点选', desc: '0延迟推荐' },
+                  {
+                    id: 'sticker_quiz',
+                    label: '🎭 表情包看图猜题',
+                    desc: `已录 ${(draft.pmBot.stickerChallenges || []).length} 题`,
+                  },
                   { id: 'quiz', label: '📝 常识题库', desc: '0延迟四选一' },
                   { id: 'turnstile', label: '🛡️ CF Turnstile', desc: '严格防扫号' },
                   { id: 'off', label: '关闭验证', desc: '直接转发' },
@@ -774,6 +779,84 @@ export default function SettingsDrawer({
                   );
                 })}
               </div>
+
+              {(draft.pmBot.verificationMode === 'sticker_quiz' ||
+                (draft.pmBot.stickerChallenges || []).length > 0) && (
+                <div
+                  style={{
+                    background: 'var(--bg-subtle)',
+                    borderRadius: 16,
+                    padding: 12,
+                    marginBottom: 10,
+                  }}
+                >
+                  <div
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      marginBottom: 8,
+                    }}
+                  >
+                    <span style={{ fontSize: 12, fontWeight: 700 }}>
+                      🎭 我的表情包验证题库（{(draft.pmBot.stickerChallenges || []).length} 题）
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--accent)', marginBottom: 8, lineHeight: 1.5 }}>
+                    💡 私聊机器人发送 <code>/addverify</code>，发一张收藏贴纸 + 题目与选项即可 3 秒添加！
+                    {(draft.pmBot.stickerChallenges || []).length === 0 &&
+                      '（当前题库为空时会自动回退到 Emoji 模式）'}
+                  </div>
+
+                  {(draft.pmBot.stickerChallenges || []).map((item, idx) => (
+                    <div
+                      key={item.id || idx}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 10,
+                        background: 'var(--bg-elevated)',
+                        borderRadius: 13,
+                        padding: 8,
+                        marginBottom: 6,
+                      }}
+                    >
+                      <TgStickerMedia
+                        fileId={item.thumbFileId || item.fileId}
+                        format={item.thumbFileId ? 'webp' : item.format}
+                        emoji={item.emoji || '🎭'}
+                        size={42}
+                        previewOnly
+                      />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 12, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {item.question}
+                        </div>
+                        <div style={{ fontSize: 11, color: 'var(--green)', marginTop: 2 }}>
+                          ✅ {item.answer}
+                        </div>
+                        <div style={{ fontSize: 10, color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          干扰项：{(item.wrong || []).join(' / ')}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        className="icon-btn"
+                        title="删除该题"
+                        onClick={() =>
+                          updateField(
+                            'pmBot',
+                            'stickerChallenges',
+                            (draft.pmBot.stickerChallenges || []).filter((_, i) => i !== idx)
+                          )
+                        }
+                      >
+                        <Trash2 size={14} color="var(--red)" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
 
               {draft.pmBot.verificationMode === 'turnstile' && (
                 <div

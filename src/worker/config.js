@@ -96,7 +96,7 @@ export const DEFAULT_CONFIG = {
   },
   pmBot: {
     enableVerification: true,
-    verificationMode: 'emoji', // emoji | quiz | turnstile | off
+    verificationMode: 'emoji', // emoji | sticker_quiz | quiz | turnstile | off
     maxVerifyFailures: 2,
     cooldownMinutes: 10,
     enableCasCheck: true,
@@ -104,6 +104,7 @@ export const DEFAULT_CONFIG = {
     blockUnverifiedMedia: true,
     enableHoneypot: true,
     blockedKeywords: '',
+    stickerChallenges: [],
     welcomeText: '你好呀 🌸 这里是我的私聊助手。直接发送消息即可联系我，也可以点击下方按钮打开我的个人面板查看小站与探针。',
     autoAckEnabled: true,
     verifiedDays: 30,
@@ -230,7 +231,7 @@ export async function savePanelConfig(env, nextConfig) {
   );
   merged.community.streakStepBonus = Math.min(Math.max(Number(merged.community.streakStepBonus) || 0, 0), 100);
   merged.community.streakMaxBonus = Math.min(Math.max(Number(merged.community.streakMaxBonus) || 0, 0), 500);
-  if (!['emoji', 'quiz', 'turnstile', 'off'].includes(merged.pmBot.verificationMode)) {
+  if (!['emoji', 'sticker_quiz', 'quiz', 'turnstile', 'off'].includes(merged.pmBot.verificationMode)) {
     merged.pmBot.verificationMode = merged.pmBot.enableVerification ? 'emoji' : 'off';
   }
   merged.pmBot.enableVerification = merged.pmBot.verificationMode !== 'off';
@@ -241,6 +242,9 @@ export async function savePanelConfig(env, nextConfig) {
   merged.pmBot.blockUnverifiedMedia = merged.pmBot.blockUnverifiedMedia !== false;
   merged.pmBot.enableHoneypot = merged.pmBot.enableHoneypot !== false;
   merged.pmBot.blockedKeywords = String(merged.pmBot.blockedKeywords || '').slice(0, 2000);
+  merged.pmBot.stickerChallenges = Array.isArray(merged.pmBot.stickerChallenges)
+    ? merged.pmBot.stickerChallenges.filter((item) => item?.fileId && item?.question && item?.answer).slice(0, 40)
+    : [];
 
   await safePutJSON(env.TOPIC_MAP, CONFIG_KV_KEY, merged);
   return merged;

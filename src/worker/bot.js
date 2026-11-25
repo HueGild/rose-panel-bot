@@ -162,6 +162,75 @@ export function generateInlineChallenge(mode = 'emoji', verifyId = 'test', enabl
   };
 }
 
+/**
+ * Parses admin quiz line: "Question | Correct Answer | Wrong 1 | Wrong 2 | Wrong 3"
+ * Supports both ASCII `|`, full-width `｜`, or multi-line input.
+ */
+export function parseStickerQuizInput(raw = '') {
+  const cleaned = String(raw || '').trim();
+  if (!cleaned) return null;
+  let parts = cleaned
+    .split(/[|｜]+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (parts.length < 3) {
+    parts = cleaned
+      .split(/\r?\n+/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+  }
+  if (parts.length < 3) return null;
+  const [question, answer, ...wrong] = parts;
+  const uniqueWrong = Array.from(new Set(wrong.filter((w) => w && w !== answer))).slice(0, 3);
+  if (!question || !answer || uniqueWrong.length === 0) return null;
+  return {
+    question: question.slice(0, 120),
+    answer: answer.slice(0, 40),
+    wrong: uniqueWrong.map((w) => w.slice(0, 40)),
+  };
+}
+
+/**
+ * Generates a custom Telegram Sticker Quiz challenge using the admin's collected stickers.
+ */
+export function generateStickerChallenge(
+  stickerChallenges = [],
+  verifyId = 'test',
+  enableHoneypot = true,
+  excludeId = ''
+) {
+  const valid = (stickerChallenges || []).filter(
+    (c) => c?.fileId && c?.question && c?.answer && Array.isArray(c.wrong) && c.wrong.length > 0
+  );
+  if (valid.length === 0) return null;
+
+  const pool = valid.length > 1 && excludeId ? valid.filter((c) => c.id !== excludeId) : valid;
+  const chosen = pool[randomInt(pool.length)] || valid[0];
+  const options = shuffle([chosen.answer, ...chosen.wrong.slice(0, 3)]);
+  const correctIndex = options.indexOf(chosen.answer);
+
+  const rows = [];
+  for (let i = 0; i < options.length; i += 2) {
+    rows.push(
+      options.slice(i, i + 2).map((opt, offset) => ({
+        text: opt,
+        callback_data: `v:${verifyId}:${i + offset}`,
+      }))
+    );
+  }
+  if (enableHoneypot) {
+    rows.push([{ text: '🤖 我是机器人（真人勿点）', callback_data: `v:${verifyId}:trap` }]);
+  }
+
+  return {
+    challengeId: chosen.id || chosen.fileId,
+    fileId: chosen.fileId,
+    correctIndex,
+    promptHtml: `🎭 <b>趣味表情包人机验证</b>\n\n看上面的表情包，回答：<b>${escapeHtml(chosen.question)}</b>\n\n<i>通过后 30 天内免验证，消息将自动送达。</i>`,
+    keyboard: rows,
+  };
+}
+
 function extractCommand(text = '') {
   const trimmed = String(text || '').trim();
   if (!trimmed.startsWith('/')) return null;
@@ -499,12 +568,12 @@ async function startVerificationChallenge(env, requestOrigin, msg, config, risk 
 
   const desiredMode = config.pmBot.verificationMode || 'emoji';
   const turnstileReady = Boolean(env.TURNSTILE_SITE_KEY && env.TURNSTILE_SECRET);
+  const hasStickerBank =
+    Array.isArray(config.pmBot.stickerChallenges) && config.pmBot.stickerChallenges.length > 0;
   const shouldEscalate = Boolean(config.pmBot.smartEscalation && risk?.isHighRisk && turnstileReady);
-  const mode = shouldEscalate
-    ? 'turnstile'
-    : desiredMode === 'turnstile' && !turnstileReady
-      ? 'emoji'
-      : desiredMode;
+  let mode = shouldEscalate ? 'turnstile' : desiredMode;
+  if (mode === 'turnstile' && !turnstileReady) mode = hasStickerBank ? 'sticker_quiz' : 'emoji';
+  if (mode === 'sticker_quiz' && !hasStickerBank) mode = 'emoji';
   const verifyId = randomId(12);
 
   // Never pre-queue forwarded ad/link spam; require user to resend cleanly after passing strict verification
@@ -548,8 +617,47 @@ async function startVerificationChallenge(env, requestOrigin, msg, config, risk 
     return;
   }
 
+  // Custom Telegram Sticker Quiz Mode (`sticker_quiz`)
+  if (mode === 'sticker_quiz') {
+    const chal = generateStickerChallenge(
+      config.pmBot.stickerChallenges,
+      verifyId,
+      config.pmBot.enableHoneypot !== false
+    );
+    if (chal) {
+      let stickerMsgId = null;
+      try {
+        const sentSticker = await tgCall(env, 'sendSticker', {
+          chat_id: msg.chat.id,
+          sticker: chal.fileId,
+        });
+        stickerMsgId = sentSticker?.result?.message_id || null;
+      } catch {
+        // If sticker send fails, seamlessly fall back to Emoji mode below
+        stickerMsgId = null;
+      }
+      if (stickerMsgId) {
+        baseState.correctIndex = chal.correctIndex;
+        baseState.stickerChallengeId = chal.challengeId;
+        baseState.stickerMessageId = stickerMsgId;
+        await safePutJSON(env.TOPIC_MAP, `chal:${verifyId}`, baseState, { expirationTtl: 300 });
+        await env.TOPIC_MAP.put(`user_challenge:${uid}`, verifyId, { expirationTtl: 300 });
+
+        await tgCall(env, 'sendMessage', {
+          chat_id: msg.chat.id,
+          reply_to_message_id: stickerMsgId,
+          text: chal.promptHtml,
+          parse_mode: 'HTML',
+          reply_markup: { inline_keyboard: chal.keyboard },
+        });
+        return;
+      }
+    }
+    baseState.mode = 'emoji';
+  }
+
   // Zero-latency Inline Mode (`emoji` or `quiz`) with optional Honeypot trap button
-  const chal = generateInlineChallenge(mode, verifyId, config.pmBot.enableHoneypot !== false);
+  const chal = generateInlineChallenge(baseState.mode, verifyId, config.pmBot.enableHoneypot !== false);
   baseState.correctIndex = chal.correctIndex;
 
   await safePutJSON(env.TOPIC_MAP, `chal:${verifyId}`, baseState, { expirationTtl: 300 });
@@ -827,6 +935,12 @@ async function handleCallbackQuery(env, requestOrigin, cq, config) {
       await env.TOPIC_MAP.delete(`chal:${verifyId}`);
       await env.TOPIC_MAP.delete(`user_challenge:${state.userId}`);
       await recordBlockedSpam(env);
+      if (state.stickerMessageId && cq.message?.chat?.id) {
+        await tgCall(env, 'deleteMessage', {
+          chat_id: cq.message.chat.id,
+          message_id: state.stickerMessageId,
+        }).catch(() => {});
+      }
       await tgCall(env, 'answerCallbackQuery', {
         callback_query_id: cq.id,
         text: '🛡️ 触发反垃圾蜜罐陷阱，已拒绝访问。',
@@ -850,6 +964,12 @@ async function handleCallbackQuery(env, requestOrigin, cq, config) {
         await env.TOPIC_MAP.delete(`chal:${verifyId}`);
         await env.TOPIC_MAP.delete(`user_challenge:${state.userId}`);
         await recordBlockedSpam(env);
+        if (state.stickerMessageId && cq.message?.chat?.id) {
+          await tgCall(env, 'deleteMessage', {
+            chat_id: cq.message.chat.id,
+            message_id: state.stickerMessageId,
+          }).catch(() => {});
+        }
 
         await tgCall(env, 'answerCallbackQuery', {
           callback_query_id: cq.id,
@@ -866,11 +986,42 @@ async function handleCallbackQuery(env, requestOrigin, cq, config) {
       }
 
       // 1st mistake -> reshuffle brand new challenge to defeat brute-force scripts!
-      const refreshed = generateInlineChallenge(
-        state.mode || 'emoji',
-        verifyId,
-        config.pmBot.enableHoneypot !== false
-      );
+      let refreshed;
+      if (state.mode === 'sticker_quiz') {
+        const nextStickerChal = generateStickerChallenge(
+          config.pmBot.stickerChallenges,
+          verifyId,
+          config.pmBot.enableHoneypot !== false,
+          state.stickerChallengeId || ''
+        );
+        if (nextStickerChal) {
+          if (
+            nextStickerChal.challengeId !== state.stickerChallengeId &&
+            cq.message?.chat?.id
+          ) {
+            if (state.stickerMessageId) {
+              await tgCall(env, 'deleteMessage', {
+                chat_id: cq.message.chat.id,
+                message_id: state.stickerMessageId,
+              }).catch(() => {});
+            }
+            const sentNewSticker = await tgCall(env, 'sendSticker', {
+              chat_id: cq.message.chat.id,
+              sticker: nextStickerChal.fileId,
+            }).catch(() => null);
+            state.stickerMessageId = sentNewSticker?.result?.message_id || null;
+            state.stickerChallengeId = nextStickerChal.challengeId;
+          }
+          refreshed = nextStickerChal;
+        }
+      }
+      if (!refreshed) {
+        refreshed = generateInlineChallenge(
+          state.mode === 'quiz' ? 'quiz' : 'emoji',
+          verifyId,
+          config.pmBot.enableHoneypot !== false
+        );
+      }
       state.failures = nextFails;
       state.correctIndex = refreshed.correctIndex;
       await safePutJSON(env.TOPIC_MAP, `chal:${verifyId}`, state, { expirationTtl: 300 });
@@ -898,6 +1049,12 @@ async function handleCallbackQuery(env, requestOrigin, cq, config) {
     await env.TOPIC_MAP.delete(`needs_verify:${state.userId}`);
     await env.TOPIC_MAP.delete(`chal:${verifyId}`);
     await env.TOPIC_MAP.delete(`user_challenge:${state.userId}`);
+    if (state.stickerMessageId && cq.message?.chat?.id) {
+      await tgCall(env, 'deleteMessage', {
+        chat_id: cq.message.chat.id,
+        message_id: state.stickerMessageId,
+      }).catch(() => {});
+    }
 
     await tgCall(env, 'answerCallbackQuery', { callback_query_id: cq.id, text: '✅ 验证通过！正在送达您的消息…' });
     await tgCall(env, 'editMessageText', {
@@ -968,6 +1125,28 @@ async function handleCallbackQuery(env, requestOrigin, cq, config) {
         reply_markup: buildVisitorModerationKeyboard(env, requestOrigin, detail),
       }).catch(() => {});
     }
+    return;
+  }
+
+  // 4. Admin quick-enable sticker quiz mode button: cfg:mode:sticker_quiz
+  if (data === 'cfg:mode:sticker_quiz') {
+    const isAdmin = await isUserAdmin(env, cq.from.id, tgCall);
+    if (!isAdmin) {
+      await tgCall(env, 'answerCallbackQuery', {
+        callback_query_id: cq.id,
+        text: '仅管理员可操作',
+        show_alert: true,
+      });
+      return;
+    }
+    await savePanelConfig(env, {
+      pmBot: { verificationMode: 'sticker_quiz', enableVerification: true },
+    });
+    await tgCall(env, 'answerCallbackQuery', {
+      callback_query_id: cq.id,
+      text: '🎭 已切换为「表情包看图猜题」验证模式！',
+      show_alert: true,
+    });
   }
 }
 
@@ -1092,7 +1271,130 @@ export async function handleTelegramUpdate(update, env, requestOrigin) {
       return;
     }
 
+    if (isAdmin && parsed?.cmd === 'cancel') {
+      await env.TOPIC_MAP.delete(`await_badge:${uid}`);
+      await env.TOPIC_MAP.delete(`await_verify_quiz:${uid}`);
+      await tgCall(env, 'sendMessage', { chat_id: msg.chat.id, text: '已取消当前录入流程。' });
+      return;
+    }
+
+    // Admin 2-step custom sticker quiz builder (/addverify)
+    if (isAdmin && parsed?.cmd === 'addverify') {
+      await env.TOPIC_MAP.delete(`await_badge:${uid}`);
+      // 1-step shortcut: replying to a sticker with `/addverify 问题 | 正确 | 错1 | 错2 | 错3`
+      const replySticker = msg.reply_to_message?.sticker
+        ? normalizeStickerObject(msg.reply_to_message.sticker)
+        : null;
+      const inlineQuiz = parsed.args ? parseStickerQuizInput(parsed.args) : null;
+
+      if (replySticker && inlineQuiz) {
+        const list = Array.isArray(config.pmBot.stickerChallenges)
+          ? [...config.pmBot.stickerChallenges]
+          : [];
+        list.unshift({
+          id: `sq_${Date.now()}`,
+          ...replySticker,
+          ...inlineQuiz,
+        });
+        await savePanelConfig(env, { pmBot: { stickerChallenges: list.slice(0, 40) } });
+        await tgCall(env, 'sendMessage', {
+          chat_id: msg.chat.id,
+          text: `🎭 <b>表情包验证题已录入！</b>（当前题库共 ${list.length} 题）\n\n• 题目：${escapeHtml(inlineQuiz.question)}\n• 正确答案：✅ ${escapeHtml(inlineQuiz.answer)}\n• 干扰项：${inlineQuiz.wrong.map(escapeHtml).join(' / ')}`,
+          parse_mode: 'HTML',
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: '🎭 立即启用「表情包看图猜题」模式', callback_data: 'cfg:mode:sticker_quiz' }],
+              [buildPanelButton(env, requestOrigin, '⚙️ 打开小程序管理题库', { isGroup: false })],
+            ],
+          },
+        });
+        return;
+      }
+
+      if (replySticker) {
+        await safePutJSON(
+          env.TOPIC_MAP,
+          `await_verify_quiz:${uid}`,
+          { step: 'question', sticker: replySticker },
+          { expirationTtl: 300 }
+        );
+        await tgCall(env, 'sendMessage', {
+          chat_id: msg.chat.id,
+          text: `✨ 已选中该贴纸！请发给我题目和选项（用 <code>|</code> 隔开，<b>第 1 个选项为正确答案</b>）：\n\n<code>这个表情在干嘛？ | 两条腿在晃 | 两个胳膊在晃 | 在睡觉 | 在吃东西</code>\n\n<i>发送 /cancel 可取消。</i>`,
+          parse_mode: 'HTML',
+        });
+        return;
+      }
+
+      await safePutJSON(env.TOPIC_MAP, `await_verify_quiz:${uid}`, { step: 'sticker' }, { expirationTtl: 300 });
+      await tgCall(env, 'sendMessage', {
+        chat_id: msg.chat.id,
+        text: `🎭 <b>新增表情包看图验证题（第 1/2 步）</b>\n\n请直接发送一张你收藏的 <b>Telegram 贴纸</b>（静态/动态均可）给我！\n\n<i>发送 /cancel 可取消。</i>`,
+        parse_mode: 'HTML',
+      });
+      return;
+    }
+
     if (isAdmin && !parsed) {
+      // Handle 2-step /addverify capture flow
+      const quizSession = await safeGetJSON(env.TOPIC_MAP, `await_verify_quiz:${uid}`, null);
+      if (quizSession?.step === 'sticker') {
+        const captured = msg.sticker ? normalizeStickerObject(msg.sticker) : null;
+        if (!captured) {
+          await tgCall(env, 'sendMessage', {
+            chat_id: msg.chat.id,
+            text: '请发送一张 Telegram 贴纸（或发送 /cancel 取消）。',
+          });
+          return;
+        }
+        await safePutJSON(
+          env.TOPIC_MAP,
+          `await_verify_quiz:${uid}`,
+          { step: 'question', sticker: captured },
+          { expirationTtl: 300 }
+        );
+        await tgCall(env, 'sendMessage', {
+          chat_id: msg.chat.id,
+          text: `✨ 收到表情包！<b>第 2/2 步</b>：请发给我题目和选项（用 <code>|</code> 隔开，<b>第 1 个选项是正确答案</b>）：\n\n<code>这个表情是什么情绪？ | 惊讶 | 开心 | 生气 | 困了</code>\n\n<i>也可每行写一条；发 /cancel 取消。</i>`,
+          parse_mode: 'HTML',
+        });
+        return;
+      }
+
+      if (quizSession?.step === 'question' && quizSession.sticker) {
+        const parsedQuiz = parseStickerQuizInput(msg.text || '');
+        if (!parsedQuiz) {
+          await tgCall(env, 'sendMessage', {
+            chat_id: msg.chat.id,
+            text: '格式还差一点哦，请用 <code>|</code> 分隔：<code>题目 | 正确答案 | 错误项1 | 错误项2 | 错误项3</code>（至少需要 1 个正确项和 1 个错误项）。',
+            parse_mode: 'HTML',
+          });
+          return;
+        }
+        await env.TOPIC_MAP.delete(`await_verify_quiz:${uid}`);
+        const list = Array.isArray(config.pmBot.stickerChallenges)
+          ? [...config.pmBot.stickerChallenges]
+          : [];
+        list.unshift({
+          id: `sq_${Date.now()}`,
+          ...quizSession.sticker,
+          ...parsedQuiz,
+        });
+        await savePanelConfig(env, { pmBot: { stickerChallenges: list.slice(0, 40) } });
+        await tgCall(env, 'sendMessage', {
+          chat_id: msg.chat.id,
+          text: `🎉 <b>表情包验证题录入成功！</b>（当前题库共 <b>${list.length}</b> 题）\n\n• 题目：${escapeHtml(parsedQuiz.question)}\n• 正确答案：✅ ${escapeHtml(parsedQuiz.answer)}\n• 干扰项：${parsedQuiz.wrong.map(escapeHtml).join(' / ')}\n\n<i>想继续录下一题随时发 /addverify 即可！</i>`,
+          parse_mode: 'HTML',
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: '🎭 立即启用「表情包看图猜题」模式', callback_data: 'cfg:mode:sticker_quiz' }],
+              [buildPanelButton(env, requestOrigin, '⚙️ 打开小程序管理题库', { isGroup: false })],
+            ],
+          },
+        });
+        return;
+      }
+
       const waitingBadge = await env.TOPIC_MAP.get(`await_badge:${uid}`);
       if (waitingBadge === '1') {
         try {

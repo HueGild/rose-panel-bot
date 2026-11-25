@@ -34,6 +34,7 @@ Switch freely between **3 verification modes** inside **⚙️ Settings → Comm
 | Mode | Experience & Mechanism | Anti-Abuse Protection |
 | :--- | :--- | :--- |
 | **🎯 Emoji Odd-One-Out / Pick (Default)** | 3×3 pure-icon inline grid alternating odd-one-out and semantic pick. **Zero latency, ~0.5s for humans** | 1st wrong tap reshuffles a new challenge; 2 consecutive failures trigger silent 10-min cooldown (configurable) |
+| **🎭 Custom Sticker Quiz (Personal & Fun)** | Use `/addverify` to turn your own collected animated/static TG stickers into custom visual multiple-choice quizzes — **unique per owner, impossible for text scripts** | Auto-switches stickers on retry, auto-deletes sticker after passing, plus honeypot & cooldown |
 | **📝 Local Quiz** | 2×2 local commonsense buttons, zero external API calls | Same reshuffle-on-error + cooldown protection |
 | **🛡️ CF Turnstile Strict Mode** | 1-tap escalation during heavy bot raids; runs Cloudflare Turnstile natively inside Telegram WebApp overlay | Server-side `siteverify` validation; auto-falls back to Emoji mode if Turnstile keys aren't configured |
 
@@ -186,7 +187,7 @@ Reverse-proxy `127.0.0.1:8787` with Caddy (`reverse_proxy 127.0.0.1:8787`) for a
 ## 🤖 Commands
 
 - **Everyone**: `/start`, `/panel`, `/me`, `/checkin` (community mode), `/rank` (community mode)
-- **Admin Private Chat**: `/setbadge` (capture sticker / Custom Emoji / pack link), `/resetbadge`
+- **Admin Private Chat**: `/setbadge` (capture sticker / Custom Emoji / pack link), `/resetbadge`, `/addverify` (add custom sticker visual verification quiz)
 - **Admin Forum Topics**: `/info`, `/ban`, `/unban`, `/trust`, `/reset`, `/close`, `/open`
 
 ---

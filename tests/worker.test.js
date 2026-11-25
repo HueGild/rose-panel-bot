@@ -1,7 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 import { assessIncomingRisk, checkCasBlacklist, normalizeAntiSpamText } from '../src/worker/antispam.js';
 import { signMediaToken, verifyMediaToken, verifyTelegramInitData } from '../src/worker/auth.js';
-import { generateInlineChallenge } from '../src/worker/bot.js';
+import {
+  generateInlineChallenge,
+  generateStickerChallenge,
+  parseStickerQuizInput,
+} from '../src/worker/bot.js';
 import { getLeaderboard, getMemberTicket, performCheckin, resolveLevel } from '../src/worker/checkin.js';
 import { DEFAULT_CONFIG, loadPanelConfig, savePanelConfig } from '../src/worker/config.js';
 import worker from '../src/worker/index.js';
@@ -552,6 +556,22 @@ describe('3-Mode Anti-Spam Verification (Emoji / Quiz / CF Turnstile)', () => {
     expect(quizChal.keyboard.flat()).toHaveLength(4);
     expect(quizChal.correctIndex).toBeGreaterThanOrEqual(0);
     expect(quizChal.correctIndex).toBeLessThan(4);
+
+    // Custom TG Sticker Quiz parser & generator
+    const parsed = parseStickerQuizInput('这个表情在干嘛？ | 两条腿在晃 | 两个胳膊在晃 | 在睡觉 | 在吃饭');
+    expect(parsed.question).toBe('这个表情在干嘛？');
+    expect(parsed.answer).toBe('两条腿在晃');
+    expect(parsed.wrong).toEqual(['两个胳膊在晃', '在睡觉', '在吃饭']);
+
+    const sq = generateStickerChallenge(
+      [{ id: 'sq1', fileId: 'CAAC_TEST_STICKER_123456', ...parsed }],
+      'vid999',
+      true
+    );
+    expect(sq.fileId).toBe('CAAC_TEST_STICKER_123456');
+    expect(sq.keyboard[sq.keyboard.length - 1][0].callback_data).toBe('v:vid999:trap');
+    const answerRowBtns = sq.keyboard.slice(0, -1).flat();
+    expect(answerRowBtns[sq.correctIndex].text).toBe('两条腿在晃');
   });
 
   it('renders Cloudflare Turnstile strict verification page cleanly', async () => {
