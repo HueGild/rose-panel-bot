@@ -557,11 +557,16 @@ describe('3-Mode Anti-Spam Verification (Emoji / Quiz / CF Turnstile)', () => {
     expect(quizChal.correctIndex).toBeGreaterThanOrEqual(0);
     expect(quizChal.correctIndex).toBeLessThan(4);
 
-    // Custom TG Sticker Quiz parser & generator
+    // Custom TG Sticker Quiz parser & generator (supports |, spaces, commas, newlines)
     const parsed = parseStickerQuizInput('这个表情在干嘛？ | 两条腿在晃 | 两个胳膊在晃 | 在睡觉 | 在吃饭');
     expect(parsed.question).toBe('这个表情在干嘛？');
     expect(parsed.answer).toBe('两条腿在晃');
     expect(parsed.wrong).toEqual(['两个胳膊在晃', '在睡觉', '在吃饭']);
+
+    const parsedSpaces = parseStickerQuizInput('这个表情是什么情绪？ 惊讶 开心 生气 困了');
+    expect(parsedSpaces.question).toBe('这个表情是什么情绪？');
+    expect(parsedSpaces.answer).toBe('惊讶');
+    expect(parsedSpaces.wrong).toEqual(['开心', '生气', '困了']);
 
     const sq = generateStickerChallenge(
       [{ id: 'sq1', fileId: 'CAAC_TEST_STICKER_123456', ...parsed }],

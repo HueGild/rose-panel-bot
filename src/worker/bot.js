@@ -163,23 +163,28 @@ export function generateInlineChallenge(mode = 'emoji', verifyId = 'test', enabl
 }
 
 /**
- * Parses admin quiz line: "Question | Correct Answer | Wrong 1 | Wrong 2 | Wrong 3"
- * Supports both ASCII `|`, full-width `｜`, or multi-line input.
+ * Parses admin quiz line flexibly:
+ * Supports `|` / `｜`, multi-line (`\n`), commas/slashes (`,`, `，`, `/`, `、`),
+ * OR plain spaces (`题目 正确答案 错1 错2 错3`)!
  */
 export function parseStickerQuizInput(raw = '') {
   const cleaned = String(raw || '').trim();
   if (!cleaned) return null;
-  let parts = cleaned
-    .split(/[|｜]+/)
-    .map((s) => s.trim())
-    .filter(Boolean);
-  if (parts.length < 3) {
-    parts = cleaned
-      .split(/\r?\n+/)
-      .map((s) => s.trim())
-      .filter(Boolean);
+
+  let parts = [];
+  if (/[|｜]/.test(cleaned)) {
+    parts = cleaned.split(/[|｜]+/);
+  } else if (/\r?\n/.test(cleaned)) {
+    parts = cleaned.split(/\r?\n+/);
+  } else if (/[,，/、;；]/.test(cleaned)) {
+    parts = cleaned.split(/[,，/、;；]+/);
+  } else {
+    parts = cleaned.split(/\s+/);
   }
+
+  parts = parts.map((s) => s.trim()).filter(Boolean);
   if (parts.length < 3) return null;
+
   const [question, answer, ...wrong] = parts;
   const uniqueWrong = Array.from(new Set(wrong.filter((w) => w && w !== answer))).slice(0, 3);
   if (!question || !answer || uniqueWrong.length === 0) return null;
@@ -1340,7 +1345,7 @@ export async function handleTelegramUpdate(update, env, requestOrigin) {
         );
         await tgCall(env, 'sendMessage', {
           chat_id: msg.chat.id,
-          text: `✨ 已选中该贴纸！请直接粘贴题目和 4 个选项（用 <code>|</code> 隔开，<b>第 1 个选项为正确答案</b>）：\n\n<code>上面这个画面里正在发生什么？ | 坐在木凳上晃腿 | 霸王龙在写微积分 | 外星人在修宇宙飞船 | 电饭煲在考驾照</code>\n\n<i>发送 /cancel 可取消。</i>`,
+          text: `✨ 已选中该贴纸！请直接发送题目和选项（用<b>空格</b>、换行、逗号或 <code>|</code> 隔开均可，<b>第 1 个选项为正确答案</b>）：\n\n<code>这个画面在干嘛？ 坐在木凳上晃腿 霸王龙写微积分 外星人修飞船 电饭煲考驾照</code>\n\n<i>发送 /cancel 可取消。</i>`,
           parse_mode: 'HTML',
         });
         return;
@@ -1349,7 +1354,7 @@ export async function handleTelegramUpdate(update, env, requestOrigin) {
       await safePutJSON(env.TOPIC_MAP, `await_verify_quiz:${uid}`, { step: 'sticker' }, { expirationTtl: 300 });
       await tgCall(env, 'sendMessage', {
         chat_id: msg.chat.id,
-        text: `🎭 <b>添加表情包看图验证题（第 1/2 步）</b>\n\n请直接发送一张你收藏的 <b>Telegram 贴纸</b>（静态/动态均可）给我！\n\n<i>下一步直接粘贴「问题 | 正确答案 | 错1 | 错2 | 错3」即可；发 /cancel 取消。</i>`,
+        text: `🎭 <b>添加表情包看图验证题（第 1/2 步）</b>\n\n请直接发送一张你收藏的 <b>Telegram 贴纸</b>（静态/动态均可）给我！\n\n<i>下一步直接用空格隔开发送「问题 正确答案 错1 错2 错3」即可；发 /cancel 取消。</i>`,
         parse_mode: 'HTML',
       });
       return;
@@ -1375,7 +1380,7 @@ export async function handleTelegramUpdate(update, env, requestOrigin) {
         );
         await tgCall(env, 'sendMessage', {
           chat_id: msg.chat.id,
-          text: `✨ 收到表情包！<b>第 2/2 步</b>：请发给我题目和选项（用 <code>|</code> 隔开，<b>第 1 个选项是正确答案</b>）：\n\n<code>这个表情是什么情绪？ | 惊讶 | 开心 | 生气 | 困了</code>\n\n<i>也可每行写一条；发 /cancel 取消。</i>`,
+          text: `✨ 收到表情包！<b>第 2/2 步</b>：请发给我题目和选项（用<b>空格</b>、换行、逗号或 <code>|</code> 隔开都行，<b>第 1 个选项是正确答案</b>）：\n\n<code>这个表情是什么情绪？ 惊讶 开心 生气 困了</code>\n\n<i>发 /cancel 可取消。</i>`,
           parse_mode: 'HTML',
         });
         return;
@@ -1386,7 +1391,7 @@ export async function handleTelegramUpdate(update, env, requestOrigin) {
         if (!parsedQuiz) {
           await tgCall(env, 'sendMessage', {
             chat_id: msg.chat.id,
-            text: '格式还差一点哦，请用 <code>|</code> 分隔：<code>题目 | 正确答案 | 错误项1 | 错误项2 | 错误项3</code>（至少需要 1 个正确项和 1 个错误项）。',
+            text: '格式还差一点哦，请用空格或换行分隔：<code>题目 正确答案 错误项1 错误项2 错误项3</code>（至少需要 1 个正确项和 1 个错误项）。',
             parse_mode: 'HTML',
           });
           return;
