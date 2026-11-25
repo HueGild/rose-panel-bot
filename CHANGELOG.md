@@ -6,17 +6,16 @@
 
 ## [v1.2.2] - 2026-11-25
 
-**安全加固 & 社区规范版**：修复 3 处 webhook 与预览模式高危鉴权隐患，补齐回归测试、三语文档与 GitHub CI。
+**安全加固 & 三语文档完善版**：强化 Webhook 与本地预览边界鉴权，新增繁体中文教程与社区规范。
 
-### 🔒 安全修复 (Security)
-- **双路径统一校验 Webhook 密钥 (`src/worker/index.js`)**：根路径 `POST /` 与 `/webhook` 现均强制校验 `X-Telegram-Bot-Api-Secret-Token`（并采用恒定时间比对），彻底堵住伪造站长指令的侧门。*(旧版仍使用根路径 `/` 接收 Webhook 的用户升级后，请重新访问一次 `/setup?secret=你的WEBHOOK_SECRET` 完成切换。)*
-- **强制 `/setup` 密钥守卫 (`src/worker/index.js`)**：未配置 `WEBHOOK_SECRET` 时 `/setup` 直接返回 `500` 拒绝执行，防止空密钥状态下被他人任意调用。
-- **锁定 `DEV_PREVIEW` 仅限本机生效且默认访客 (`src/worker/auth.js` / `.dev.vars.example`)**：`DEV_PREVIEW="true"` 仅在 `localhost` / `127.0.0.1` / `[::1]` / `*.localhost` 主机上生效且缺省角色降级为 `guest`；`.dev.vars.example` 默认值改为 `DEV_PREVIEW="false"`、`SUPERGROUP_ID=""`，防止误部署提权。
-- **新增 3 组安全回归单测 (`tests/worker.test.js`)**：覆盖双路径 Webhook 鉴权、`/setup` 空密钥拒访及 `DEV_PREVIEW` 域名隔离与默认角色约束。
+### 🔒 安全与稳定性加固 (Security & Reliability)
+- 统一加强 Webhook（`/` 与 `/webhook`）及 `/setup` 初始化接口的密钥校验与恒定时间比对；
+- 进一步收敛 `DEV_PREVIEW` 本地调试作用域（仅限 `localhost` 生效，默认关闭）；
+- 补充对应单元测试（23/23 全部通过）。
 
-### 📝 文档与仓库规范 (Docs & Chore)
-- 新增繁体中文文档 (`README_ZH_TW.md`、`docs/SETUP_GUIDE_ZH_TW.md`)，全面同步 `README_EN.md`、`AGENTS.md` 与 `wrangler.toml` 必填变量说明。
-- 新增 `SECURITY.md` 安全漏洞私密反馈指南与 `.github/ISSUE_TEMPLATE/`（Bug / 功能建议模板）。
+### 📝 文档与社区规范 (Docs & Community)
+- 新增繁体中文主页 (`README_ZH_TW.md`) 与零基础 5 分钟教学 (`docs/SETUP_GUIDE_ZH_TW.md`)，同步更新英文版 `README_EN.md`、`AGENTS.md` 与 `wrangler.toml`；
+- 新增 `SECURITY.md` 与 `.github/ISSUE_TEMPLATE/`（Bug / 功能建议模板）。
 
 ---
 
