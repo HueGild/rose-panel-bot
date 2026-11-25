@@ -40,6 +40,18 @@
 
 ---
 
+## ✨ Why RosePanel in 5 Seconds
+
+| Signature Feature | At a Glance |
+| :--- | :--- |
+| **💬 Direct In-Panel Chat & Photos** | Open **`💬 Chat`** for 60 bubbles — type, send photos from your phone album & recall in 1 tap, silently mirrored to Forum Topics |
+| **🎭 Custom Animated Sticker Quizzes** | Send `/add` + any TG sticker to build a visual quiz in 3s; **auto-switches & reshuffles on error** + honeypot + CAS blacklist |
+| **🎨 0.2s Panel + Pixel Day/Night Slider** | Original **224×84 pixel bubble-lens slider** (circular View Transition dark reveal) + `/set` animated emblems + private avatar proxy |
+| **📡 Plug-and-Play Modularity** | Optional **Komari / Nezha (v1·v0) / NodeGet / JSON** server probe & Public/Private sites — unused modules stay completely hidden |
+| **🔒 Zero Relay + 1-Click Fork Sync** | Runs on your own Cloudflare Workers free tier with zero tracking; in-app release alert & 1-click Fork sync with 100% KV preserved |
+
+---
+
 ## 🎬 Live Motion Showcase (3 Real-App Clips)
 
 ### 1 · Direct In-Panel Chat & Phone Album Photo Replies
@@ -74,9 +86,6 @@
 ## 💬 More Highlights: `/add` Quizzes · `/set` Animated Emblems · 1-Click Fork Sync
 
 <div align="center">
-  <p><b>💬 Visitor Profile Hub & Direct In-Panel Chat Overview</b></p>
-  <img src="docs/assets/showcase-chat.png" alt="Visitor profile hub with chat, photos, links and direct in-panel text/photo replies" width="96%" />
-  <br /><br />
   <p><b>🎭 3-Second Sticker Quizzes via <code>/add</code> · Instant <code>/start</code> Verification</b></p>
   <img src="docs/assets/showcase-antispam.png" alt="Send any static or animated TG sticker via /add to create custom visual anti-spam quizzes" width="96%" />
   <br /><br />
@@ -183,65 +192,55 @@ Unused modules stay completely hidden and add zero overhead; includes [AGENTS.md
 3. Visit `https://<your-domain>/setup?secret=<WEBHOOK_SECRET>` once until you see `"ok": true`.
 4. *(For bidirectional PM)* Create a private group with **Topics** enabled, add the bot as Administrator, and send **`/bind`** inside the group!
 
-<details>
-<summary><b>🪟 Option 2: Windows (PowerShell)</b></summary>
-
-```powershell
-winget install --id Git.Git -e
-winget install --id OpenJS.NodeJS.LTS -e
-
-git clone https://github.com/mango0114/rose-panel-bot.git
-cd rose-panel-bot
-npm install
-npx wrangler login
-npm run deploy
-
-npx wrangler secret put BOT_TOKEN
-npx wrangler secret put WEBHOOK_SECRET
-```
-</details>
-
-<details>
-<summary><b>🍎 Option 3: macOS (Terminal)</b></summary>
+### Option 2: 4-Step Terminal Quickstart (macOS / Linux / Windows — Zero Dashboard Clicking)
 
 ```bash
-brew install git node
-git clone https://github.com/mango0114/rose-panel-bot.git
-cd rose-panel-bot
-npm install
+# 1. Clone & install dependencies (Node.js 20+)
+git clone https://github.com/mango0114/rose-panel-bot.git && cd rose-panel-bot && npm ci
+
+# 2. Login & deploy (Wrangler v4 auto-provisions TOPIC_MAP KV)
+#    Replace with your numeric TG UID and bot username (without @)
 npx wrangler login
-npm run deploy
+npm run build && npx wrangler deploy --var ADMIN_IDS:YOUR_NUMERIC_UID --var BOT_USERNAME:YOUR_BOT_USERNAME
+
+# 3. Set the 2 secrets interactively
 npx wrangler secret put BOT_TOKEN
 npx wrangler secret put WEBHOOK_SECRET
+
+# 4. Register webhook & bot menu (expect {"ok":true,...})
+curl -s "https://<your-worker-domain>/setup?secret=<YOUR_WEBHOOK_SECRET>"
 ```
-</details>
+
+> *(For bidirectional PM)* Create a private group with **Topics** enabled, add the bot as Administrator, and send **`/bind`** inside the group.
 
 <details>
-<summary><b>🐧 Option 4: Linux VPS / Docker / Self-Hosted</b></summary>
+<summary><b>🛠️ Prerequisites (Windows / macOS) & Linux VPS / Docker / Self-Hosted</b></summary>
 
-#### 1. Install Git & Node.js 22
-- **Debian / Ubuntu**: `sudo apt update && sudo apt install -y curl git ca-certificates && curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash - && sudo apt install -y nodejs`
-- **CentOS Stream / Rocky / AlmaLinux**: `sudo dnf install -y curl git && curl -fsSL https://rpm.nodesource.com/setup_22.x | sudo bash - && sudo dnf install -y nodejs`
-- **Arch Linux**: `sudo pacman -Syu --noconfirm git nodejs npm`
-- **Alpine Linux**: `apk add --no-cache git nodejs npm`
+- **Windows**: `winget install --id Git.Git -e && winget install --id OpenJS.NodeJS.LTS -e`
+- **macOS**: `brew install git node`
+- **Linux (Git & Node.js 22)**:
+  - Debian / Ubuntu: `sudo apt update && sudo apt install -y curl git ca-certificates && curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash - && sudo apt install -y nodejs`
+  - CentOS / Rocky / Alma: `sudo dnf install -y curl git && curl -fsSL https://rpm.nodesource.com/setup_22.x | sudo bash - && sudo dnf install -y nodejs`
+  - Arch: `sudo pacman -Syu --noconfirm git nodejs npm` | Alpine: `apk add --no-cache git nodejs npm`
 
-#### 2. Headless Deploy to Cloudflare Workers
+#### Headless VPS Deploy to Cloudflare Workers
 ```bash
-git clone https://github.com/mango0114/rose-panel-bot.git
-cd rose-panel-bot && npm ci
+git clone https://github.com/mango0114/rose-panel-bot.git && cd rose-panel-bot && npm ci
 export CLOUDFLARE_API_TOKEN="YOUR_CLOUDFLARE_API_TOKEN"
-npm run deploy
+npm run build && npx wrangler deploy --var ADMIN_IDS:YOUR_NUMERIC_UID --var BOT_USERNAME:YOUR_BOT_USERNAME
 echo "YOUR_BOT_TOKEN" | npx wrangler secret put BOT_TOKEN
 echo "YOUR_RANDOM_SECRET" | npx wrangler secret put WEBHOOK_SECRET
+curl -s "https://<your-worker-domain>/setup?secret=<YOUR_RANDOM_SECRET>"
 ```
 
-#### 3. One-Line Docker Deploy
+#### One-Line Docker Deploy
 ```bash
 git clone https://github.com/mango0114/rose-panel-bot.git && cd rose-panel-bot
-docker run --rm -it -v "$PWD":/app -w /app -e CLOUDFLARE_API_TOKEN="YOUR_API_TOKEN" node:22-alpine sh -c "npm ci && npm run deploy"
+docker run --rm -it -v "$PWD":/app -w /app -e CLOUDFLARE_API_TOKEN="YOUR_API_TOKEN" node:22-alpine \
+  sh -c "npm ci && npm run build && npx wrangler deploy --var ADMIN_IDS:YOUR_NUMERIC_UID --var BOT_USERNAME:YOUR_BOT_USERNAME"
 ```
 
-#### 4. Self-Host on Your Own VPS (with Caddy HTTPS)
+#### Self-Host on Your Own VPS (with Caddy HTTPS)
 ```bash
 npm ci && npm run build && cp .dev.vars.example .dev.vars
 # Edit .dev.vars with real secrets (DEV_PREVIEW only works on localhost; keep it "false" in production)

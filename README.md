@@ -43,6 +43,18 @@
 
 ---
 
+## ✨ 5 秒看懂 RosePanel 的 5 个特色
+
+| 核心特色 | 一句话看懂 |
+| :--- | :--- |
+| **💬 面板内直接聊天发图** | 点「💬 聊过」看 60 条记录，直接打字 / 手机相册发图 / 双向撤回，静默同步管理群话题 |
+| **🎭 收藏动图出验证题** | 私聊 `/add` 3 秒用静/动图出题，**答错换题洗牌** + 防脚本蜜罐 + CAS 黑名单四层防护 |
+| **🎨 0.2 秒面板 + 像素滑块** | 原创 **224×84 像素昼夜气泡滑块**（圆形波纹切暗黑）+ `/set` 动态贴纸徽章 + 隐私头像代理 |
+| **📡 模块化按需选配** | Komari / 哪吒（v1·v0）/ NodeGet / JSON 探针 + 公开/私密双层小站，不装零负担 |
+| **🔒 零中转 + Fork 一键更新** | 运行在你自己的 Cloudflare Workers 免费额度；新版站内提醒，Fork 一键同步且数据 100% 保留 |
+
+---
+
 ## 🎬 动态功能演示（三段实机录屏）
 
 ### 1 · 面板内直接聊天与相册选图发图
@@ -77,9 +89,6 @@
 ## 💬 更多主打亮点：`/add` 出题 · `/set` 动态徽章 · Fork 一键同步更新
 
 <div align="center">
-  <p><b>💬 访客资料卡三合一与面板内聊天实机对比</b></p>
-  <img src="docs/assets/showcase-chat.png" alt="访客资料卡聊天图片链接三合一与面板内直接打字发图聊天" width="96%" />
-  <br /><br />
   <p><b>🎭 私聊 <code>/add</code> 三秒录入贴纸验证题 · 陌生人点 Start 即验直通私聊</b></p>
   <img src="docs/assets/showcase-antispam.png" alt="一键发静/动态贴纸快捷设置图形验证题与防骚扰验证设置" width="96%" />
   <br /><br />
@@ -195,65 +204,55 @@ flowchart LR
 3. 浏览器访问一次 `https://<你的域名>/setup?secret=<WEBHOOK_SECRET>` 看到 `"ok": true`。
 4. *(如需双向私聊)* 新建开启 **「话题 (Topics)」** 的私密群、把机器人设为管理员，在群里发一句 **`/bind`** 即可完成全部配置！
 
-<details>
-<summary><b>🪟 方式二：Windows 电脑部署（PowerShell）</b></summary>
-
-```powershell
-winget install --id Git.Git -e
-winget install --id OpenJS.NodeJS.LTS -e
-
-git clone https://github.com/mango0114/rose-panel-bot.git
-cd rose-panel-bot
-npm install
-npx wrangler login
-npm run deploy
-
-npx wrangler secret put BOT_TOKEN
-npx wrangler secret put WEBHOOK_SECRET
-```
-</details>
-
-<details>
-<summary><b>🍎 方式三：macOS 电脑部署（Terminal）</b></summary>
+### 方式二：开发者终端 4 步速通（macOS / Linux / Windows，全程不点网页）
 
 ```bash
-brew install git node
-git clone https://github.com/mango0114/rose-panel-bot.git
-cd rose-panel-bot
-npm install
+# 1. 拉取代码并安装依赖（需 Node.js 20+）
+git clone https://github.com/mango0114/rose-panel-bot.git && cd rose-panel-bot && npm ci
+
+# 2. 登录 Cloudflare 并构建部署（Wrangler v4 会自动创建 TOPIC_MAP KV）
+#    把下方替换为你的纯数字 TG UID 和机器人用户名（不含 @）
 npx wrangler login
-npm run deploy
+npm run build && npx wrangler deploy --var ADMIN_IDS:你的数字UID --var BOT_USERNAME:你的Bot用户名
+
+# 3. 写入两个核心 Secret（按提示粘贴即可）
 npx wrangler secret put BOT_TOKEN
 npx wrangler secret put WEBHOOK_SECRET
+
+# 4. 激活 Webhook 与菜单（看到 {"ok":true,...} 即上线）
+curl -s "https://<你的Worker域名>/setup?secret=<你的WEBHOOK_SECRET>"
 ```
-</details>
+
+> *(如需双向私聊)* 新建开启 **「话题 (Topics)」** 的私密群、把机器人设为管理员，群内发一句 **`/bind`** 即可完成绑定。
 
 <details>
-<summary><b>🐧 方式四：Linux VPS（Debian / Ubuntu / CentOS / Rocky / Arch / Alpine / Docker / 自托管）</b></summary>
+<summary><b>🛠️ 环境安装（Windows / macOS）与 Linux VPS / Docker / 纯自托管</b></summary>
 
-#### 1. 安装 Git & Node.js 22
-- **Debian / Ubuntu**：`sudo apt update && sudo apt install -y curl git ca-certificates && curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash - && sudo apt install -y nodejs`
-- **CentOS Stream / Rocky / AlmaLinux**：`sudo dnf install -y curl git && curl -fsSL https://rpm.nodesource.com/setup_22.x | sudo bash - && sudo dnf install -y nodejs`
-- **Arch Linux**：`sudo pacman -Syu --noconfirm git nodejs npm`
-- **Alpine Linux**：`apk add --no-cache git nodejs npm`
+- **Windows 安装 Git & Node**：`winget install --id Git.Git -e && winget install --id OpenJS.NodeJS.LTS -e`
+- **macOS 安装 Git & Node**：`brew install git node`
+- **Linux 安装 Git & Node 22**：
+  - Debian / Ubuntu：`sudo apt update && sudo apt install -y curl git ca-certificates && curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash - && sudo apt install -y nodejs`
+  - CentOS / Rocky / Alma：`sudo dnf install -y curl git && curl -fsSL https://rpm.nodesource.com/setup_22.x | sudo bash - && sudo dnf install -y nodejs`
+  - Arch：`sudo pacman -Syu --noconfirm git nodejs npm` ｜ Alpine：`apk add --no-cache git nodejs npm`
 
-#### 2. 无浏览器服务器推送到 Cloudflare Workers
+#### 无浏览器 VPS 推送到 Cloudflare Workers
 ```bash
-git clone https://github.com/mango0114/rose-panel-bot.git
-cd rose-panel-bot && npm ci
+git clone https://github.com/mango0114/rose-panel-bot.git && cd rose-panel-bot && npm ci
 export CLOUDFLARE_API_TOKEN="你的_Cloudflare_API_Token"
-npm run deploy
+npm run build && npx wrangler deploy --var ADMIN_IDS:你的数字UID --var BOT_USERNAME:你的Bot用户名
 echo "你的_BOT_TOKEN" | npx wrangler secret put BOT_TOKEN
 echo "你的随机_WEBHOOK_SECRET" | npx wrangler secret put WEBHOOK_SECRET
+curl -s "https://<你的Worker域名>/setup?secret=<你的WEBHOOK_SECRET>"
 ```
 
-#### 3. Docker 一行部署（不污染宿主机）
+#### Docker 一行部署（不污染宿主机）
 ```bash
 git clone https://github.com/mango0114/rose-panel-bot.git && cd rose-panel-bot
-docker run --rm -it -v "$PWD":/app -w /app -e CLOUDFLARE_API_TOKEN="你的_API_Token" node:22-alpine sh -c "npm ci && npm run deploy"
+docker run --rm -it -v "$PWD":/app -w /app -e CLOUDFLARE_API_TOKEN="你的_API_Token" node:22-alpine \
+  sh -c "npm ci && npm run build && npx wrangler deploy --var ADMIN_IDS:你的数字UID --var BOT_USERNAME:你的Bot用户名"
 ```
 
-#### 4. 纯 VPS 自托管（配合 Caddy 自动 HTTPS）
+#### 纯 VPS 自托管（配合 Caddy 自动 HTTPS）
 ```bash
 npm ci && npm run build && cp .dev.vars.example .dev.vars
 # 编辑 .dev.vars 填入真实变量（DEV_PREVIEW 仅在 localhost 生效，生产保持 "false"）
