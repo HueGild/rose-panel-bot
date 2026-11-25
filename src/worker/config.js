@@ -84,11 +84,11 @@ export const DEFAULT_CONFIG = {
     },
   ],
   probe: {
-    provider: 'komari', // komari | link
+    provider: 'komari', // komari | nezha | nodeget | json
     url: '',
     publicUrl: '',
     apiKey: '',
-    title: 'Komari 节点探针',
+    title: '节点探针',
     subtitle: '实时节点监控与负载一览',
     cacheTtlSeconds: 15,
     demoMode: false,
@@ -208,6 +208,8 @@ export function normalizeSplash(baseSplash = DEFAULT_SPLASH, override = null) {
   return merged;
 }
 
+export const PROBE_PROVIDER_IDS = ['komari', 'nezha', 'nodeget', 'json'];
+
 export function mergeConfig(base, override) {
   if (!override || typeof override !== 'object') {
     const cloned = structuredClone(base);
@@ -215,6 +217,7 @@ export function mergeConfig(base, override) {
     cloned.profile.emblem = normalizeEmblem(cloned.profile.emblem);
     cloned.profile.splash = normalizeSplash(cloned.profile.splash);
     cloned.probe.visibility = cloned.probe.visibility === 'private' ? 'private' : 'public';
+    cloned.probe.provider = PROBE_PROVIDER_IDS.includes(cloned.probe.provider) ? cloned.probe.provider : 'komari';
     return cloned;
   }
   const rawSites = Array.isArray(override.sites) ? override.sites : base.sites;
@@ -223,6 +226,7 @@ export function mergeConfig(base, override) {
     ...(override.probe || {}),
   };
   mergedProbe.visibility = mergedProbe.visibility === 'private' ? 'private' : 'public';
+  mergedProbe.provider = PROBE_PROVIDER_IDS.includes(mergedProbe.provider) ? mergedProbe.provider : 'komari';
   return {
     profile: {
       ...base.profile,
@@ -254,14 +258,21 @@ export async function loadPanelConfig(env) {
   if (!saved?.profile?.handle && env.BOT_USERNAME) {
     merged.profile.handle = `@${env.BOT_USERNAME.replace(/^@/, '')}`;
   }
-  if (!merged.probe.url && env.KOMARI_URL) {
-    merged.probe.url = env.KOMARI_URL;
+  // PROBE_* are the generic names; KOMARI_* are kept for backward compatibility
+  const envProbeUrl = env.PROBE_URL || env.KOMARI_URL;
+  const envProbeKey = env.PROBE_API_KEY || env.KOMARI_API_KEY;
+  const envProbeProvider = String(env.PROBE_PROVIDER || '').trim().toLowerCase();
+  if (!saved?.probe?.provider && PROBE_PROVIDER_IDS.includes(envProbeProvider)) {
+    merged.probe.provider = envProbeProvider;
   }
-  if (!merged.probe.publicUrl && (merged.probe.url || env.KOMARI_URL)) {
-    merged.probe.publicUrl = merged.probe.url || env.KOMARI_URL;
+  if (!merged.probe.url && envProbeUrl) {
+    merged.probe.url = envProbeUrl;
   }
-  if (!merged.probe.apiKey && env.KOMARI_API_KEY) {
-    merged.probe.apiKey = env.KOMARI_API_KEY;
+  if (!merged.probe.publicUrl && (merged.probe.url || envProbeUrl)) {
+    merged.probe.publicUrl = merged.probe.url || envProbeUrl;
+  }
+  if (!merged.probe.apiKey && envProbeKey) {
+    merged.probe.apiKey = envProbeKey;
   }
   if (saved?.community?.enableCheckin === undefined && env.ENABLE_CHECKIN !== undefined) {
     merged.community.enableCheckin = String(env.ENABLE_CHECKIN).toLowerCase() === 'true';

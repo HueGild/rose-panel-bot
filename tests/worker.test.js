@@ -946,3 +946,250 @@ describe('Security hardening: webhook secret, /setup guard & DEV_PREVIEW scope',
     expect((await localAdmin.json()).isAdmin).toBe(true);
   });
 });
+
+function createMockWebSocket(onSend) {
+  const listeners = { message: [], close: [], error: [] };
+  const ws = {
+    accepted: false,
+    closed: false,
+    accept() {
+      this.accepted = true;
+    },
+    addEventListener(type, fn) {
+      if (listeners[type]) listeners[type].push(fn);
+    },
+    emit(type, payload) {
+      for (const fn of [...(listeners[type] || [])]) fn(payload);
+    },
+    send(data) {
+      onSend?.(ws, data);
+    },
+    close() {
+      if (this.closed) return;
+      this.closed = true;
+      this.emit('close', {});
+    },
+  };
+  return ws;
+}
+
+describe('Pluggable probe providers (Nezha v1 WS/REST & v0, NodeGet, generic JSON)', () => {
+  const env = () => ({ TOPIC_MAP: createMemoryKV() });
+
+  it('fetches public Nezha v1 dashboards over /api/v1/ws/server without a token and converts country codes to flags', async () => {
+    const origFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn(async (url, init) => {
+      expect(String(url)).toBe('https://nezha.test/api/v1/ws/server');
+      expect(init.headers.Upgrade).toBe('websocket');
+      expect(init.headers.Origin).toBe('https://nezha.test');
+      const ws = createMockWebSocket();
+      const origAccept = ws.accept.bind(ws);
+      ws.accept = () => {
+        origAccept();
+        queueMicrotask(() => {
+          ws.emit('message', {
+            data: JSON.stringify({
+              now: Date.now(),
+              online: 1,
+              servers: [
+                {
+                  id: 7,
+                  name: 'HK-Public',
+                  country_code: 'hk',
+                  host: { platform: 'debian', mem_total: 2048, disk_total: 4096, cpu: ['AMD EPYC'] },
+                  state: { cpu: 18.5, mem_used: 1024, disk_used: 1024, net_in_speed: 100, net_out_speed: 200, uptime: 3600 },
+                  last_active: new Date().toISOString(),
+                },
+              ],
+            }),
+          });
+        });
+      };
+      return { status: 101, webSocket: ws };
+    });
+
+    try {
+      const res = await fetchKomariStatus(env(), { provider: 'nezha', url: 'https://nezha.test' }, { forceRefresh: true });
+      expect(res.protocol).toBe('nezha-v1-ws');
+      expect(res.provider).toBe('nezha');
+      expect(res.nodes[0]).toMatchObject({
+        name: 'HK-Public',
+        region: '🇭🇰',
+        online: true,
+        cpuUsage: 18.5,
+        ramUsage: 50,
+        diskUsage: 25,
+        netUp: 200,
+        netDown: 100,
+      });
+    } finally {
+      globalThis.fetch = origFetch;
+    }
+  });
+
+  it('supports authenticated Nezha v1 REST and falls back to Nezha v0 raw-token REST', async () => {
+    const origFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn(async (url, init) => {
+      if (String(url).endsWith('/api/v1/server')) {
+        expect(init.headers.Authorization).toBe('Bearer tok123');
+        return new Response('Unauthorized', { status: 401 });
+      }
+      if (String(url).endsWith('/api/v1/ws/server')) {
+        return new Response('Forbidden', { status: 403 });
+      }
+      if (String(url).endsWith('/api/v1/server/details')) {
+        // Nezha v0 expects raw token without "Bearer "
+        expect(init.headers.Authorization).toBe('tok123');
+        return new Response(
+          JSON.stringify({
+            code: 0,
+            result: [
+              {
+                id: 2,
+                name: 'JP-v0',
+                tag: 'Asia',
+                host: { Platform: 'ubuntu', CountryCode: 'jp', MemTotal: 4000, DiskTotal: 8000 },
+                status: { CPU: 25, MemUsed: 1000, DiskUsed: 4000, NetInSpeed: 50, NetOutSpeed: 80, Uptime: 500 },
+                last_active: Math.floor(Date.now() / 1000),
+              },
+            ],
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      throw new Error(`Unexpected URL: ${url}`);
+    });
+
+    try {
+      const res = await fetchKomariStatus(
+        env(),
+        { provider: 'nezha', url: 'https://nezha-v0.test', apiKey: 'tok123' },
+        { forceRefresh: true }
+      );
+      expect(res.protocol).toBe('nezha-v0');
+      expect(res.nodes[0]).toMatchObject({
+        name: 'JP-v0',
+        region: '🇯🇵',
+        group: 'Asia',
+        online: true,
+        cpuUsage: 25,
+        ramUsage: 25,
+        diskUsage: 50,
+      });
+    } finally {
+      globalThis.fetch = origFetch;
+    }
+  });
+
+  it('fetches NodeGet (NodeSeek official probe) nodes via WebSocket JSON-RPC 2.0 and filters hidden nodes', async () => {
+    const origFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn(async (url, init) => {
+      expect(String(url)).toBe('https://nodeget.test');
+      expect(init.headers.Upgrade).toBe('websocket');
+      const ws = createMockWebSocket((sock, raw) => {
+        const req = JSON.parse(raw);
+        expect(req.params.token).toBe('ng-token');
+        let result;
+        if (req.method === 'nodeget-server_list_all_agent_uuid') {
+          result = { uuids: ['u-pub', 'u-hid'] };
+        } else if (req.method === 'kv_get_multi_value') {
+          result = [
+            { namespace: 'u-pub', key: 'metadata_name', value: 'Tokyo-NG' },
+            { namespace: 'u-pub', key: 'metadata_region', value: 'jp' },
+            { namespace: 'u-pub', key: 'metadata_tags', value: ['NodeSeek', 'BGP'] },
+            { namespace: 'u-hid', key: 'metadata_hidden', value: true },
+          ];
+        } else if (req.method === 'agent_static_data_multi_last_query') {
+          result = [
+            {
+              uuid: 'u-pub',
+              system: { distribution_id: 'debian', cpu_arch: 'amd64', virtualization: 'kvm' },
+              cpu: { brand: 'AMD EPYC 9654', logical_cores: 4 },
+            },
+          ];
+        } else if (req.method === 'agent_dynamic_summary_multi_last_query') {
+          result = [
+            {
+              uuid: 'u-pub',
+              timestamp: Math.floor(Date.now() / 1000),
+              cpu_usage: 14.2,
+              used_memory: 1000,
+              total_memory: 4000,
+              total_space: 10000,
+              available_space: 6000,
+              receive_speed: 300,
+              transmit_speed: 500,
+              load_one: 0.42,
+              uptime: 86400,
+            },
+          ];
+        }
+        queueMicrotask(() => {
+          sock.emit('message', { data: JSON.stringify({ jsonrpc: '2.0', id: req.id, result }) });
+        });
+      });
+      return { status: 101, webSocket: ws };
+    });
+
+    try {
+      const res = await fetchKomariStatus(
+        env(),
+        { provider: 'nodeget', url: 'wss://nodeget.test', apiKey: 'ng-token' },
+        { forceRefresh: true }
+      );
+      expect(res.protocol).toBe('nodeget-rpc');
+      expect(res.nodes).toHaveLength(1);
+      expect(res.nodes[0]).toMatchObject({
+        uuid: 'u-pub',
+        name: 'Tokyo-NG',
+        region: '🇯🇵',
+        online: true,
+        cpuUsage: 14.2,
+        ramUsage: 25,
+        diskUsage: 40,
+        netUp: 500,
+        netDown: 300,
+      });
+    } finally {
+      globalThis.fetch = origFetch;
+    }
+  });
+
+  it('auto-detects generic JSON probes, isolates KV cache by provider, and rejects empty URL test', async () => {
+    const kv = createMemoryKV();
+    const testEnv = { TOPIC_MAP: kv, BOT_TOKEN: '123:ABC', ADMIN_IDS: '10001', DEV_PREVIEW: 'true' };
+    const origFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          servers: [{ name: 'CF-1', location: 'us', online: true, cpu: 0.3, memory_total: 1000, memory_used: 250, uptime: 50 }],
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      )
+    );
+
+    try {
+      const res = await fetchKomariStatus(
+        testEnv,
+        { provider: 'json', url: 'https://probe.test/api/stats.json' },
+        { forceRefresh: false }
+      );
+      expect(res.protocol).toBe('json');
+      expect(res.nodes[0]).toMatchObject({ name: 'CF-1', region: '🇺🇸', online: true, cpuUsage: 30, ramUsage: 25 });
+
+      // Empty URL test in admin endpoint returns 400 instead of false-positive success
+      const emptyTestRes = await worker.fetch(
+        new Request('http://localhost:8787/api/admin/probe/test', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Dev-Role': 'admin' },
+          body: JSON.stringify({ provider: 'json', url: '', demoMode: false }),
+        }),
+        testEnv
+      );
+      expect(emptyTestRes.status).toBe(400);
+      expect((await emptyTestRes.json()).ok).toBe(false);
+    } finally {
+      globalThis.fetch = origFetch;
+    }
+  });
+});

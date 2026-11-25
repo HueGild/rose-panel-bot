@@ -82,9 +82,9 @@
   - Edge-injected customizable splash screen (`emblem` breathing halo / `emoji` bounce / `skeleton` shimmer) + local SWR cache + single-key admin overview cache (50× fewer KV reads) + automatic Telegram native dark/light chrome sync.
   - Send `/set` with any `.webp` / `.webm` / 60fps `.tgs` sticker or Custom Emoji to instantly update your main emblem and save it to your collection library.
   - Admin-only **Owner Overview** card on the home tab (blocked spam count, active visitors, recent contacts) + optional 1-click **Group Check-in, Points & Badges System**.
-- **🌐 Public / Private Site Directory & 📡 Komari Server Probe**
+- **🌐 Public / Private Site Directory & 📡 Pluggable Server Probe**
   - Categories, search, drag-free reordering, and 1-tap **`Public` vs `🔒 Private`** visibility toggle (private sites are strictly omitted server-side for non-admins).
-  - Native **Komari v2 (`/api/rpc2`)** and **v1 (`/api/nodes`)** adapter with redirect-loop protection, 15s edge caching, and a **`🔒 Private (Admin Only)`** visibility switch.
+  - Pluggable probe registry supporting **Komari (v2/v1)**, **Nezha (v1 public WebSocket / v1 REST / v0 REST)**, **NodeGet (NodeSeek official probe)**, and **Generic JSON** probes, with built-in connection testing, redirect-loop protection, 15s edge caching, and **`🔒 Private (Admin Only)`** visibility toggle.
 - **💬 In-Group `/bind` Setup + Bidirectional Photo Album & Link Archive**
   - Create a private Telegram group with **Topics** enabled, make the bot an admin, and send **`/bind`** — **no `-100...` group ID lookup or manual `SUPERGROUP_ID` editing required!**
   - Tracks bidirectional message counts, auto-archives exchanged photos (30-min HMAC-signed private proxy + lightbox) & links, with notes, 1-tap Ban/Trust/Close, and two-tier chat history clearing.
@@ -124,7 +124,7 @@ Unused modules stay completely hidden and add zero overhead; includes [AGENTS.md
 | Module | Default | Activation | Notes |
 | :--- | :---: | :--- | :--- |
 | **🪪 Personal Card + 🌐 Public/Private Sites** | Core | `BOT_TOKEN` + `TOPIC_MAP` KV | Lightweight baseline with animated TG sticker emblems & dual-layer sites |
-| **📡 Komari Server Probe** | Optional | Enter URL in Mini App | Hidden from visitors when unconfigured or set to Admin Only |
+| **📡 Pluggable Server Probe** | Optional | Pick provider & URL in Mini App | Supports **Komari / Nezha (v1/v0) / NodeGet / Generic JSON**; hidden when unconfigured or Admin Only |
 | **👤 Bidirectional PM Bot + 4-Layer Shield** | Optional | Send `/bind` in Topics group (or `SUPERGROUP_ID`) | Forum Topics inbox, photo/link archive, CAS & sticker verification |
 | **🛡️ CF Turnstile Strict Mode** | Optional | `TURNSTILE_SITE_KEY` & `SECRET` | Auto-escalates high-risk ads or toggle manually in Settings |
 | **🌸 Group Check-in, Points & Badges** | Optional | `ENABLE_CHECKIN="true"` or in-app switch | Off by default for personal cards; 1-click on for group communities |
@@ -223,7 +223,8 @@ Reverse-proxy `127.0.0.1:8787` with Caddy (`reverse_proxy 127.0.0.1:8787`) for a
 | `APP_SHORT_NAME` | Text | Recommended | BotFather `/newapp` short name (e.g. `panel`) |
 | `SUPERGROUP_ID` | Text | Optional | Forum group ID (**recommended: simply run `/bind` in your group!**) |
 | `TURNSTILE_SITE_KEY` / `TURNSTILE_SECRET` | Text / Secret | Optional | Required only for CF Turnstile strict mode |
-| `KOMARI_URL` / `KOMARI_API_KEY` | Text / Secret | Optional | Komari URL & private auth (also editable in Mini App) |
+| `PROBE_PROVIDER` | Text | Optional | Probe provider: `komari` (default) / `nezha` / `nodeget` / `json` |
+| `PROBE_URL` / `PROBE_API_KEY` | Text / Secret | Optional | Probe URL & optional auth (legacy `KOMARI_URL` / `KOMARI_API_KEY` remain compatible; also configurable & testable in Mini App) |
 
 ---
 

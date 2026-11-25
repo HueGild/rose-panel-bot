@@ -11,7 +11,7 @@ import {
   sanitizePublicConfig,
   savePanelConfig,
 } from './config.js';
-import { fetchKomariStatus } from './komari.js';
+import { fetchProbeStatus } from './komari.js';
 import {
   handleAvatarProxy,
   handleSignedMediaProxy,
@@ -148,7 +148,7 @@ export async function handleApiRequest(request, env, url) {
       return json({ ok: false, error: '探针已设为仅站长可见' }, 403);
     }
     const force = url.searchParams.get('force') === '1' && auth.isAdmin;
-    const probeData = await fetchKomariStatus(env, config.probe, { forceRefresh: force });
+    const probeData = await fetchProbeStatus(env, config.probe, { forceRefresh: force });
     return json({ ok: true, ...probeData });
   }
 
@@ -336,8 +336,11 @@ export async function handleApiRequest(request, env, url) {
         ...(body || {}),
         apiKey: body?.apiKey === '********' ? config.probe.apiKey : body?.apiKey ?? config.probe.apiKey,
       };
-      const result = await fetchKomariStatus(env, testProbeConfig, { forceRefresh: true });
-      return json({ ok: !result.error, ...result });
+      if (!String(testProbeConfig.url || '').trim() && !testProbeConfig.demoMode) {
+        return json({ ok: false, error: '请先填写探针地址再测试连接' }, 400);
+      }
+      const result = await fetchProbeStatus(env, testProbeConfig, { forceRefresh: true });
+      return json({ ok: !result.error, ...result }, result.error ? 400 : 200);
     }
   }
 
