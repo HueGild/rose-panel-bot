@@ -73,15 +73,15 @@ const EMOJI_ITEMS = [
 ];
 
 const ODD_ONE_PAIRS = [
-  ['🌸', '🌺'],
+  ['🌸', '🌵'],
   ['🌕', '🌙'],
-  ['🍎', '🍓'],
-  ['🐱', '🦊'],
+  ['🍎', '🍌'],
+  ['🐱', '🐼'],
   ['💙', '💗'],
   ['🍀', '🍁'],
-  ['⭐', '🌟'],
-  ['🍩', '🍪'],
-  ['🧁', '🍰'],
+  ['⭐', '☁️'],
+  ['🍩', '🍉'],
+  ['🚀', '☂️'],
 ];
 
 function randomInt(max) {
@@ -1151,6 +1151,10 @@ async function handleCallbackQuery(env, requestOrigin, cq, config) {
       await env.TOPIC_MAP.put(`banned:${state.userId}`, '1');
       await env.TOPIC_MAP.delete(`chal:${verifyId}`);
       await env.TOPIC_MAP.delete(`user_challenge:${state.userId}`);
+      await upsertVisitorProfile(env, cq.from, {
+        incrementMsg: false,
+        lastPreview: '[触发蜜罐陷阱 · 已自动拉黑]',
+      }).catch(() => {});
       await recordBlockedSpam(env);
       if (state.stickerMessageId && cq.message?.chat?.id) {
         await tgCall(env, 'deleteMessage', {
@@ -1890,6 +1894,10 @@ export async function handleTelegramUpdate(update, env, requestOrigin) {
         const cas = await checkCasBlacklist(env, uid);
         if (cas.isSpammer) {
           await env.TOPIC_MAP.put(`banned:${uid}`, '1');
+          await upsertVisitorProfile(env, msg.from, {
+            incrementMsg: false,
+            lastPreview: '[命中 CAS 黑名单 · 已自动拦截]',
+          }).catch(() => {});
           await recordBlockedSpam(env);
           return;
         }

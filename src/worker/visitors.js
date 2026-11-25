@@ -527,14 +527,17 @@ export async function applyVisitorAction(env, userId, action, payload = {}) {
       break;
     case 'unban':
       await env.TOPIC_MAP.delete(`banned:${uid}`);
+      await env.TOPIC_MAP.delete(`verify_cool:${uid}`);
       break;
     case 'trust':
       await env.TOPIC_MAP.delete(`banned:${uid}`);
+      await env.TOPIC_MAP.delete(`verify_cool:${uid}`);
       await env.TOPIC_MAP.put(`verified:${uid}`, 'trusted');
       await env.TOPIC_MAP.delete(`needs_verify:${uid}`);
       break;
     case 'reset':
       await env.TOPIC_MAP.delete(`verified:${uid}`);
+      await env.TOPIC_MAP.delete(`verify_cool:${uid}`);
       await env.TOPIC_MAP.put(`needs_verify:${uid}`, '1', { expirationTtl: 600 });
       break;
     case 'close':

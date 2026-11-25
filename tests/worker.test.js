@@ -2083,3 +2083,56 @@ describe('Card labels cleanup (labelsRev 2)', () => {
     expect((await loadPanelConfig(env)).profile.badgeTitle).toBe('站长 · Owner');
   });
 });
+
+describe('Honeypot / CAS auto-ban visibility & unban cooldown clearing', () => {
+  it('indexes honeypot-banned visitors so admin can inspect and unban them (clearing cooldown too)', async () => {
+    const kv = createMemoryKV();
+    const env = {
+      TOPIC_MAP: kv,
+      BOT_TOKEN: '555111:HONEYPOT_TEST_TOKEN',
+      ADMIN_IDS: '10001',
+      SUPERGROUP_ID: '-100888999',
+    };
+
+    const origFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn(async () => new Response(JSON.stringify({ ok: true, result: true }), { status: 200 }));
+
+    try {
+      // Seed active challenge for visitor 60001
+      await kv.put(
+        'chal:traptest1',
+        JSON.stringify({ userId: '60001', correctIndex: 0, failures: 0, mode: 'emoji' })
+      );
+      await kv.put('user_challenge:60001', 'traptest1');
+
+      // Visitor accidentally clicks honeypot decoy button
+      await handleTelegramUpdate(
+        {
+          callback_query: {
+            id: 'cq_trap',
+            from: { id: 60001, first_name: 'CuriousHuman', username: 'curious_user' },
+            data: 'v:traptest1:trap',
+            message: { message_id: 9, chat: { id: 60001, type: 'private' } },
+          },
+        },
+        env,
+        'https://panel.test'
+      );
+
+      expect(await kv.get('banned:60001')).toBe('1');
+
+      // Admin opens Visitors -> Banned tab and immediately finds the user to unban!
+      const bannedList = await listVisitors(env, { filter: 'banned' });
+      expect(bannedList.items.some((v) => v.userId === '60001' && v.isBanned)).toBe(true);
+      expect(bannedList.items.find((v) => v.userId === '60001')?.last_preview).toContain('蜜罐');
+
+      // Even if a cooldown existed, admin unban clears both banned:<uid> and verify_cool:<uid>
+      await kv.put('verify_cool:60001', '1');
+      await applyVisitorAction(env, '60001', 'unban');
+      expect(await kv.get('banned:60001')).toBeNull();
+      expect(await kv.get('verify_cool:60001')).toBeNull();
+    } finally {
+      globalThis.fetch = origFetch;
+    }
+  });
+});
