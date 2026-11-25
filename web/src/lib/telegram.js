@@ -100,6 +100,25 @@ export function openExternalUrl(url) {
   window.open(url, '_blank', 'noopener,noreferrer');
 }
 
+export function closeMiniApp() {
+  const tg = getTelegramWebApp();
+  try {
+    tg?.close?.();
+  } catch {
+    // Ignore outside Telegram
+  }
+}
+
+export function isOpenedFromGroup() {
+  const tg = getTelegramWebApp();
+  const chatType = tg?.initDataUnsafe?.chat_type || '';
+  if (chatType === 'group' || chatType === 'supergroup' || chatType === 'channel') {
+    return true;
+  }
+  const sp = String(tg?.initDataUnsafe?.start_param || '');
+  return Boolean(sp);
+}
+
 export async function copyText(text) {
   if (!text) return false;
   try {

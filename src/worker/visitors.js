@@ -190,7 +190,12 @@ export async function recordVisitorExchange(env, userId, msg, options = {}) {
   }
 
   if (pmMessageId && Number.isFinite(Number(pmMessageId))) {
-    history.pmMessageIds.unshift({ id: Number(pmMessageId), at: nowMs });
+    history.pmMessageIds.unshift({
+      id: Number(pmMessageId),
+      topicMsgId: msg?.message_id ? Number(msg.message_id) : null,
+      sender,
+      at: nowMs,
+    });
     history.pmMessageIds = history.pmMessageIds.slice(0, MAX_PM_IDS);
   }
 
@@ -595,4 +600,48 @@ export async function applyVisitorAction(env, userId, action, payload = {}) {
   await addToVisitorIndex(env, uid);
   await invalidateVisitorSummaryCache(env);
   return await getVisitorDetail(env, uid);
+}
+
+/**
+ * Recalls an admin reply sent to a visitor in private chat (either matching a replied-to topic message
+ * or falling back to the most recent admin reply within 48 hours).
+ */
+export async function recallAdminVisitorMessage(env, userId, replyToTopicMsgId = null, tgCallFn = null) {
+  const uid = String(userId || '');
+  if (!env.TOPIC_MAP || !/^\d+$/.test(uid) || typeof tgCallFn !== 'function') {
+    return { ok: false, error: '参数无效' };
+  }
+  const historyKey = `history:${uid}`;
+  const history = (await safeGetJSON(env.TOPIC_MAP, historyKey, null)) || {
+    photos: [],
+    links: [],
+    pmMessageIds: [],
+  };
+  const list = Array.isArray(history.pmMessageIds) ? history.pmMessageIds : [];
+  const idx = replyToTopicMsgId
+    ? list.findIndex((m) => Number(m?.topicMsgId) === Number(replyToTopicMsgId) && m?.sender !== 'visitor')
+    : list.findIndex((m) => m?.sender === 'admin');
+
+  if (idx === -1) {
+    return {
+      ok: false,
+      error: replyToTopicMsgId
+        ? '未找到该条消息对应的私聊记录（仅支持撤回站长发出的近期消息）'
+        : '暂无可撤回的站长近期回复记录',
+    };
+  }
+
+  const target = list[idx];
+  try {
+    await tgCallFn(env, 'deleteMessage', {
+      chat_id: Number(uid),
+      message_id: Number(target.id),
+    });
+  } catch (err) {
+    return { ok: false, error: `撤回失败（可能已超过 Telegram 48 小时撤回时限）：${err.message}` };
+  }
+
+  history.pmMessageIds = list.filter((_, i) => i !== idx);
+  await safePutJSON(env.TOPIC_MAP, historyKey, history);
+  return { ok: true, deletedPmMessageId: target.id };
 }

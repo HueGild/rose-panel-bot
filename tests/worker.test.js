@@ -1619,8 +1619,8 @@ describe('Topic visitor profile card clickable mention & optional avatar photo m
   });
 });
 
-describe('Configurable /start welcome card & panel button visibility', () => {
-  it('supports default welcome card, text-only welcome without panel button, silent /start, and always-available /panel', async () => {
+describe('Configurable /start verification-first flow & panel button visibility', () => {
+  it('immediately triggers verification on stranger /start, prompts to chat after passing, and honors welcome/panel toggles', async () => {
     const kv = createMemoryKV();
     const env = {
       TOPIC_MAP: kv,
@@ -1632,6 +1632,9 @@ describe('Configurable /start welcome card & panel button visibility', () => {
     const tgCalls = [];
     const origFetch = globalThis.fetch;
     globalThis.fetch = vi.fn(async (url, init) => {
+      if (String(url).includes('api.cas.chat')) {
+        return new Response(JSON.stringify({ ok: false }), { status: 200 });
+      }
       const method = String(url).split('/').pop();
       const body = init?.body ? JSON.parse(init.body) : {};
       tgCalls.push({ method, body });
@@ -1648,25 +1651,49 @@ describe('Configurable /start welcome card & panel button visibility', () => {
     });
 
     try {
-      // 1. Legacy/default config -> both toggles default to true; /start sends welcome + inline panel button
       const defaultCfg = await loadPanelConfig(env);
       expect(defaultCfg.pmBot.enableStartWelcome).toBe(true);
       expect(defaultCfg.pmBot.showPanelButtonInWelcome).toBe(true);
 
+      // 1. Unverified stranger sends /start -> immediately receives verification challenge (with owner welcome header)
       await handleTelegramUpdate(mkPrivateMsg('/start'), env, 'https://panel.test');
       expect(tgCalls).toHaveLength(1);
       expect(tgCalls[0].method).toBe('sendMessage');
-      expect(tgCalls[0].body.reply_markup?.inline_keyboard?.length).toBe(1);
+      expect(tgCalls[0].body.text).toContain('私聊助手');
+      expect(tgCalls[0].body.text).toContain('人机验证');
+      const chalId = await kv.get('user_challenge:20002');
+      expect(chalId).toBeTruthy();
+      const chalState = JSON.parse(await kv.get(`chal:${chalId}`));
+      expect(chalState.pending).toEqual([]); // /start is NOT queued as a chat message
 
-      // 2. Keep welcome text, hide panel button -> /start sends plain text welcome without reply_markup
+      // Stranger passes verification -> message clearly tells them they can type directly now!
+      tgCalls.length = 0;
+      await handleTelegramUpdate(
+        {
+          callback_query: {
+            id: 'cq_pass_start',
+            from: { id: 20002, first_name: 'Visitor' },
+            data: `v:${chalId}:${chalState.correctIndex}`,
+            message: { message_id: 1, chat: { id: 20002, type: 'private' } },
+          },
+        },
+        env,
+        'https://panel.test'
+      );
+      const editPass = tgCalls.find((c) => c.method === 'editMessageText');
+      expect(editPass.body.text).toContain('现在您可以直接在下方输入框打字');
+      expect(editPass.body.reply_markup?.inline_keyboard?.length).toBe(1);
+      expect(tgCalls.some((c) => c.method === 'createForumTopic')).toBe(false);
+
+      // 2. Now verified: /start with showPanelButtonInWelcome: false sends text-only ready-to-chat welcome
       tgCalls.length = 0;
       await savePanelConfig(env, { pmBot: { enableStartWelcome: true, showPanelButtonInWelcome: false } });
       await handleTelegramUpdate(mkPrivateMsg('/start'), env, 'https://panel.test');
       expect(tgCalls).toHaveLength(1);
-      expect(tgCalls[0].body.text).toContain('私聊助手');
+      expect(tgCalls[0].body.text).toContain('已完成验证');
       expect(tgCalls[0].body.reply_markup).toBeUndefined();
 
-      // 3. Disable /start welcome completely -> /start is silent, while /panel still opens panel with buttons
+      // 3. Verified + enableStartWelcome: false -> /start stays silent, while /panel always opens panel
       tgCalls.length = 0;
       await savePanelConfig(env, { pmBot: { enableStartWelcome: false } });
       await handleTelegramUpdate(mkPrivateMsg('/start'), env, 'https://panel.test');
@@ -1674,7 +1701,7 @@ describe('Configurable /start welcome card & panel button visibility', () => {
 
       await handleTelegramUpdate(mkPrivateMsg('/panel', 10001), env, 'https://panel.test');
       expect(tgCalls).toHaveLength(1);
-      expect(tgCalls[0].body.reply_markup?.inline_keyboard?.length).toBe(2); // panel + admin visitor dashboard
+      expect(tgCalls[0].body.reply_markup?.inline_keyboard?.length).toBe(2);
     } finally {
       globalThis.fetch = origFetch;
     }
@@ -2231,6 +2258,163 @@ describe('Honeypot / CAS auto-ban visibility & unban cooldown clearing', () => {
       );
       expect(await kv.get('banned:60001')).toBeNull();
       expect(await kv.get('user_challenge:60001')).toBeTruthy();
+    } finally {
+      globalThis.fetch = origFetch;
+    }
+  });
+});
+
+describe('v1.6.0: Mini App PM wake-up, Bot surface sync, legacy social cleanup, /del recall & General hint', () => {
+  it('cleans legacy non-clickable TG social row once while preserving custom socials', async () => {
+    expect(DEFAULT_CONFIG.profile.socials).toHaveLength(1);
+    const kv = createMemoryKV();
+    const env = { TOPIC_MAP: kv, BOT_TOKEN: '123:SOC', ADMIN_IDS: '10001' };
+
+    await kv.put(
+      'config:panel',
+      JSON.stringify({
+        profile: {
+          socials: [
+            { id: 'tg', label: 'Telegram 私聊', value: '直接发送消息即可联系我', url: '' },
+            { id: 'blog', label: 'Blog', value: 'my.blog', url: 'https://my.blog' },
+          ],
+        },
+      })
+    );
+    const loaded = await loadPanelConfig(env);
+    expect(loaded.profile.socials).toHaveLength(1);
+    expect(loaded.profile.socials[0].id).toBe('blog');
+  });
+
+  it('wakes up verification from POST /api/chat/start, syncs Bot description & menu button on save, supports /del recall & General topic hint', async () => {
+    const kv = createMemoryKV();
+    const botToken = '777888:SURFACE_TEST_TOKEN';
+    const env = {
+      TOPIC_MAP: kv,
+      BOT_TOKEN: botToken,
+      ADMIN_IDS: '10001',
+      SUPERGROUP_ID: '-100555666',
+    };
+
+    const tgCalls = [];
+    const origFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn(async (url, init) => {
+      if (String(url).includes('api.cas.chat')) {
+        return new Response(JSON.stringify({ ok: false }), { status: 200 });
+      }
+      const method = String(url).split('/').pop();
+      const body = init?.body ? JSON.parse(init.body) : {};
+      tgCalls.push({ method, body });
+      if (method === 'getMe') {
+        return new Response(JSON.stringify({ ok: true, result: { id: 777888, username: 'AutoSynced_bot' } }), {
+          status: 200,
+        });
+      }
+      if (method === 'copyMessage') {
+        return new Response(JSON.stringify({ ok: true, result: { message_id: 404 } }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ ok: true, result: { message_id: 88 } }), { status: 200 });
+    });
+
+    try {
+      // 1. Admin saves config over HTTPS -> auto-syncs setMyDescription, getMe username & default menu button when showChatMenuButton=false
+      const adminInit = await signInitData(
+        { auth_date: String(Math.floor(Date.now() / 1000)), user: JSON.stringify({ id: 10001, first_name: 'Owner' }) },
+        botToken
+      );
+      const saveRes = await worker.fetch(
+        new Request('https://panel.example.com/api/admin/config', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json', 'X-Telegram-Init-Data': adminInit },
+          body: JSON.stringify({
+            pmBot: {
+              welcomeText: '欢迎来到我的机器人，点开始即可验证私聊！',
+              syncBotDescription: true,
+              showChatMenuButton: false,
+              verifiedDays: 90,
+            },
+          }),
+        }),
+        env
+      );
+      const saveJson = await saveRes.json();
+      expect(saveJson.ok).toBe(true);
+      expect(saveJson.config.bot.username).toBe('AutoSynced_bot');
+      expect(saveJson.adminConfig.pmBot.verifiedDays).toBe(90);
+      expect(tgCalls.some((c) => c.method === 'setMyDescription' && c.body.description.includes('点开始即可验证'))).toBe(true);
+      expect(tgCalls.some((c) => c.method === 'setChatMenuButton' && c.body.menu_button?.type === 'default')).toBe(true);
+
+      // 2. Unverified guest clicks `[发私信]` inside Mini App -> POST /api/chat/start triggers verification directly in private chat
+      tgCalls.length = 0;
+      const guestInit = await signInitData(
+        { auth_date: String(Math.floor(Date.now() / 1000)), user: JSON.stringify({ id: 70707, first_name: 'Guest' }) },
+        botToken
+      );
+      const startChatRes = await worker.fetch(
+        new Request('https://panel.example.com/api/chat/start', {
+          method: 'POST',
+          headers: { 'X-Telegram-Init-Data': guestInit },
+        }),
+        env
+      );
+      const startChatJson = await startChatRes.json();
+      expect(startChatJson.ok).toBe(true);
+      expect(startChatJson.triggeredVerification).toBe(true);
+      expect(await kv.get('user_challenge:70707')).toBeTruthy();
+
+      // 3. Admin accidentally types in General topic (no visitor thread) -> receives gentle 1-time hint
+      tgCalls.length = 0;
+      await handleTelegramUpdate(
+        {
+          message: {
+            message_id: 201,
+            from: { id: 10001, first_name: 'Owner' },
+            chat: { id: -100555666, type: 'supergroup' },
+            text: '你好，我在总话题回错了',
+          },
+        },
+        env,
+        'https://panel.example.com'
+      );
+      expect(tgCalls.some((c) => c.method === 'sendMessage' && c.body.text.includes('独立话题'))).toBe(true);
+
+      // 4. Admin replies to visitor in visitor topic 66, then recalls via /del -> calls deleteMessage on visitor's PM!
+      await upsertVisitorProfile(env, { id: 70707, first_name: 'Guest' }, { threadId: 66, incrementMsg: false });
+      await kv.put('thread:66', '70707');
+      tgCalls.length = 0;
+      await handleTelegramUpdate(
+        {
+          message: {
+            message_id: 301,
+            message_thread_id: 66,
+            from: { id: 10001, first_name: 'Owner' },
+            chat: { id: -100555666, type: 'supergroup' },
+            text: '不小心打错字的消息',
+          },
+        },
+        env,
+        'https://panel.example.com'
+      );
+      expect(tgCalls.some((c) => c.method === 'copyMessage' && c.body.chat_id === 70707)).toBe(true);
+
+      tgCalls.length = 0;
+      await handleTelegramUpdate(
+        {
+          message: {
+            message_id: 302,
+            message_thread_id: 66,
+            from: { id: 10001, first_name: 'Owner' },
+            chat: { id: -100555666, type: 'supergroup' },
+            reply_to_message: { message_id: 301 },
+            text: '/del',
+          },
+        },
+        env,
+        'https://panel.example.com'
+      );
+      expect(tgCalls.some((c) => c.method === 'deleteMessage' && c.body.chat_id === 70707 && c.body.message_id === 404)).toBe(
+        true
+      );
     } finally {
       globalThis.fetch = origFetch;
     }

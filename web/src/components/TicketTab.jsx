@@ -15,8 +15,15 @@ import {
   X,
 } from 'lucide-react';
 import { Avatar, StubEmblem, TicketEmblem } from './Emblems.jsx';
-import { formatTimeAgo } from '../lib/api.js';
-import { copyText, haptic, openExternalUrl } from '../lib/telegram.js';
+import { apiRequest, formatTimeAgo } from '../lib/api.js';
+import {
+  closeMiniApp,
+  copyText,
+  getTelegramInitData,
+  haptic,
+  isOpenedFromGroup,
+  openExternalUrl,
+} from '../lib/telegram.js';
 
 export default function TicketTab({
   data,
@@ -76,12 +83,41 @@ export default function TicketTab({
     onToast(ok ? `已复制 ${label}` : '复制失败');
   };
 
-  const openBotPm = () => {
-    const uname = (bot?.username || profile.handle || '').replace(/^@/, '');
+  const [openingPm, setOpeningPm] = useState(false);
+
+  const openBotPm = async () => {
+    const rawU = (bot?.username || profile.handle || '').replace(/^@/, '').trim();
+    const uname = rawU && rawU !== 'your_bot' ? rawU : '';
+    haptic('medium');
+
+    // Inside Telegram Mini App:
+    // - From a group: deep-link straight to `?start=pm` (auto-triggers verification!) and close WebApp
+    // - From private chat: ask backend to pop verification/prompt into the chat & collapse the WebApp sheet!
+    if (getTelegramInitData()) {
+      if (isOpenedFromGroup()) {
+        if (uname) {
+          openExternalUrl(`https://t.me/${uname}?start=pm`);
+        }
+        closeMiniApp();
+        return;
+      }
+      try {
+        setOpeningPm(true);
+        const res = await apiRequest('/api/chat/start', { method: 'POST' }).catch(() => null);
+        if (res?.needsDeepLink && uname) {
+          openExternalUrl(`https://t.me/${uname}?start=pm`);
+        }
+      } finally {
+        setOpeningPm(false);
+        closeMiniApp();
+      }
+      return;
+    }
+
     if (uname) {
       openExternalUrl(`https://t.me/${uname}`);
     } else {
-      onToast('直接在机器人私聊窗口发消息即可联系');
+      onToast('直接在机器人私聊窗口打字发消息即可联系');
     }
   };
 
@@ -379,13 +415,13 @@ export default function TicketTab({
           </div>
 
           <div style={{ display: 'flex', gap: 8, marginTop: 14, flexWrap: 'wrap' }}>
-            <button className="btn btn-primary btn-sm" onClick={openBotPm}>
-              <MessageCircle size={14} /> 发私信
+            <button className="btn btn-primary btn-sm" disabled={openingPm} onClick={openBotPm}>
+              <MessageCircle size={14} /> {openingPm ? '正在打开对话…' : '发私信'}
             </button>
-            {profile.handle && (
+            {rawHandle && rawHandle !== '@your_bot' && (
               <button
                 className="btn btn-soft btn-sm"
-                onClick={() => handleCopy(profile.handle, '账号')}
+                onClick={() => handleCopy(rawHandle, '账号')}
               >
                 <Copy size={13} /> 复制账号
               </button>

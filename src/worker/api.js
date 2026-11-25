@@ -2,6 +2,7 @@
 
 import { getBlockedSpamCount } from './antispam.js';
 import { authenticateRequest, parseAdminIds, signMediaToken, verifyMediaToken } from './auth.js';
+import { initiateChatFromMiniApp, syncTelegramBotSurface } from './bot.js';
 import { getLeaderboard, getMemberTicket, performCheckin } from './checkin.js';
 import {
   BADGE_CATALOG,
@@ -49,7 +50,7 @@ async function readJsonBody(request) {
   }
 }
 
-export async function handleApiRequest(request, env, url) {
+export async function handleApiRequest(request, env, url, ctx = null) {
   const path = url.pathname;
   const method = request.method.toUpperCase();
 
@@ -137,6 +138,15 @@ export async function handleApiRequest(request, env, url) {
       blockedSpamCount,
       appVersion: auth.isAdmin ? APP_VERSION : undefined,
     });
+  }
+
+  // POST /api/chat/start — wakes up private verification or chat prompt when user taps `[发私信]` inside Mini App
+  if (path === '/api/chat/start' && method === 'POST') {
+    if (!auth.user?.id) {
+      return json({ ok: true, needsDeepLink: true });
+    }
+    const chatRes = await initiateChatFromMiniApp(env, url.origin, auth.user, config);
+    return json({ ok: true, ...chatRes });
   }
 
   // POST /api/checkin
@@ -338,11 +348,36 @@ export async function handleApiRequest(request, env, url) {
       if (!body || typeof body !== 'object') {
         return json({ ok: false, error: '无效的配置内容' }, 400);
       }
+      const prevSurfaceSig = JSON.stringify({
+        wt: config.pmBot?.welcomeText,
+        sd: config.pmBot?.syncBotDescription,
+        mb: config.pmBot?.showChatMenuButton,
+        ck: config.community?.enableCheckin,
+        bu: Boolean(env.BOT_USERNAME || config.botUsername),
+      });
       const saved = await savePanelConfig(env, body);
+      const nextSurfaceSig = JSON.stringify({
+        wt: saved.pmBot?.welcomeText,
+        sd: saved.pmBot?.syncBotDescription,
+        mb: saved.pmBot?.showChatMenuButton,
+        ck: saved.community?.enableCheckin,
+        bu: Boolean(env.BOT_USERNAME || saved.botUsername),
+      });
+
+      // Sync Telegram description, menu button & commands only when Bot-surface fields changed (or @username uncached)
+      if (env.BOT_TOKEN && /^https:\/\//i.test(url.origin) && prevSurfaceSig !== nextSurfaceSig) {
+        const syncPromise = syncTelegramBotSurface(env, url.origin, saved).catch(() => {});
+        if (ctx?.waitUntil) {
+          ctx.waitUntil(syncPromise);
+        } else {
+          await syncPromise;
+        }
+      }
+      const latestCfg = await loadPanelConfig(env);
       return json({
         ok: true,
-        config: sanitizePublicConfig(saved, env, true),
-        adminConfig: sanitizeAdminConfig(saved, env),
+        config: sanitizePublicConfig(latestCfg, env, true),
+        adminConfig: sanitizeAdminConfig(latestCfg, env),
       });
     }
 

@@ -32,6 +32,7 @@ import {
   applyVisitorAction,
   formatDisplayName,
   getVisitorDetail,
+  recallAdminVisitorMessage,
   recordVisitorExchange,
   upsertVisitorProfile,
 } from './visitors.js';
@@ -703,6 +704,14 @@ export async function completeTurnstileVerification(env, requestOrigin, verifyId
   }
   const config = await loadPanelConfig(env);
   const ttlDays = Math.max(1, Number(config.pmBot.verifiedDays || 30));
+  const hasPending = Array.isArray(state.pending) && state.pending.length > 0;
+  const doneText = hasPending
+    ? '✅ <b>Cloudflare 人机验证已通过！</b>您的消息已自动送达给主人，请耐心等待回复（也可继续直接打字补充）🌸'
+    : '✅ <b>Cloudflare 人机验证已通过！</b>\n\n现在您可以直接在下方输入框打字（或发图片 / 语音）给主人留言啦 🌸';
+  const doneMarkup =
+    !hasPending && config.pmBot.showPanelButtonInWelcome !== false
+      ? { inline_keyboard: [[buildPanelButton(env, requestOrigin, '✨ 查看个人面板', { isGroup: false })]] }
+      : undefined;
 
   await env.TOPIC_MAP.put(`verified:${state.userId}`, 'turnstile:v1', { expirationTtl: ttlDays * 86400 });
   await env.TOPIC_MAP.delete(`needs_verify:${state.userId}`);
@@ -715,21 +724,25 @@ export async function completeTurnstileVerification(env, requestOrigin, verifyId
     await tgCall(env, 'editMessageText', {
       chat_id: state.challengeChatId,
       message_id: state.challengeMessageId,
-      text: '✅ <b>Cloudflare 人机验证已通过</b>，您的消息已自动送达，请耐心等待回复。',
+      text: doneText,
       parse_mode: 'HTML',
+      ...(doneMarkup ? { reply_markup: doneMarkup } : {}),
     }).catch(() => {});
   } else if (state.user?.id) {
     await tgCall(env, 'sendMessage', {
       chat_id: Number(state.user.id),
-      text: '✅ Cloudflare 人机验证已通过，您的消息已送达。',
+      text: doneText,
+      parse_mode: 'HTML',
+      ...(doneMarkup ? { reply_markup: doneMarkup } : {}),
     }).catch(() => {});
   }
 
-  await flushPendingMessages(env, requestOrigin, state);
+  await flushPendingMessages(env, requestOrigin, state, config);
   return { ok: true };
 }
 
-async function startVerificationChallenge(env, requestOrigin, msg, config, risk = null) {
+async function startVerificationChallenge(env, requestOrigin, msg, config, risk = null, options = {}) {
+  const { fromStart = false, refreshExisting = false } = options;
   const uid = String(msg.from.id);
 
   // Check cooldown lock (after repeated failed attempts or honeypot trigger)
@@ -750,7 +763,7 @@ async function startVerificationChallenge(env, requestOrigin, msg, config, risk 
   const existingChalId = await env.TOPIC_MAP.get(`user_challenge:${uid}`);
   if (existingChalId) {
     const existingState = await safeGetJSON(env.TOPIC_MAP, `chal:${existingChalId}`, null);
-    if (existingState) {
+    if (existingState && !fromStart && !refreshExisting) {
       // Do not queue suspicious forwarded/link ad payloads before verification
       if (!risk?.isHighRisk) {
         const pending = Array.isArray(existingState.pending) ? existingState.pending : [];
@@ -766,6 +779,21 @@ async function startVerificationChallenge(env, requestOrigin, msg, config, risk 
       });
       return;
     }
+    if (existingState) {
+      await env.TOPIC_MAP.delete(`chal:${existingChalId}`);
+      if (existingState.stickerMessageId && existingState.challengeChatId) {
+        await tgCall(env, 'deleteMessage', {
+          chat_id: existingState.challengeChatId,
+          message_id: existingState.stickerMessageId,
+        }).catch(() => {});
+      }
+      if (existingState.challengeMessageId && existingState.challengeChatId) {
+        await tgCall(env, 'deleteMessage', {
+          chat_id: existingState.challengeChatId,
+          message_id: existingState.challengeMessageId,
+        }).catch(() => {});
+      }
+    }
   }
 
   const desiredMode = config.pmBot.verificationMode || 'emoji';
@@ -778,14 +806,36 @@ async function startVerificationChallenge(env, requestOrigin, msg, config, risk 
   if (mode === 'sticker_quiz' && !hasStickerBank) mode = 'emoji';
   const verifyId = randomId(12);
 
-  // Never pre-queue forwarded ad/link spam; require user to resend cleanly after passing strict verification
-  const initialPending = risk?.isHighRisk ? [] : [serializePendingMessage(msg)];
+  // Never pre-queue `/start` commands or high-risk ad payloads
+  const initialPending = fromStart || risk?.isHighRisk ? [] : [serializePendingMessage(msg)];
+
+  // Optional owner welcome header/photo when triggered from `/start` or Mini App PM button
+  let welcomeHeaderHtml = '';
+  if (fromStart && config.pmBot.enableStartWelcome !== false) {
+    const rawWelcome = String(config.pmBot.welcomeText || '').trim().slice(0, 500);
+    const welcomeImg = String(config.pmBot.welcomeImageUrl || '').trim();
+    const titleHtml = `🌸 <b>${escapeHtml(config.profile.displayName || 'RosePanel')}</b>`;
+    if (welcomeImg) {
+      const sentPhoto = await tgCall(env, 'sendPhoto', {
+        chat_id: msg.chat.id,
+        photo: welcomeImg,
+        caption: rawWelcome ? `${titleHtml}\n\n${escapeHtml(rawWelcome)}` : titleHtml,
+        parse_mode: 'HTML',
+      }).catch(() => null);
+      if (!sentPhoto && rawWelcome) {
+        welcomeHeaderHtml = `${titleHtml}\n${escapeHtml(rawWelcome)}\n━━━━━━━━━━━━━━━━\n`;
+      }
+    } else if (rawWelcome) {
+      welcomeHeaderHtml = `${titleHtml}\n${escapeHtml(rawWelcome)}\n━━━━━━━━━━━━━━━━\n`;
+    }
+  }
 
   const baseState = {
     mode,
     userId: uid,
     failures: 0,
     escalated: shouldEscalate,
+    challengeChatId: msg.chat.id,
     user: {
       id: msg.from.id,
       first_name: msg.from.first_name || '',
@@ -799,20 +849,21 @@ async function startVerificationChallenge(env, requestOrigin, msg, config, risk 
   // Strict Mode: Cloudflare Turnstile inside Telegram WebApp overlay
   if (mode === 'turnstile') {
     const verifyUrl = `${requestOrigin.replace(/\/$/, '')}/verify?vid=${encodeURIComponent(verifyId)}`;
-    const notice = shouldEscalate
+    const coreNotice = shouldEscalate
       ? risk?.isMedia
         ? '🛡️ <b>安全验证（拦截首条图片/媒体）</b>\n\n为防广告海报骚扰，首次联系请先完成 Cloudflare 人机核验，通过后再发送图片或消息。'
         : '🛡️ <b>安全验证（触发智能风控升级）</b>\n\n检测到消息含转发/外链或异常特征，请先完成 Cloudflare 人机核验，通过后重新发送正常消息即可联系站长。'
-      : '🛡️ <b>安全验证（严格模式）</b>\n\n请点击下方按钮完成 Cloudflare 人机核验，验证通过后您的消息将自动送达（30 天内免重复验证）。';
+      : fromStart
+        ? '🛡️ <b>首次联系请先完成人机验证</b>\n\n点击下方按钮完成核验后，即可直接在输入框打字给主人发消息。'
+        : '🛡️ <b>安全验证（严格模式）</b>\n\n请点击下方按钮完成 Cloudflare 人机核验，验证通过后您的消息将自动送达。';
     const sent = await tgCall(env, 'sendMessage', {
       chat_id: msg.chat.id,
-      text: notice,
+      text: `${welcomeHeaderHtml}${coreNotice}`,
       parse_mode: 'HTML',
       reply_markup: {
         inline_keyboard: [[{ text: '🛡️ 点击完成人机验证', web_app: { url: verifyUrl } }]],
       },
     });
-    baseState.challengeChatId = msg.chat.id;
     baseState.challengeMessageId = sent?.result?.message_id || null;
     await safePutJSON(env.TOPIC_MAP, `chal:${verifyId}`, baseState, { expirationTtl: 300 });
     await env.TOPIC_MAP.put(`user_challenge:${uid}`, verifyId, { expirationTtl: 300 });
@@ -842,16 +893,16 @@ async function startVerificationChallenge(env, requestOrigin, msg, config, risk 
         baseState.correctIndex = chal.correctIndex;
         baseState.stickerChallengeId = chal.challengeId;
         baseState.stickerMessageId = stickerMsgId;
-        await safePutJSON(env.TOPIC_MAP, `chal:${verifyId}`, baseState, { expirationTtl: 300 });
-        await env.TOPIC_MAP.put(`user_challenge:${uid}`, verifyId, { expirationTtl: 300 });
-
-        await tgCall(env, 'sendMessage', {
+        const sentChal = await tgCall(env, 'sendMessage', {
           chat_id: msg.chat.id,
           reply_to_message_id: stickerMsgId,
-          text: chal.promptHtml,
+          text: `${welcomeHeaderHtml}${chal.promptHtml}`,
           parse_mode: 'HTML',
           reply_markup: { inline_keyboard: chal.keyboard },
         });
+        baseState.challengeMessageId = sentChal?.result?.message_id || null;
+        await safePutJSON(env.TOPIC_MAP, `chal:${verifyId}`, baseState, { expirationTtl: 300 });
+        await env.TOPIC_MAP.put(`user_challenge:${uid}`, verifyId, { expirationTtl: 300 });
         return;
       }
     }
@@ -862,18 +913,24 @@ async function startVerificationChallenge(env, requestOrigin, msg, config, risk 
   const chal = generateInlineChallenge(baseState.mode, verifyId, config.pmBot.enableHoneypot !== false);
   baseState.correctIndex = chal.correctIndex;
 
-  await safePutJSON(env.TOPIC_MAP, `chal:${verifyId}`, baseState, { expirationTtl: 300 });
-  await env.TOPIC_MAP.put(`user_challenge:${uid}`, verifyId, { expirationTtl: 300 });
-
-  await tgCall(env, 'sendMessage', {
+  const sentInline = await tgCall(env, 'sendMessage', {
     chat_id: msg.chat.id,
-    text: chal.promptHtml,
+    text: `${welcomeHeaderHtml}${chal.promptHtml}`,
     parse_mode: 'HTML',
     reply_markup: { inline_keyboard: chal.keyboard },
   });
+  baseState.challengeMessageId = sentInline?.result?.message_id || null;
+  await safePutJSON(env.TOPIC_MAP, `chal:${verifyId}`, baseState, { expirationTtl: 300 });
+  await env.TOPIC_MAP.put(`user_challenge:${uid}`, verifyId, { expirationTtl: 300 });
 }
 
-async function handlePrivatePanelCommand(env, requestOrigin, msg, config, { isStart = false } = {}) {
+async function handlePrivatePanelCommand(
+  env,
+  requestOrigin,
+  msg,
+  config,
+  { isStart = false, canChatNow = false } = {}
+) {
   const isAdmin = await isUserAdmin(env, msg.from.id, tgCall);
   const rawWelcome = String(config.pmBot.welcomeText ?? '').trim();
   const welcome = rawWelcome || (isStart ? '' : '欢迎使用个人面板！');
@@ -882,7 +939,7 @@ async function handlePrivatePanelCommand(env, requestOrigin, msg, config, { isSt
   const rows = [];
   if (includePanelBtn) {
     rows.push([buildPanelButton(env, requestOrigin, '✨ 打开个人面板小程序', { isGroup: false })]);
-    if (isAdmin) {
+    if (!isStart && isAdmin) {
       rows.push([
         buildPanelButton(env, requestOrigin, '👤 访客管理与拉黑后台', {
           isGroup: false,
@@ -893,16 +950,32 @@ async function handlePrivatePanelCommand(env, requestOrigin, msg, config, { isSt
   }
 
   const header = `🌸 <b>${escapeHtml(config.profile.displayName)}</b>`;
-  const text = welcome ? `${header}\n\n${escapeHtml(welcome)}` : header;
-  const payload = {
+  const parts = [header];
+  if (welcome) parts.push(escapeHtml(welcome));
+  if (isStart && canChatNow) {
+    parts.push('💬 <i>您已完成验证，直接在下方输入框打字即可给主人发消息。</i>');
+  }
+  const text = parts.join('\n\n');
+  const replyMarkup = rows.length > 0 ? { inline_keyboard: rows } : undefined;
+
+  const welcomeImg = isStart ? String(config.pmBot.welcomeImageUrl || '').trim() : '';
+  if (welcomeImg && text.length <= 950) {
+    const sentPhoto = await tgCall(env, 'sendPhoto', {
+      chat_id: msg.chat.id,
+      photo: welcomeImg,
+      caption: text,
+      parse_mode: 'HTML',
+      ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
+    }).catch(() => null);
+    if (sentPhoto) return;
+  }
+
+  await tgCall(env, 'sendMessage', {
     chat_id: msg.chat.id,
     text,
     parse_mode: 'HTML',
-  };
-  if (rows.length > 0) {
-    payload.reply_markup = { inline_keyboard: rows };
-  }
-  await tgCall(env, 'sendMessage', payload);
+    ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
+  });
 }
 
 async function handleGroupPanelCommand(env, requestOrigin, msg, config) {
@@ -1069,12 +1142,54 @@ async function handleAdminSupergroupMessage(env, requestOrigin, msg, config) {
     return;
   }
 
-  if (!threadId) return;
+  if (!threadId) {
+    if (!parsed && env.TOPIC_MAP) {
+      const hintKey = `hint:general_reply:${msg.chat.id}`;
+      const hinted = await env.TOPIC_MAP.get(hintKey);
+      if (!hinted) {
+        await env.TOPIC_MAP.put(hintKey, '1', { expirationTtl: 300 });
+        await tgCall(env, 'sendMessage', {
+          chat_id: msg.chat.id,
+          reply_to_message_id: msg.message_id,
+          text: '💡 这里是通知群公共区，消息不会转发给访客哦～请点进对应访客的「独立话题」内直接回复。',
+        }).catch(() => {});
+      }
+    }
+    return;
+  }
   const targetUid = await env.TOPIC_MAP.get(`thread:${threadId}`);
-  if (!targetUid) return;
+  if (!targetUid) {
+    if (!parsed && threadId === 1 && env.TOPIC_MAP) {
+      const hintKey = `hint:general_reply:${msg.chat.id}`;
+      const hinted = await env.TOPIC_MAP.get(hintKey);
+      if (!hinted) {
+        await env.TOPIC_MAP.put(hintKey, '1', { expirationTtl: 300 });
+        await tgCall(env, 'sendMessage', {
+          chat_id: msg.chat.id,
+          message_thread_id: threadId,
+          reply_to_message_id: msg.message_id,
+          text: '💡 这里是通知群总话题 (General)，消息不会转发给访客哦～请点进对应访客的「独立话题」内直接回复。',
+        }).catch(() => {});
+      }
+    }
+    return;
+  }
 
   if (parsed) {
     const cmd = parsed.cmd;
+    if (cmd === 'del' || cmd === 'recall') {
+      const replyTopicMsgId = msg.reply_to_message?.message_id || null;
+      const recallRes = await recallAdminVisitorMessage(env, targetUid, replyTopicMsgId, tgCall);
+      await tgCall(env, 'sendMessage', {
+        chat_id: msg.chat.id,
+        message_thread_id: threadId,
+        reply_to_message_id: msg.message_id,
+        text: recallRes.ok
+          ? '🗑️ 已撤回发给访客的该条私聊消息。'
+          : `⚠️ ${recallRes.error}`,
+      }).catch(() => {});
+      return;
+    }
     if (cmd === 'info') {
       const detail = await getVisitorDetail(env, targetUid);
       if (detail) {
@@ -1314,15 +1429,24 @@ async function handleCallbackQuery(env, requestOrigin, cq, config) {
       }).catch(() => {});
     }
 
-    await tgCall(env, 'answerCallbackQuery', { callback_query_id: cq.id, text: '✅ 验证通过！正在送达您的消息…' });
+    await tgCall(env, 'answerCallbackQuery', { callback_query_id: cq.id, text: '✅ 验证通过！现在可以发消息啦 🌸' });
+    const hasPending = Array.isArray(state.pending) && state.pending.length > 0;
+    const doneText = hasPending
+      ? '✅ <b>人机验证已通过！</b>您的消息已自动送达给主人，请耐心等待回复（也可继续直接打字补充）🌸'
+      : '✅ <b>人机验证已通过！</b>\n\n现在您可以直接在下方输入框打字（或发图片 / 语音）给主人留言啦 🌸';
+    const doneMarkup =
+      !hasPending && config.pmBot.showPanelButtonInWelcome !== false
+        ? { inline_keyboard: [[buildPanelButton(env, requestOrigin, '✨ 查看个人面板', { isGroup: false })]] }
+        : undefined;
     await tgCall(env, 'editMessageText', {
       chat_id: cq.message.chat.id,
       message_id: cq.message.message_id,
-      text: '✅ <b>人机验证已通过</b>，您的消息已送达，请耐心等待回复。',
+      text: doneText,
       parse_mode: 'HTML',
+      ...(doneMarkup ? { reply_markup: doneMarkup } : {}),
     }).catch(() => {});
 
-    await flushPendingMessages(env, requestOrigin, state);
+    await flushPendingMessages(env, requestOrigin, state, config);
     return;
   }
 
@@ -1362,6 +1486,17 @@ async function handleCallbackQuery(env, requestOrigin, cq, config) {
     }
     const [, action, uid] = data.split(':');
     const detail = await applyVisitorAction(env, uid, action);
+    if (action === 'close') {
+      await tgCall(env, 'sendMessage', {
+        chat_id: Number(uid),
+        text: '🔒 当前对话已由站长关闭，感谢您的联系。',
+      }).catch(() => {});
+    } else if (action === 'open') {
+      await tgCall(env, 'sendMessage', {
+        chat_id: Number(uid),
+        text: '🔓 站长已重新开启对话，您可以继续发送消息。',
+      }).catch(() => {});
+    }
     const toastLabels = {
       ban: '🚫 已拉黑该访客',
       unban: '✅ 已解除拉黑',
@@ -1533,6 +1668,7 @@ async function handleBindInboxCommand(env, requestOrigin, msg) {
     tgCall(env, 'setMyCommands', {
       commands: [
         { command: 'info', description: '查看当前话题访客资料与媒体统计' },
+        { command: 'del', description: '撤回发给访客的上一条或引用消息' },
         { command: 'ban', description: '拉黑当前话题访客' },
         { command: 'unban', description: '解除拉黑' },
         { command: 'trust', description: '设为永久信任（免验证）' },
@@ -1868,10 +2004,56 @@ export async function handleTelegramUpdate(update, env, requestOrigin) {
       }
     }
 
+    if (!isAdmin && (await env.TOPIC_MAP.get(`banned:${uid}`)) === '1') {
+      return;
+    }
+
     if (parsed) {
       if (parsed.cmd === 'start') {
+        const verified = await env.TOPIC_MAP.get(`verified:${uid}`);
+        const needsVerify = await env.TOPIC_MAP.get(`needs_verify:${uid}`);
+        const verifyMode =
+          config.pmBot.verificationMode || (config.pmBot.enableVerification ? 'emoji' : 'off');
+        const mustVerifyNow = Boolean(supergroupId) && !isAdmin && verifyMode !== 'off' && (!verified || needsVerify);
+
+        if (mustVerifyNow) {
+          const inCooldown = await env.TOPIC_MAP.get(`verify_cool:${uid}`);
+          if (inCooldown) {
+            const hinted = await env.TOPIC_MAP.get(`verify_cool_hint:${uid}`);
+            if (!hinted) {
+              const cooldownMins = Math.max(1, Number(config.pmBot.cooldownMinutes || 10));
+              await env.TOPIC_MAP.put(`verify_cool_hint:${uid}`, '1', { expirationTtl: cooldownMins * 60 });
+              await tgCall(env, 'sendMessage', {
+                chat_id: msg.chat.id,
+                text: '⏳ 人机验证仍在冷却中，请稍等几分钟后再发送消息重新验证。',
+              }).catch(() => {});
+            }
+            return;
+          }
+
+          const recForStart = await safeGetJSON(env.TOPIC_MAP, `user:${uid}`, null);
+          if (config.pmBot.enableCasCheck !== false && !recForStart?.casExempt) {
+            const cas = await checkCasBlacklist(env, uid);
+            if (cas.isSpammer) {
+              await env.TOPIC_MAP.put(`banned:${uid}`, '1');
+              await upsertVisitorProfile(env, msg.from, {
+                incrementMsg: false,
+                lastPreview: '[命中 CAS 黑名单 · 已自动拦截]',
+              }).catch(() => {});
+              await recordBlockedSpam(env);
+              return;
+            }
+          }
+
+          await startVerificationChallenge(env, requestOrigin, msg, config, null, { fromStart: true });
+          return;
+        }
+
         if (config.pmBot.enableStartWelcome !== false) {
-          await handlePrivatePanelCommand(env, requestOrigin, msg, config, { isStart: true });
+          await handlePrivatePanelCommand(env, requestOrigin, msg, config, {
+            isStart: true,
+            canChatNow: Boolean(supergroupId) && !isAdmin,
+          });
         }
         return;
       }
@@ -1897,9 +2079,6 @@ export async function handleTelegramUpdate(update, env, requestOrigin) {
       }
       return;
     }
-
-    const isBanned = (await env.TOPIC_MAP.get(`banned:${uid}`)) === '1';
-    if (isBanned) return;
 
     const allowed = await checkRateLimit(env, `rl:msg:${uid}`, 40, 60);
     if (!allowed) return;
@@ -1960,4 +2139,181 @@ export async function handleTelegramUpdate(update, env, requestOrigin) {
 
     await processVisitorMessage(env, requestOrigin, msg, config);
   }
+}
+
+/**
+ * Initiates private chat / verification right from the Mini App `[发私信]` button
+ * so collapsing the WebApp drops the visitor directly onto an active verification prompt or input box.
+ */
+export async function initiateChatFromMiniApp(env, requestOrigin, tgUser, config = null) {
+  if (!env.BOT_TOKEN || !tgUser?.id) {
+    return { ok: false, needsDeepLink: true };
+  }
+  const cfg = config || (await loadPanelConfig(env));
+  const uid = String(tgUser.id);
+  const isAdmin = await isUserAdmin(env, tgUser.id, tgCall);
+  if (!isAdmin && (await env.TOPIC_MAP?.get(`banned:${uid}`)) === '1') {
+    return { ok: true, needsDeepLink: false };
+  }
+
+  const supergroupId = await resolveSupergroupId(env);
+  const verified = env.TOPIC_MAP ? await env.TOPIC_MAP.get(`verified:${uid}`) : null;
+  const needsVerify = env.TOPIC_MAP ? await env.TOPIC_MAP.get(`needs_verify:${uid}`) : null;
+  const verifyMode = cfg.pmBot.verificationMode || (cfg.pmBot.enableVerification ? 'emoji' : 'off');
+  const mustVerify = Boolean(supergroupId) && !isAdmin && verifyMode !== 'off' && (!verified || needsVerify);
+
+  try {
+    if (mustVerify) {
+      await startVerificationChallenge(
+        env,
+        requestOrigin,
+        {
+          message_id: 0,
+          from: tgUser,
+          chat: { id: Number(tgUser.id), type: 'private' },
+          text: '/start',
+        },
+        cfg,
+        null,
+        { fromStart: true, refreshExisting: true }
+      );
+      return { ok: true, needsDeepLink: false, triggeredVerification: true };
+    }
+
+    const promptCdKey = `pm_prompt_cd:${uid}`;
+    const alreadyPrompted = env.TOPIC_MAP ? await env.TOPIC_MAP.get(promptCdKey) : null;
+    if (!alreadyPrompted) {
+      await tgCall(env, 'sendMessage', {
+        chat_id: Number(tgUser.id),
+        text: '💬 请直接在下方输入框打字（或发图片 / 语音）留言，主人看到后会尽快回复您 🌸',
+      });
+      if (env.TOPIC_MAP) {
+        await env.TOPIC_MAP.put(promptCdKey, '1', { expirationTtl: 300 });
+      }
+    }
+    return { ok: true, needsDeepLink: false, triggeredVerification: false };
+  } catch (err) {
+    // 403 Forbidden if user opened Direct-Link Mini App from a group before ever pressing Start on the bot
+    if (Number(err?.code) === 403 || /bot can't initiate|chat not found|forbidden/i.test(String(err?.message))) {
+      return { ok: true, needsDeepLink: true };
+    }
+    return { ok: false, needsDeepLink: true };
+  }
+}
+
+/**
+ * Synchronizes Telegram Bot commands, pre-Start description (`setMyDescription`),
+ * bottom-left menu button (`setChatMenuButton`), and cached `@username` without needing `/setup`.
+ */
+export async function syncTelegramBotSurface(env, requestOrigin, config = null) {
+  if (!env.BOT_TOKEN) return { ok: false };
+  const cfg = config || (await loadPanelConfig(env));
+  const results = {};
+
+  // 1. Resolve & persist bot `@username` if not already known in env or KV
+  if (!env.BOT_USERNAME && !cfg.botUsername) {
+    try {
+      const me = (await tgCall(env, 'getMe', {}))?.result;
+      if (me?.username) {
+        await savePanelConfig(env, { botUsername: me.username });
+        results.botUsername = me.username;
+      }
+    } catch {
+      // Ignore transient getMe failure
+    }
+  }
+
+  // 2. Sync pre-Start empty-chat greeting ("What can this bot do?")
+  if (cfg.pmBot?.syncBotDescription !== false) {
+    const desc = String(cfg.pmBot?.welcomeText || '').trim().slice(0, 512);
+    results.description = await tgCall(env, 'setMyDescription', { description: desc }).catch((e) => ({
+      error: e.message,
+    }));
+  }
+
+  // 3. Sync private & group command menus
+  const privateCommands = [
+    { command: 'start', description: '开始联系主人 / 人机验证' },
+    { command: 'panel', description: '打开个人面板小程序' },
+  ];
+  const groupCommands = [
+    { command: 'panel', description: '打开个人面板小程序' },
+    { command: 'me', description: '查看我的个人票根' },
+  ];
+  if (cfg.community?.enableCheckin) {
+    privateCommands.push({ command: 'checkin', description: '每日签到领积分' });
+    groupCommands.push(
+      { command: 'checkin', description: '群内每日签到领积分' },
+      { command: 'rank', description: '查看群积分排行榜' }
+    );
+  }
+
+  results.privateCommands = await tgCall(env, 'setMyCommands', {
+    commands: privateCommands,
+    scope: { type: 'all_private_chats' },
+  }).catch((e) => ({ error: e.message }));
+  results.groupCommands = await tgCall(env, 'setMyCommands', {
+    commands: groupCommands,
+    scope: { type: 'all_group_chats' },
+  }).catch((e) => ({ error: e.message }));
+
+  const adminPrivateCommands = [
+    ...privateCommands,
+    { command: 'set', description: '设动态贴纸徽章（跟贴纸链接或直接发贴纸）' },
+    { command: 'add', description: '添加表情包看图验证题（发贴纸再贴题目）' },
+    { command: 'resetbadge', description: '恢复默认玫瑰票根徽章' },
+    { command: 'cancel', description: '取消当前录入' },
+  ];
+
+  const adminIdSet = parseAdminIds(env);
+  const supergroupId = await resolveSupergroupId(env);
+  if (supergroupId) {
+    try {
+      const adminsRes = await tgCall(env, 'getChatAdministrators', { chat_id: supergroupId });
+      for (const m of adminsRes?.result || []) {
+        if (m?.user?.id && !m.user.is_bot) adminIdSet.add(String(m.user.id));
+      }
+    } catch {
+      // Ignore
+    }
+    results.supergroupAdminCommands = await tgCall(env, 'setMyCommands', {
+      commands: [
+        { command: 'info', description: '查看当前话题访客资料与媒体统计' },
+        { command: 'del', description: '撤回发给访客的上一条或引用消息' },
+        { command: 'ban', description: '拉黑当前话题访客' },
+        { command: 'unban', description: '解除拉黑' },
+        { command: 'trust', description: '设为永久信任（免验证）' },
+        { command: 'reset', description: '重置访客验证状态' },
+        { command: 'close', description: '结束当前对话' },
+        { command: 'open', description: '重新开启对话' },
+        { command: 'unbind', description: '解绑当前通知群' },
+        { command: 'panel', description: '打开个人面板小程序' },
+      ],
+      scope: { type: 'chat_administrators', chat_id: Number(supergroupId) },
+    }).catch((e) => ({ error: e.message }));
+  }
+
+  results.adminPrivateCommands = [];
+  for (const adminId of adminIdSet) {
+    const r = await tgCall(env, 'setMyCommands', {
+      commands: adminPrivateCommands,
+      scope: { type: 'chat', chat_id: Number(adminId) },
+    }).catch((e) => ({ adminId, error: e.message }));
+    results.adminPrivateCommands.push({ adminId, ok: Boolean(r?.ok), error: r?.error });
+  }
+
+  // 4. Sync bottom-left chat menu button (`个人面板` WebApp vs clean `default` command menu)
+  const cleanOrigin = String(requestOrigin || '').replace(/\/$/, '');
+  const showMenuBtn = cfg.pmBot?.showChatMenuButton !== false && /^https:\/\//i.test(cleanOrigin);
+  results.menuButton = await tgCall(env, 'setChatMenuButton', {
+    menu_button: showMenuBtn
+      ? {
+          type: 'web_app',
+          text: '个人面板',
+          web_app: { url: `${cleanOrigin}/` },
+        }
+      : { type: 'default' },
+  }).catch((e) => ({ error: e.message }));
+
+  return { ok: true, results };
 }

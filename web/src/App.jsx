@@ -250,6 +250,7 @@ export default function App() {
 
   const isAdmin = Boolean(bootstrap?.isAdmin);
   const enableCheckin = Boolean(bootstrap?.config?.community?.enableCheckin);
+  const showSitesTab = isAdmin || (bootstrap?.config?.sites || []).length > 0;
   const showProbeTab = isAdmin || Boolean(bootstrap?.config?.probe?.configured);
 
   const navItems = [
@@ -258,8 +259,11 @@ export default function App() {
       label: enableCheckin ? '票根' : '名片',
       icon: enableCheckin ? Ticket : IdCard,
     },
-    { id: 'sites', label: '小站', icon: Globe },
   ];
+
+  if (showSitesTab) {
+    navItems.push({ id: 'sites', label: '小站', icon: Globe });
+  }
 
   if (showProbeTab) {
     navItems.push({ id: 'probe', label: '探针', icon: Server });
@@ -275,6 +279,8 @@ export default function App() {
   } else if (enableCheckin) {
     navItems.push({ id: 'leaderboard', label: '榜单', icon: Trophy });
   }
+
+  const effectiveTab = navItems.some((item) => item.id === activeTab) ? activeTab : 'profile';
 
   return (
     <div className="app-shell">
@@ -298,7 +304,6 @@ export default function App() {
         <div className="top-brand">
           <span className="top-brand-dot" />
           <span className="top-title">{bootstrap?.config?.profile?.displayName || 'RosePanel'}</span>
-          <span className="top-sub">小程序</span>
         </div>
 
         <div className="top-actions">
@@ -329,7 +334,7 @@ export default function App() {
 
       {/* Main View */}
       <main>
-        {activeTab === 'profile' && (
+        {effectiveTab === 'profile' && (
           <TicketTab
             data={bootstrap}
             onNavigate={(tab) => {
@@ -347,7 +352,7 @@ export default function App() {
           />
         )}
 
-        {activeTab === 'sites' && (
+        {effectiveTab === 'sites' && (
           <SitesTab
             sites={bootstrap?.config?.sites || []}
             isAdmin={isAdmin}
@@ -367,7 +372,7 @@ export default function App() {
           />
         )}
 
-        {activeTab === 'probe' && (
+        {effectiveTab === 'probe' && (
           <ProbeTab
             probeConfig={bootstrap?.config?.probe}
             isAdmin={isAdmin}
@@ -376,7 +381,7 @@ export default function App() {
           />
         )}
 
-        {activeTab === 'visitors' && isAdmin && (
+        {effectiveTab === 'visitors' && isAdmin && (
           <VisitorsTab
             initialVisitorId={deepVisitorId}
             onClearInitial={() => setDeepVisitorId('')}
@@ -384,7 +389,7 @@ export default function App() {
           />
         )}
 
-        {activeTab === 'leaderboard' && enableCheckin && (
+        {effectiveTab === 'leaderboard' && enableCheckin && (
           <LeaderboardTab
             currencyName={bootstrap?.config?.community?.currencyName || '积分'}
             onToast={showToast}
@@ -392,30 +397,32 @@ export default function App() {
         )}
       </main>
 
-      {/* Floating Glass Pill Bottom Dock */}
-      <nav className="bottom-dock-wrap" aria-label="主导航">
-        <div className="bottom-dock">
-          {navItems.map((item) => {
-            const Icon = item.icon;
-            const active = activeTab === item.id;
-            return (
-              <button
-                key={item.id}
-                type="button"
-                className={`dock-item ${active ? 'active' : ''}`}
-                onClick={() => {
-                  haptic('light');
-                  setActiveTab(item.id);
-                }}
-              >
-                <Icon size={20} strokeWidth={active ? 2.2 : 1.9} />
-                <span>{item.label}</span>
-                {item.badge > 0 && <span className="dock-badge">{item.badge > 99 ? '99+' : item.badge}</span>}
-              </button>
-            );
-          })}
-        </div>
-      </nav>
+      {/* Floating Glass Pill Bottom Dock — auto-hides when only 1 tab is visible */}
+      {navItems.length > 1 && (
+        <nav className="bottom-dock-wrap" aria-label="主导航">
+          <div className="bottom-dock">
+            {navItems.map((item) => {
+              const Icon = item.icon;
+              const active = effectiveTab === item.id;
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  className={`dock-item ${active ? 'active' : ''}`}
+                  onClick={() => {
+                    haptic('light');
+                    setActiveTab(item.id);
+                  }}
+                >
+                  <Icon size={20} strokeWidth={active ? 2.2 : 1.9} />
+                  <span>{item.label}</span>
+                  {item.badge > 0 && <span className="dock-badge">{item.badge > 99 ? '99+' : item.badge}</span>}
+                </button>
+              );
+            })}
+          </div>
+        </nav>
+      )}
 
       {/* Admin Visual Settings Drawer */}
       {isAdmin && settingsSection && bootstrap?.adminConfig && (

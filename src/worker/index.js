@@ -2,7 +2,11 @@
 
 import { handleApiRequest } from './api.js';
 import { parseAdminIds } from './auth.js';
-import { completeTurnstileVerification, handleTelegramUpdate } from './bot.js';
+import {
+  completeTurnstileVerification,
+  handleTelegramUpdate,
+  syncTelegramBotSurface,
+} from './bot.js';
 import { loadPanelConfig, resolveSupergroupId, safeGetJSON } from './config.js';
 import { serveEmbeddedAsset } from './embedded-assets.js';
 import { tgCall } from './telegram.js';
@@ -56,91 +60,9 @@ async function handleSetup(request, env, url) {
   }
   results.setWebhook = await tgCall(env, 'setWebhook', webhookPayload);
 
-  // 2. Register bot commands for private chats and groups
-  const privateCommands = [
-    { command: 'start', description: '打开个人面板与欢迎页' },
-    { command: 'panel', description: '打开个人面板小程序' },
-  ];
-  const groupCommands = [
-    { command: 'panel', description: '打开个人面板小程序' },
-    { command: 'me', description: '查看我的个人票根' },
-  ];
-  if (config.community.enableCheckin) {
-    privateCommands.push({ command: 'checkin', description: '每日签到领积分' });
-    groupCommands.push(
-      { command: 'checkin', description: '群内每日签到领积分' },
-      { command: 'rank', description: '查看群积分排行榜' }
-    );
-  }
-
-  results.privateCommands = await tgCall(env, 'setMyCommands', {
-    commands: privateCommands,
-    scope: { type: 'all_private_chats' },
-  });
-  results.groupCommands = await tgCall(env, 'setMyCommands', {
-    commands: groupCommands,
-    scope: { type: 'all_group_chats' },
-  });
-
-  // 2b. Register short, ergonomic Admin-only private commands (visible ONLY to admins!)
-  const adminPrivateCommands = [
-    ...privateCommands,
-    { command: 'set', description: '设动态贴纸徽章（跟贴纸链接或直接发贴纸）' },
-    { command: 'add', description: '添加表情包看图验证题（发贴纸再贴题目）' },
-    { command: 'resetbadge', description: '恢复默认玫瑰票根徽章' },
-    { command: 'cancel', description: '取消当前录入' },
-  ];
-
-  const adminIdSet = parseAdminIds(env);
-  const supergroupId = await resolveSupergroupId(env);
-  if (supergroupId) {
-    try {
-      const adminsRes = await tgCall(env, 'getChatAdministrators', {
-        chat_id: supergroupId,
-      });
-      for (const m of adminsRes?.result || []) {
-        if (m?.user?.id && !m.user.is_bot) {
-          adminIdSet.add(String(m.user.id));
-        }
-      }
-    } catch {
-      // Ignore if unable to list supergroup administrators
-    }
-
-    // 2c. Register Topic moderation commands inside the Admin Supergroup
-    results.supergroupAdminCommands = await tgCall(env, 'setMyCommands', {
-      commands: [
-        { command: 'info', description: '查看当前话题访客资料与媒体统计' },
-        { command: 'ban', description: '拉黑当前话题访客' },
-        { command: 'unban', description: '解除拉黑' },
-        { command: 'trust', description: '设为永久信任（免验证）' },
-        { command: 'reset', description: '重置访客验证状态' },
-        { command: 'close', description: '结束当前对话' },
-        { command: 'open', description: '重新开启对话' },
-        { command: 'unbind', description: '解绑当前通知群' },
-        { command: 'panel', description: '打开个人面板小程序' },
-      ],
-      scope: { type: 'chat_administrators', chat_id: Number(supergroupId) },
-    }).catch((e) => ({ error: e.message }));
-  }
-
-  results.adminPrivateCommands = [];
-  for (const adminId of adminIdSet) {
-    const r = await tgCall(env, 'setMyCommands', {
-      commands: adminPrivateCommands,
-      scope: { type: 'chat', chat_id: Number(adminId) },
-    }).catch((e) => ({ adminId, error: e.message }));
-    results.adminPrivateCommands.push({ adminId, ok: Boolean(r?.ok), error: r?.error });
-  }
-
-  // 3. Attach Mini App to the bottom-left chat menu button
-  results.menuButton = await tgCall(env, 'setChatMenuButton', {
-    menu_button: {
-      type: 'web_app',
-      text: '个人面板',
-      web_app: { url: `${origin}/` },
-    },
-  });
+  // 2. Sync commands, pre-Start description, cached @username & bottom-left menu button
+  const synced = await syncTelegramBotSurface(env, origin, config);
+  Object.assign(results, synced.results || {});
 
   return jsonResponse({
     ok: true,
@@ -292,7 +214,7 @@ export default {
     // Mini App API routes
     if (url.pathname.startsWith('/api/')) {
       try {
-        return await handleApiRequest(request, env, url);
+        return await handleApiRequest(request, env, url, ctx);
       } catch (err) {
         console.error('API error:', err);
         return jsonResponse({ ok: false, error: err.message || 'Internal Server Error' }, 500);
