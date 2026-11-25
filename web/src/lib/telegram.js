@@ -100,6 +100,24 @@ export function openExternalUrl(url) {
   window.open(url, '_blank', 'noopener,noreferrer');
 }
 
+// window.confirm is unreliable inside Telegram's in-app WebViews; prefer the native WebApp dialog.
+export function confirmDialog(message) {
+  const tg = getTelegramWebApp();
+  if (tg && typeof tg.showConfirm === 'function') {
+    return new Promise((resolve) => {
+      try {
+        tg.showConfirm(message, (ok) => resolve(Boolean(ok)));
+      } catch {
+        resolve(typeof window !== 'undefined' && typeof window.confirm === 'function' ? window.confirm(message) : true);
+      }
+    });
+  }
+  if (typeof window !== 'undefined' && typeof window.confirm === 'function') {
+    return Promise.resolve(window.confirm(message));
+  }
+  return Promise.resolve(true);
+}
+
 export function closeMiniApp() {
   const tg = getTelegramWebApp();
   try {

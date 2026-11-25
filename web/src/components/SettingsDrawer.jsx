@@ -14,7 +14,7 @@ import {
   X,
 } from 'lucide-react';
 import { apiRequest } from '../lib/api.js';
-import { openExternalUrl } from '../lib/telegram.js';
+import { confirmDialog, openExternalUrl } from '../lib/telegram.js';
 import { TgStickerMedia, TicketEmblem } from './Emblems.jsx';
 
 const PROBE_PROVIDER_OPTIONS = [
@@ -432,11 +432,9 @@ export default function SettingsDrawer({
   const emblem = draft.profile?.emblem || { type: 'builtin', variant: 'owner', savedStickers: [] };
   const isDirty = JSON.stringify(draft) !== JSON.stringify(adminConfig);
 
-  const handleRequestClose = () => {
-    if (isDirty && typeof window !== 'undefined' && typeof window.confirm === 'function') {
-      if (!window.confirm('还有未保存的设置修改，确定直接关闭吗？')) {
-        return;
-      }
+  const handleRequestClose = async () => {
+    if (isDirty && !(await confirmDialog('还有未保存的设置修改，确定直接关闭吗？'))) {
+      return;
     }
     onClose();
   };

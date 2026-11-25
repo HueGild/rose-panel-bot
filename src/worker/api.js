@@ -2,7 +2,7 @@
 
 import { getBlockedSpamCount } from './antispam.js';
 import { authenticateRequest, parseAdminIds, signMediaToken, verifyMediaToken } from './auth.js';
-import { initiateChatFromMiniApp, syncTelegramBotSurface } from './bot.js';
+import { initiateChatFromMiniApp, resolveBotUsername, syncTelegramBotSurface } from './bot.js';
 import { getLeaderboard, getMemberTicket, performCheckin } from './checkin.js';
 import {
   BADGE_CATALOG,
@@ -355,6 +355,11 @@ export async function handleApiRequest(request, env, url, ctx = null) {
         ck: config.community?.enableCheckin,
         bu: Boolean(env.BOT_USERNAME || config.botUsername),
       });
+      // Cache @username in the same write as the owner's settings (see syncTelegramBotSurface)
+      if (env.BOT_TOKEN && !env.BOT_USERNAME && !config.botUsername) {
+        const uname = await resolveBotUsername(env, config);
+        if (uname) body.botUsername = uname;
+      }
       const saved = await savePanelConfig(env, body);
       const nextSurfaceSig = JSON.stringify({
         wt: saved.pmBot?.welcomeText,
@@ -366,7 +371,9 @@ export async function handleApiRequest(request, env, url, ctx = null) {
 
       // Sync Telegram description, menu button & commands only when Bot-surface fields changed (or @username uncached)
       if (env.BOT_TOKEN && /^https:\/\//i.test(url.origin) && prevSurfaceSig !== nextSurfaceSig) {
-        const syncPromise = syncTelegramBotSurface(env, url.origin, saved).catch(() => {});
+        const syncPromise = syncTelegramBotSurface(env, url.origin, saved, { persistUsername: false }).catch(
+          () => {}
+        );
         if (ctx?.waitUntil) {
           ctx.waitUntil(syncPromise);
         } else {

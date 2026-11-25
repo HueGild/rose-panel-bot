@@ -760,6 +760,11 @@ async function startVerificationChallenge(env, requestOrigin, msg, config, risk 
     return;
   }
 
+  // Carried over when a challenge is refreshed via /start or the Mini App PM button, so re-issuing a
+  // challenge can never reset the failure counter (which would allow unlimited guessing) or drop queued messages.
+  let carriedFailures = 0;
+  let carriedPending = [];
+  let carriedEscalation = false;
   const existingChalId = await env.TOPIC_MAP.get(`user_challenge:${uid}`);
   if (existingChalId) {
     const existingState = await safeGetJSON(env.TOPIC_MAP, `chal:${existingChalId}`, null);
@@ -780,6 +785,10 @@ async function startVerificationChallenge(env, requestOrigin, msg, config, risk 
       return;
     }
     if (existingState) {
+      carriedFailures = Number(existingState.failures) || 0;
+      // A visitor already escalated to strict Turnstile must not downgrade by re-sending /start
+      carriedEscalation = Boolean(existingState.escalated);
+      carriedPending = Array.isArray(existingState.pending) ? existingState.pending.slice(0, 3) : [];
       await env.TOPIC_MAP.delete(`chal:${existingChalId}`);
       if (existingState.stickerMessageId && existingState.challengeChatId) {
         await tgCall(env, 'deleteMessage', {
@@ -800,14 +809,19 @@ async function startVerificationChallenge(env, requestOrigin, msg, config, risk 
   const turnstileReady = Boolean(env.TURNSTILE_SITE_KEY && env.TURNSTILE_SECRET);
   const hasStickerBank =
     Array.isArray(config.pmBot.stickerChallenges) && config.pmBot.stickerChallenges.length > 0;
-  const shouldEscalate = Boolean(config.pmBot.smartEscalation && risk?.isHighRisk && turnstileReady);
+  const shouldEscalate = Boolean(
+    turnstileReady && (carriedEscalation || (config.pmBot.smartEscalation && risk?.isHighRisk))
+  );
   let mode = shouldEscalate ? 'turnstile' : desiredMode;
   if (mode === 'turnstile' && !turnstileReady) mode = hasStickerBank ? 'sticker_quiz' : 'emoji';
   if (mode === 'sticker_quiz' && !hasStickerBank) mode = 'emoji';
   const verifyId = randomId(12);
 
   // Never pre-queue `/start` commands or high-risk ad payloads
-  const initialPending = fromStart || risk?.isHighRisk ? [] : [serializePendingMessage(msg)];
+  const initialPending = [
+    ...carriedPending,
+    ...(fromStart || risk?.isHighRisk ? [] : [serializePendingMessage(msg)]),
+  ].slice(0, 3);
 
   // Optional owner welcome header/photo when triggered from `/start` or Mini App PM button
   let welcomeHeaderHtml = '';
@@ -833,7 +847,7 @@ async function startVerificationChallenge(env, requestOrigin, msg, config, risk 
   const baseState = {
     mode,
     userId: uid,
-    failures: 0,
+    failures: carriedFailures,
     escalated: shouldEscalate,
     challengeChatId: msg.chat.id,
     user: {
@@ -2017,6 +2031,8 @@ export async function handleTelegramUpdate(update, env, requestOrigin) {
         const mustVerifyNow = Boolean(supergroupId) && !isAdmin && verifyMode !== 'off' && (!verified || needsVerify);
 
         if (mustVerifyNow) {
+          // Every /start re-issues a challenge message; cap repeats so it cannot be used to spam the chat
+          if (!(await checkRateLimit(env, `rl:start:${uid}`, 5, 60))) return;
           const inCooldown = await env.TOPIC_MAP.get(`verify_cool:${uid}`);
           if (inCooldown) {
             const hinted = await env.TOPIC_MAP.get(`verify_cool_hint:${uid}`);
@@ -2151,6 +2167,10 @@ export async function initiateChatFromMiniApp(env, requestOrigin, tgUser, config
   }
   const cfg = config || (await loadPanelConfig(env));
   const uid = String(tgUser.id);
+  // Each call can make the bot send messages, so cap it per user (button double-taps, scripted replays)
+  if (!(await checkRateLimit(env, `rl:chatstart:${uid}`, 3, 60))) {
+    return { ok: true, needsDeepLink: false, rateLimited: true };
+  }
   const isAdmin = await isUserAdmin(env, tgUser.id, tgCall);
   if (!isAdmin && (await env.TOPIC_MAP?.get(`banned:${uid}`)) === '1') {
     return { ok: true, needsDeepLink: false };
@@ -2205,21 +2225,35 @@ export async function initiateChatFromMiniApp(env, requestOrigin, tgUser, config
  * Synchronizes Telegram Bot commands, pre-Start description (`setMyDescription`),
  * bottom-left menu button (`setChatMenuButton`), and cached `@username` without needing `/setup`.
  */
-export async function syncTelegramBotSurface(env, requestOrigin, config = null) {
+/**
+ * Looks up the bot's @username via getMe when neither BOT_USERNAME nor the cached KV value is known.
+ * Returns '' on failure.
+ */
+export async function resolveBotUsername(env, config = null) {
+  const known = String(env.BOT_USERNAME || config?.botUsername || '').trim().replace(/^@/, '');
+  if (known || !env.BOT_TOKEN) return known;
+  try {
+    const me = (await tgCall(env, 'getMe', {}))?.result;
+    return String(me?.username || '').trim();
+  } catch {
+    return '';
+  }
+}
+
+export async function syncTelegramBotSurface(env, requestOrigin, config = null, options = {}) {
   if (!env.BOT_TOKEN) return { ok: false };
+  const { persistUsername = true } = options;
   const cfg = config || (await loadPanelConfig(env));
   const results = {};
 
-  // 1. Resolve & persist bot `@username` if not already known in env or KV
-  if (!env.BOT_USERNAME && !cfg.botUsername) {
-    try {
-      const me = (await tgCall(env, 'getMe', {}))?.result;
-      if (me?.username) {
-        await savePanelConfig(env, { botUsername: me.username });
-        results.botUsername = me.username;
-      }
-    } catch {
-      // Ignore transient getMe failure
+  // 1. Resolve & persist bot `@username` if not already known in env or KV.
+  // Callers that just saved the config (Settings API) resolve it before saving instead, because a
+  // second background savePanelConfig here could race the owner's save and write back stale settings.
+  if (persistUsername && !env.BOT_USERNAME && !cfg.botUsername) {
+    const uname = await resolveBotUsername(env, cfg);
+    if (uname) {
+      await savePanelConfig(env, { botUsername: uname });
+      results.botUsername = uname;
     }
   }
 

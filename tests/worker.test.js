@@ -2420,3 +2420,142 @@ describe('v1.6.0: Mini App PM wake-up, Bot surface sync, legacy social cleanup, 
     }
   });
 });
+
+describe('v1.6.0 review fixes: challenge refresh cannot reset failures, rate limits & username caching', () => {
+  function mockTg() {
+    const calls = [];
+    const fetchMock = vi.fn(async (url, init) => {
+      if (String(url).includes('api.cas.chat')) {
+        return new Response(JSON.stringify({ ok: false }), { status: 200 });
+      }
+      const method = String(url).split('/').pop();
+      const body = init?.body ? JSON.parse(init.body) : {};
+      calls.push({ method, body });
+      if (method === 'getMe') {
+        return new Response(JSON.stringify({ ok: true, result: { id: 1, username: 'Review_bot' } }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ ok: true, result: { message_id: 9 } }), { status: 200 });
+    });
+    return { calls, fetchMock };
+  }
+
+  async function withFetch(fetchMock, fn) {
+    const origFetch = globalThis.fetch;
+    globalThis.fetch = fetchMock;
+    try {
+      await fn();
+    } finally {
+      globalThis.fetch = origFetch;
+    }
+  }
+
+  const startMsg = (uid) => ({
+    message: { message_id: 7, from: { id: uid, first_name: 'V' }, chat: { id: uid, type: 'private' }, text: '/start' },
+  });
+
+  it('keeps failure count, queued messages and Turnstile escalation when /start re-issues a challenge', async () => {
+    const kv = createMemoryKV();
+    const env = {
+      TOPIC_MAP: kv,
+      BOT_TOKEN: '555:REFRESH',
+      ADMIN_IDS: '10001',
+      SUPERGROUP_ID: '-100123',
+      TURNSTILE_SITE_KEY: 'site',
+      TURNSTILE_SECRET: 'secret',
+    };
+    const { fetchMock } = mockTg();
+
+    await withFetch(fetchMock, async () => {
+      await handleTelegramUpdate(startMsg(40404), env, 'https://panel.test');
+      const firstId = await kv.get('user_challenge:40404');
+      const first = JSON.parse(await kv.get(`chal:${firstId}`));
+      expect(first.failures).toBe(0);
+
+      // Visitor already burned one attempt, queued a message and was escalated to strict mode
+      await kv.put(
+        `chal:${firstId}`,
+        JSON.stringify({
+          ...first,
+          failures: 1,
+          escalated: true,
+          pending: [{ chatId: 40404, messageId: 3, preview: 'hi', text: 'hi' }],
+        })
+      );
+
+      await handleTelegramUpdate(startMsg(40404), env, 'https://panel.test');
+      const secondId = await kv.get('user_challenge:40404');
+      expect(secondId).not.toBe(firstId);
+      expect(await kv.get(`chal:${firstId}`)).toBeNull();
+      const second = JSON.parse(await kv.get(`chal:${secondId}`));
+      expect(second.failures).toBe(1);
+      expect(second.pending).toHaveLength(1);
+      expect(second.pending[0].messageId).toBe(3);
+      expect(second.mode).toBe('turnstile');
+      expect(second.escalated).toBe(true);
+    });
+  });
+
+  it('caps repeated /start challenges and Mini App PM wake-ups per user', async () => {
+    const kv = createMemoryKV();
+    const botToken = '556:LIMITS';
+    const env = { TOPIC_MAP: kv, BOT_TOKEN: botToken, ADMIN_IDS: '10001', SUPERGROUP_ID: '-100124' };
+    const { calls, fetchMock } = mockTg();
+
+    await withFetch(fetchMock, async () => {
+      for (let i = 0; i < 7; i += 1) {
+        await handleTelegramUpdate(startMsg(50505), env, 'https://panel.test');
+      }
+      // 5 allowed per minute; each issues exactly one challenge prompt
+      expect(calls.filter((c) => c.method === 'sendMessage' && c.body.chat_id === 50505)).toHaveLength(5);
+
+      const guestInit = await signInitData(
+        { auth_date: String(Math.floor(Date.now() / 1000)), user: JSON.stringify({ id: 60606, first_name: 'G' }) },
+        botToken
+      );
+      const results = [];
+      for (let i = 0; i < 4; i += 1) {
+        const res = await worker.fetch(
+          new Request('https://panel.example.com/api/chat/start', {
+            method: 'POST',
+            headers: { 'X-Telegram-Init-Data': guestInit },
+          }),
+          env
+        );
+        results.push(await res.json());
+      }
+      expect(results.slice(0, 3).every((r) => r.ok && !r.rateLimited)).toBe(true);
+      expect(results[3].rateLimited).toBe(true);
+    });
+  });
+
+  it('caches the bot @username in the same KV write as the owner settings save', async () => {
+    const kv = createMemoryKV();
+    const botToken = '557:USERNAME';
+    const env = { TOPIC_MAP: kv, BOT_TOKEN: botToken, ADMIN_IDS: '10001' };
+    const { calls, fetchMock } = mockTg();
+    const putSpy = vi.spyOn(kv, 'put');
+
+    await withFetch(fetchMock, async () => {
+      const adminInit = await signInitData(
+        { auth_date: String(Math.floor(Date.now() / 1000)), user: JSON.stringify({ id: 10001, first_name: 'Owner' }) },
+        botToken
+      );
+      const res = await worker.fetch(
+        new Request('https://panel.example.com/api/admin/config', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json', 'X-Telegram-Init-Data': adminInit },
+          body: JSON.stringify({ pmBot: { welcomeText: '新的欢迎语' } }),
+        }),
+        env
+      );
+      expect((await res.json()).ok).toBe(true);
+    });
+
+    const configWrites = putSpy.mock.calls.filter(([key]) => key === 'config:panel');
+    expect(configWrites).toHaveLength(1);
+    const stored = JSON.parse(configWrites[0][1]);
+    expect(stored.botUsername).toBe('Review_bot');
+    expect(stored.pmBot.welcomeText).toBe('新的欢迎语');
+    expect(calls.filter((c) => c.method === 'getMe')).toHaveLength(1);
+  });
+});
