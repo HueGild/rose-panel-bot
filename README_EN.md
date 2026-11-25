@@ -13,7 +13,7 @@
 
 <p>
   <a href="README.md">🇨🇳 简体中文</a> ·
-  <a href="README_ZH_TW.md">🇭🇰🇹🇼 繁體中文</a> ·
+  <a href="README_ZH_TW.md">🇭🇰 繁體中文</a> ·
   <b>🇺🇸 English</b> ·
   <a href="docs/SETUP_GUIDE.md">🐣 5-Min Guide (ZH)</a> ·
   <a href="AGENTS.md">🤖 AI Auto-Deploy</a> ·
@@ -28,7 +28,7 @@
   </a>
 </p>
 
-<sub><b>4-Layer Anti-Spam Telegram Bidirectional PM Bot</b> — Instant <code>/start</code> Verification · Silent CAS Blacklist · 3-Second Sticker Visual Quizzes · <b>In-Panel Direct Text/Photo Chat & Recall</b> · Auto-Reply & Keyword Rules · Includes a <b>0-Second Personal Mini App Panel</b> (Sites / Multi-Protocol Server Probe / Visitor Archive) on Cloudflare Workers Free Tier</sub>
+<sub><b>Anti-Spam Telegram PM Bot where you chat & send photos right inside the panel</b> — In-Panel Text/Photo Replies & Recall · Instant <code>/start</code> Verification · 4 Human-Verification Modes (incl. static/animated sticker quizzes) · Silent CAS Blacklist · Auto-Reply & Keyword Rules · Includes a <b>0.2-Second Personal Mini App Panel</b> (Server Probe / Site Bookmarks / Visitor Archive) on Cloudflare Workers Free Tier</sub>
 
 </div>
 
@@ -88,7 +88,7 @@
   2. **Layer 2 · Unsolicited Media/Flyer Block & Auto-Escalation**: Blocks unverified first-message ad flyers (USDT/casino/VPN posters), channel forwards, and external links, auto-escalating high-risk senders to Cloudflare Turnstile.
   3. **Layer 3 · Zero-Latency Visual/Emoji Challenges + Script-Trap Honeypot**: Switch freely among Sticker Quizzes, 3×3 Emoji Odd-One-Out/Pick, Local Quizzes, and CF Turnstile; includes a bottom script-trap decoy button (defaults to temporary cooldown so misclicking humans are never permanently locked out, with an optional instant-ban mode).
   4. **Layer 4 · De-Obfuscated Keyword Filter & Edit Guard**: Strips zero-width characters, full-width Unicode (NFKC), and Cyrillic homoglyphs; monitors `edited_message` to catch "send normal text then edit into spam" bypasses.
-- **⚡ 0-Second Personal Mini App Panel & Animated Sticker Emblems**
+- **⚡ 0.2-Second Personal Mini App Panel & Animated Sticker Emblems**
   - Edge-injected customizable splash screen (`emblem` breathing halo / `emoji` bounce / `skeleton` shimmer) + local SWR cache + single-key admin overview cache (50× fewer KV reads) + automatic Telegram native dark/light chrome sync.
   - Send `/set` with any `.webp` / `.webm` / 60fps `.tgs` sticker or Custom Emoji to instantly update your main emblem; 3-way privacy card avatar (`bot` default / server-proxied `owner` TG avatar / `custom` URL) + fully editable & hideable ticket stub labels.
   - Admin-only **Owner Overview** card on the home tab, built-in **In-App Version Checker & optional 1-click Fork Sync**, plus optional 1-click **Group Check-in, Points & Badges System**.
@@ -119,7 +119,7 @@ flowchart LR
   TS -- "Verified" --> INBOX
 ```
 
-Switch anytime among **4 verification modes** inside **⚙️ Settings → Anti-Spam Verification**:
+Switch anytime among **4 verification modes** inside **⚙️ Settings → 防骚扰验证 (Anti-Spam Verification)**:
 
 | Mode | Experience & Mechanism | Anti-Abuse Protection |
 | :--- | :--- | :--- |
@@ -259,7 +259,7 @@ The panel recognized you as a regular guest — almost always because `ADMIN_IDS
 
 **Q: How do I update an existing deployment? Do I need to edit Cloudflare KV?**  
 **No — upgrades only update code and never touch Cloudflare KV!** All profile data, sites, probe settings, visitor history, and verification state are **100% preserved** (⚠️ do **not** click the *Deploy to Cloudflare* button again, as that creates a brand-new empty Worker & KV):
-- **GitHub Fork (easiest)**: Click **Sync fork → Update branch** on your fork (from `v1.4.0+` you can also sync right inside **⚙️ Settings → 版本更新**); Cloudflare rebuilds automatically in ~30s.
+- **GitHub Fork (easiest)**: Click **Sync fork → Update branch** on your fork (from `v1.4.0+` you can also sync right inside **⚙️ Settings → 版本更新 (Updates)**); Cloudflare rebuilds automatically in ~30s.
 - **Let an AI Assistant upgrade in-place (for Deploy-button copies / CLI users)**: Send this prompt to Antigravity / Claude Code / Codex / Cursor:
   ```text
   Read AGENTS.md in https://github.com/mango0114/rose-panel-bot and upgrade my existing RosePanel Bot deployment to the latest release: merge upstream/main into my own GitHub repo and push so Cloudflare rebuilds automatically. Do NOT create a new Worker, KV, or Bot; if deploying via wrangler, verify the Worker name and TOPIC_MAP KV ID match my existing setup first and use --keep-vars.
@@ -279,7 +279,7 @@ The panel recognized you as a regular guest — almost always because `ADMIN_IDS
 
 **RosePanel Bot** is 100% free and open-source under the MIT License with zero paywalls and zero telemetry. If it helped block Telegram spam or gave you a personal panel you love, feel free to buy the author a coffee / AI compute credits ☕✨
 
-- **Live Demo & Contact**: 👉 **[@Rose202_bot](https://t.me/Rose202_bot)** (try the 0-second panel and custom sticker quiz live!)
+- **Live Demo & Contact**: 👉 **[@Rose202_bot](https://t.me/Rose202_bot)** (try the 0.2-second panel and custom sticker quiz live!)
 - **Privacy-Friendly Sponsorship (Alipay Red-Packet Passcode)**: Send an Alipay passcode red packet + your desired display name & message (anonymous welcome) to **[@Rose202_bot](https://t.me/Rose202_bot)** and we'll add you to the Sponsors Wall below!
 
 ### 🏆 Sponsors Wall
