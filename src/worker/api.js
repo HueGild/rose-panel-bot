@@ -1,6 +1,6 @@
 // Mini App REST API router (/api/*)
 
-import { authenticateRequest } from './auth.js';
+import { authenticateRequest, signMediaToken, verifyMediaToken } from './auth.js';
 import { getLeaderboard, getMemberTicket, performCheckin } from './checkin.js';
 import {
   BADGE_CATALOG,
@@ -13,12 +13,19 @@ import {
 import { fetchKomariStatus } from './komari.js';
 import {
   handleAvatarProxy,
+  handleSignedMediaProxy,
   handleStickerProxy,
   normalizeStickerObject,
   parseStickerPackName,
   tgCall,
 } from './telegram.js';
-import { applyVisitorAction, getVisitorDetail, listVisitors } from './visitors.js';
+import {
+  applyVisitorAction,
+  clearVisitorHistory,
+  getVisitorDetail,
+  getVisitorHistory,
+  listVisitors,
+} from './visitors.js';
 
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -52,6 +59,19 @@ export async function handleApiRequest(request, env, url) {
   const stickerMatch = path.match(/^\/api\/sticker\/([^/]+)$/);
   if (stickerMatch && method === 'GET') {
     return handleStickerProxy(env, stickerMatch[1]);
+  }
+
+  // HMAC-signed private media proxy for visitor chat photos (admin-issued short-lived token)
+  const mediaMatch = path.match(/^\/api\/media\/([^/]+)$/);
+  if (mediaMatch && method === 'GET') {
+    const fileId = decodeURIComponent(mediaMatch[1]);
+    const exp = url.searchParams.get('exp');
+    const sig = url.searchParams.get('sig');
+    const valid = await verifyMediaToken(fileId, exp, sig, env.BOT_TOKEN);
+    if (!valid) {
+      return json({ ok: false, error: 'Invalid or expired media signature' }, 403);
+    }
+    return handleSignedMediaProxy(env, fileId);
   }
 
   // Authenticate all other API endpoints via Telegram initData HMAC-SHA256
@@ -138,6 +158,54 @@ export async function handleApiRequest(request, env, url) {
       const detail = await getVisitorDetail(env, visitorMatch[1]);
       if (!detail) return json({ ok: false, error: '未找到该访客记录' }, 404);
       return json({ ok: true, visitor: detail });
+    }
+
+    // GET /api/admin/visitors/:userId/history — archived photos (with signed URLs) & links
+    const historyMatch = path.match(/^\/api\/admin\/visitors\/(\d+)\/history$/);
+    if (historyMatch && method === 'GET') {
+      const uid = historyMatch[1];
+      const [detail, history] = await Promise.all([
+        getVisitorDetail(env, uid),
+        getVisitorHistory(env, uid),
+      ]);
+      if (!detail) return json({ ok: false, error: '未找到该访客记录' }, 404);
+
+      const signedPhotos = await Promise.all(
+        history.photos.map(async (p) => {
+          const fullToken = await signMediaToken(p.fileId, env.BOT_TOKEN, 1800);
+          const thumbId = p.thumbFileId || p.fileId;
+          const thumbToken =
+            thumbId === p.fileId ? fullToken : await signMediaToken(thumbId, env.BOT_TOKEN, 1800);
+          return {
+            id: p.id,
+            caption: p.caption || '',
+            sender: p.sender || 'visitor',
+            at: p.at,
+            url: `/api/media/${encodeURIComponent(p.fileId)}?exp=${fullToken.exp}&sig=${fullToken.sig}`,
+            thumbUrl: `/api/media/${encodeURIComponent(thumbId)}?exp=${thumbToken.exp}&sig=${thumbToken.sig}`,
+          };
+        })
+      );
+
+      return json({
+        ok: true,
+        visitor: detail,
+        photos: signedPhotos,
+        links: history.links,
+      });
+    }
+
+    // POST /api/admin/visitors/:userId/clear — clear archive or full topic + <48h PM history
+    const clearMatch = path.match(/^\/api\/admin\/visitors\/(\d+)\/clear$/);
+    if (clearMatch && method === 'POST') {
+      const body = await readJsonBody(request);
+      const mode = body?.mode === 'full' ? 'full' : 'archive';
+      try {
+        const result = await clearVisitorHistory(env, clearMatch[1], mode, tgCall);
+        return json({ ok: true, mode, ...result });
+      } catch (err) {
+        return json({ ok: false, error: err.message }, 400);
+      }
     }
 
     // POST /api/admin/visitors/:userId/action

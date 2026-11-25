@@ -34,8 +34,8 @@ export const DEFAULT_EMBLEM = {
 
 export const DEFAULT_CONFIG = {
   profile: {
-    displayName: 'Rose',
-    handle: '@Rose202_bot',
+    displayName: 'RosePanel',
+    handle: '@your_bot',
     tagline: '欢迎来到我的个人面板，这里汇集了我的个人小站与节点探针。',
     statusText: '在线营业中',
     statusTone: 'online', // online | busy | away

@@ -28,6 +28,27 @@ function timingSafeEqualHex(a, b) {
 }
 
 /**
+ * Generates a short-lived HMAC-SHA256 signature for private media proxy URLs
+ * so private visitor chat photos can be displayed in <img> tags without leaking BOT_TOKEN
+ * or exposing private media to unauthenticated requests.
+ */
+export async function signMediaToken(fileId, botToken, ttlSeconds = 1800) {
+  const exp = Math.floor(Date.now() / 1000) + ttlSeconds;
+  const key = encoder.encode(`RoseMedia:${botToken || 'dev'}`);
+  const sigBytes = await hmacSha256Raw(key, `${fileId}:${exp}`);
+  return { exp, sig: toHex(sigBytes) };
+}
+
+export async function verifyMediaToken(fileId, expStr, sigHex, botToken) {
+  const exp = Number(expStr || 0);
+  if (!fileId || !exp || !sigHex || Number.isNaN(exp)) return false;
+  if (Math.floor(Date.now() / 1000) > exp) return false;
+  const key = encoder.encode(`RoseMedia:${botToken || 'dev'}`);
+  const expected = toHex(await hmacSha256Raw(key, `${fileId}:${exp}`));
+  return timingSafeEqualHex(expected, String(sigHex).toLowerCase());
+}
+
+/**
  * Verifies Telegram WebApp initData according to Telegram's specification:
  * secret_key = HMAC_SHA256("WebAppData", bot_token)
  * hash = hex(HMAC_SHA256(secret_key, data_check_string))

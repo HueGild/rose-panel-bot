@@ -196,3 +196,38 @@ export async function handleStickerProxy(env, fileId) {
     return new Response(null, { status: 404 });
   }
 }
+
+/**
+ * Proxies a private Telegram photo/media file after signature verification.
+ */
+export async function handleSignedMediaProxy(env, fileId) {
+  const cleanId = decodeURIComponent(String(fileId || '')).trim();
+  if (!env.BOT_TOKEN || !/^[A-Za-z0-9_-]{16,180}$/.test(cleanId)) {
+    return new Response(null, { status: 404 });
+  }
+  try {
+    const fileInfo = await tgCall(env, 'getFile', { file_id: cleanId });
+    const filePath = fileInfo?.result?.file_path;
+    if (!filePath) return new Response(null, { status: 404 });
+
+    const res = await fetch(`https://api.telegram.org/file/bot${env.BOT_TOKEN}/${filePath}`);
+    if (!res.ok || !res.body) return new Response(null, { status: 404 });
+
+    const lower = filePath.toLowerCase();
+    let contentType = res.headers.get('Content-Type') || 'image/jpeg';
+    if (lower.endsWith('.png')) contentType = 'image/png';
+    else if (lower.endsWith('.webp')) contentType = 'image/webp';
+    else if (lower.endsWith('.gif')) contentType = 'image/gif';
+    else if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) contentType = 'image/jpeg';
+
+    return new Response(res.body, {
+      status: 200,
+      headers: {
+        'Content-Type': contentType,
+        'Cache-Control': 'private, max-age=1800',
+      },
+    });
+  } catch {
+    return new Response(null, { status: 404 });
+  }
+}

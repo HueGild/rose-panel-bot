@@ -1,11 +1,21 @@
 import { describe, expect, it, vi } from 'vitest';
-import { verifyTelegramInitData } from '../src/worker/auth.js';
+import { signMediaToken, verifyMediaToken, verifyTelegramInitData } from '../src/worker/auth.js';
 import { getLeaderboard, getMemberTicket, performCheckin, resolveLevel } from '../src/worker/checkin.js';
 import { DEFAULT_CONFIG, loadPanelConfig, savePanelConfig } from '../src/worker/config.js';
 import worker from '../src/worker/index.js';
 import { fetchKomariStatus, normalizeNodeMetrics } from '../src/worker/komari.js';
 import { normalizeStickerObject, parseStickerPackName } from '../src/worker/telegram.js';
-import { applyVisitorAction, getVisitorDetail, listVisitors, upsertVisitorProfile } from '../src/worker/visitors.js';
+import {
+  applyVisitorAction,
+  clearVisitorHistory,
+  extractLinksFromMessage,
+  extractPhotoFromMessage,
+  getVisitorDetail,
+  getVisitorHistory,
+  listVisitors,
+  recordVisitorExchange,
+  upsertVisitorProfile,
+} from '../src/worker/visitors.js';
 
 // Minimal in-memory Cloudflare KV mock
 function createMemoryKV() {
@@ -443,5 +453,82 @@ describe('Telegram sticker pack parser & metadata normalizer', () => {
     expect(normalizeStickerObject({ file_id: 'f1', is_animated: true, emoji: '✨' }).format).toBe('tgs');
     expect(normalizeStickerObject({ file_id: 'f2', is_video: true, emoji: '🌸' }).format).toBe('webm');
     expect(normalizeStickerObject({ file_id: 'f3', emoji: '🎀' }).format).toBe('webp');
+  });
+});
+
+describe('Visitor bidirectional archive, signed media proxy & clear history', () => {
+  it('extracts photos & links from both directions, signs media tokens, and clears archive/full topic', async () => {
+    const kv = createMemoryKV();
+    const env = {
+      TOPIC_MAP: kv,
+      BOT_TOKEN: '111222:MEDIA_TEST_SECRET',
+      SUPERGROUP_ID: '-100999888',
+      ADMIN_IDS: '10001',
+    };
+
+    await upsertVisitorProfile(env, { id: 30003, first_name: 'Clara', username: 'clara_tg' }, { threadId: 77 });
+
+    // Visitor sends a photo with caption link
+    const visitorPhotoMsg = {
+      message_id: 501,
+      photo: [
+        { file_id: 'thumb_file_id_1234567890' },
+        { file_id: 'full_file_id_123456789012' },
+      ],
+      caption: '看一下这个 https://example.com/demo 和 t.me/Rose202_bot',
+    };
+    expect(extractPhotoFromMessage(visitorPhotoMsg).fileId).toBe('full_file_id_123456789012');
+    expect(extractLinksFromMessage(visitorPhotoMsg)).toEqual([
+      'https://example.com/demo',
+      'https://t.me/Rose202_bot',
+    ]);
+
+    await recordVisitorExchange(env, '30003', visitorPhotoMsg, {
+      sender: 'visitor',
+      pmMessageId: 501,
+      preview: '[图片]',
+    });
+
+    // Admin replies with a text_link entity
+    const adminReplyMsg = {
+      message_id: 902,
+      text: '点这里查看文档',
+      entities: [{ type: 'text_link', offset: 0, length: 3, url: 'https://docs.example.org/guide' }],
+    };
+    await recordVisitorExchange(env, '30003', adminReplyMsg, {
+      sender: 'admin',
+      pmMessageId: 502,
+      preview: '点这里查看文档',
+    });
+
+    const detail = await getVisitorDetail(env, '30003');
+    expect(detail.msg_count).toBe(2);
+    expect(detail.visitor_msg_count).toBe(1);
+    expect(detail.admin_msg_count).toBe(1);
+    expect(detail.photo_count).toBe(1);
+    expect(detail.link_count).toBe(3);
+
+    // Media token signing & tampering rejection
+    const signed = await signMediaToken('full_file_id_123456789012', env.BOT_TOKEN, 600);
+    expect(await verifyMediaToken('full_file_id_123456789012', signed.exp, signed.sig, env.BOT_TOKEN)).toBe(true);
+    expect(await verifyMediaToken('other_file_id_000000000000', signed.exp, signed.sig, env.BOT_TOKEN)).toBe(false);
+
+    // Full clear calls deleteMessages & deleteForumTopic and wipes counters/history
+    const calls = [];
+    const mockTgCall = vi.fn(async (_env, method, payload) => {
+      calls.push({ method, payload });
+      return { ok: true, result: true };
+    });
+
+    const cleared = await clearVisitorHistory(env, '30003', 'full', mockTgCall);
+    expect(cleared.deletedTopic).toBe(true);
+    expect(cleared.deletedPmCount).toBe(2);
+    expect(cleared.visitor.msg_count).toBe(0);
+    expect(cleared.visitor.photo_count).toBe(0);
+    expect(cleared.visitor.link_count).toBe(0);
+    expect(cleared.visitor.thread_id).toBeNull();
+    expect((await getVisitorHistory(env, '30003')).photos).toHaveLength(0);
+    expect(calls.map((c) => c.method)).toContain('deleteForumTopic');
+    expect(calls.map((c) => c.method)).toContain('deleteMessages');
   });
 });

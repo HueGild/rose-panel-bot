@@ -14,7 +14,13 @@ import {
   parseStickerPackName,
   tgCall,
 } from './telegram.js';
-import { applyVisitorAction, formatDisplayName, getVisitorDetail, upsertVisitorProfile } from './visitors.js';
+import {
+  applyVisitorAction,
+  formatDisplayName,
+  getVisitorDetail,
+  recordVisitorExchange,
+  upsertVisitorProfile,
+} from './visitors.js';
 
 const LOCAL_QUESTIONS = [
   { q: '冰融化后会变成什么？', ok: '水', bad: ['石头', '木头', '火'] },
@@ -88,7 +94,8 @@ function buildVisitorCardText(detail) {
     `• 用户名：${detail.username ? `@${escapeHtml(detail.username)}` : '<i>未设置</i>'}`,
     `• UID：<code>${detail.userId}</code>`,
     `• 状态：${statusMap[detail.status] || detail.status}`,
-    `• 消息数：${detail.msg_count || 0} 条`,
+    `• 聊天统计：共 <b>${detail.msg_count || 0}</b> 条（对方 ${detail.visitor_msg_count || 0} · 我 ${detail.admin_msg_count || 0}）`,
+    `• 归档媒体：🖼️ ${detail.photo_count || 0} 图 · 🔗 ${detail.link_count || 0} 链`,
   ];
   if (detail.note) {
     lines.push(`• 备注：${escapeHtml(detail.note)}`);
@@ -262,7 +269,7 @@ async function forwardMessageToTopic(env, requestOrigin, msg) {
   const user = msg.from;
   const uid = String(user.id);
   const preview = previewTextOfMessage(msg);
-  await upsertVisitorProfile(env, user, { incrementMsg: true, lastPreview: preview });
+  await upsertVisitorProfile(env, user, { incrementMsg: false, lastPreview: preview });
 
   let { threadId } = await ensureVisitorTopic(env, requestOrigin, user, preview);
   try {
@@ -289,6 +296,13 @@ async function forwardMessageToTopic(env, requestOrigin, msg) {
       throw err;
     }
   }
+
+  await recordVisitorExchange(env, uid, msg, {
+    sender: 'visitor',
+    pmMessageId: msg.message_id,
+    incrementCount: true,
+    preview,
+  }).catch(() => {});
 }
 
 async function startVerificationChallenge(env, msg) {
@@ -563,11 +577,17 @@ async function handleAdminSupergroupMessage(env, requestOrigin, msg, config) {
 
   // Forward admin reply back to the visitor
   try {
-    await tgCall(env, 'copyMessage', {
+    const copied = await tgCall(env, 'copyMessage', {
       chat_id: Number(targetUid),
       from_chat_id: msg.chat.id,
       message_id: msg.message_id,
     });
+    await recordVisitorExchange(env, targetUid, msg, {
+      sender: 'admin',
+      pmMessageId: copied?.result?.message_id || null,
+      incrementCount: true,
+      preview: previewTextOfMessage(msg),
+    }).catch(() => {});
   } catch (err) {
     await tgCall(env, 'sendMessage', {
       chat_id: msg.chat.id,
