@@ -82,7 +82,7 @@
 - **🛡️ 4-Layer Intelligent Anti-Spam Shield (Millisecond Edge Latency)**
   1. **Layer 1 · CAS Global Blacklist**: Checks [Combot Anti-Spam (CAS)](https://cas.chat/) on first contact from unverified strangers (KV-cached, zero friction for real users) to silently drop known spam userbots.
   2. **Layer 2 · Unsolicited Media/Flyer Block & Auto-Escalation**: Blocks unverified first-message ad flyers (USDT/casino/VPN posters), channel forwards, and external links, auto-escalating high-risk senders to Cloudflare Turnstile.
-  3. **Layer 3 · Zero-Latency Visual/Emoji Challenges + Honeypot Trap**: Switch freely among Sticker Quizzes, 3×3 Emoji Odd-One-Out/Pick, Local Quizzes, and CF Turnstile; includes decoy honeypot buttons and silent cooldowns.
+  3. **Layer 3 · Zero-Latency Visual/Emoji Challenges + Script-Trap Honeypot**: Switch freely among Sticker Quizzes, 3×3 Emoji Odd-One-Out/Pick, Local Quizzes, and CF Turnstile; includes a bottom script-trap decoy button (defaults to temporary cooldown so misclicking humans are never permanently locked out, with an optional instant-ban mode).
   4. **Layer 4 · De-Obfuscated Keyword Filter & Edit Guard**: Strips zero-width characters, full-width Unicode (NFKC), and Cyrillic homoglyphs; monitors `edited_message` to catch "send normal text then edit into spam" bypasses.
 - **⚡ 0-Second Personal Mini App Panel & Animated Sticker Emblems**
   - Edge-injected customizable splash screen (`emblem` breathing halo / `emoji` bounce / `skeleton` shimmer) + local SWR cache + single-key admin overview cache (50× fewer KV reads) + automatic Telegram native dark/light chrome sync.
@@ -111,7 +111,7 @@ flowchart LR
   L2 -- "Banned Keyword / Edit Bypass" --> DROP
   L2 -- "Ad Flyer / Forward / URL" --> TS["🛡️ Auto-Escalate to CF Turnstile"]
   L2 -- "Normal Message" --> CH["🎭 Sticker Quiz / 🎯 Emoji Pick"]
-  CH -- "Honeypot Clicked" --> DROP
+  CH -- "Trap / Repeated Fail" --> COOL["⏳ Cooldown Lock (or Instant Ban)"]
   CH -- "Passed (30-Day Grace)" --> INBOX["💬 Forward to Forum Topic + Mini App Archive"]
   TS -- "Verified" --> INBOX
 ```
