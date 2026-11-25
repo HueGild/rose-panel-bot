@@ -14,6 +14,7 @@
   <b>🇨🇳 简体中文</b> ·
   <a href="README_EN.md">🇺🇸 English</a> ·
   <a href="docs/SETUP_GUIDE.md">🐣 零基础 5 分钟教程</a> ·
+  <a href="AGENTS.md">🤖 AI 一键部署协议</a> ·
   <a href="CHANGELOG.md">📋 更新日志</a>
 </p>
 
@@ -28,6 +29,11 @@
 </div>
 
 > **🔒 零数据收集承诺**：本项目 **不收集任何用户数据、不经过作者或任何第三方中转服务器**；所有 Bot Token、配置、小站与访客记录全部保存在**你自己的 Cloudflare Workers 与 KV** 中，代码 100% 开源可审计（可选的 CAS 反垃圾黑名单查询为公开只读接口，也可在设置里随时关闭）。
+
+> **🤖 AI 懒人一键部署（推荐）**：本仓库内置 **[AGENTS.md](AGENTS.md)**！用 **Antigravity / Claude Code / Codex / Cursor** 打开仓库，直接复制发给 AI：
+> ```text
+> 请阅读仓库里的 AGENTS.md，先询问我需要开启哪些模块（或选择轻量化安装），再帮我一步步部署 RosePanel Bot。
+> ```
 
 ---
 
