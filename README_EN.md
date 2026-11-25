@@ -48,9 +48,12 @@
 
 ---
 
-## 🎭 Signature Features: Custom Sticker Quizzes, Animated Emblems & In-App Updates
+## 💬 Signature Features: In-Panel Direct Chat, Sticker Quizzes, Emblems & In-App Updates
 
 <div align="center">
+  <p><b>💬 Direct In-Panel Chat, Photo Replies & Recall · Automatic Photo & Link Archive</b></p>
+  <img src="docs/assets/showcase-chat.png" alt="Visitor profile hub with chat, photos, links and direct in-panel text/photo replies" width="96%" />
+  <br /><br />
   <p><b>🎭 3-Second Sticker Quizzes via <code>/add</code> · Instant <code>/start</code> Verification</b></p>
   <img src="docs/assets/showcase-antispam.png" alt="Send any static or animated TG sticker via /add to create custom visual anti-spam quizzes" width="96%" />
   <br /><br />
@@ -63,23 +66,26 @@
 
 ---
 
-## 📱 4-Tab Retina Mini App Gallery (Card · Sites · Probe · In-Panel Chat)
+## 📱 4-Tab Retina Mini App Gallery (Card · Sites · Probe · Media Archive)
 
 <div align="center">
   <p><b>🪪 1 · Personal Card & Direct PM Wake-Up　｜　🌐 2 · Public & Private Dual-Layer Sites</b></p>
   <img src="docs/assets/preview-row1.png" alt="1 Personal Card & Contact Etiquette · 2 Public & Private Sites" width="96%" />
   <br /><br />
-  <p><b>📡 3 · Multi-Protocol Probe (Komari / Nezha / NodeGet / JSON)　｜　🛡️ 4 · 4-Layer Anti-Spam & Visitor Archive</b></p>
+  <p><b>📡 3 · Multi-Protocol Probe (Komari / Nezha / NodeGet / JSON)　｜　🛡️ 4 · 4-Layer Anti-Spam & Visitor List</b></p>
   <img src="docs/assets/preview-row2.png" alt="3 Multi-Protocol Server Probe (Komari / Nezha / NodeGet / JSON) · 4 Visitors & 4-Layer Anti-Spam Shield" width="96%" />
   <br /><br />
-  <p><b>🌙 Dark Rose-Obsidian Theme　｜　💬 In-Panel Direct Chat (Read Bubbles, Type Text, Send Photos & Recall)</b></p>
-  <img src="docs/assets/preview-row3.png" alt="Dark Rose-Obsidian Theme & In-Panel Visitor Chat Drawer" width="96%" />
+  <p><b>🌙 Dark Rose-Obsidian Theme　｜　🖼️ Exchanged Photos Gallery & Link Archive (Filtered by Sender)</b></p>
+  <img src="docs/assets/preview-row3.png" alt="Dark Rose-Obsidian Theme & Exchanged Photos Gallery" width="96%" />
 </div>
 
 ---
 
 ## ✨ Key Features
 
+- **💬 In-Panel Direct Text/Photo Chat + Media Archive + `/bind` Forum Inbox**
+  - **Chat Right Inside the Mini App**: Tap **`💬 Chat`** on any visitor card to inspect the last 60 message bubbles, **type text or upload photos directly from the Mini App**, and **recall sent messages in 1 tap** — every reply silently mirrors to the visitor's Forum Topic so both surfaces stay in sync.
+  - **Automatic Photo & Link Archive**: Exchanged photos (HMAC-signed private proxy + lightbox) and links are automatically archived by sender (`Visitor` / `Me`); send **`/bind`** inside a private Topics group for 1-click inbox setup (no `-100...` ID lookup), with `/del` topic recall and 1-tap Ban/Unban/Trust.
 - **🎭 1-Tap Static/Animated Sticker Visual Quizzes (`/add`)**
   - Send `/add` to your bot, drop any static or animated Telegram sticker you love + space-separated choices, and create a custom visual quiz in 3 seconds — or pick directly from sticker packs inside Settings. Humans pass in 1 second while automated spam bots hit a wall.
 - **🛡️ 4-Layer Intelligent Anti-Spam Shield (Millisecond Edge Latency)**
@@ -91,15 +97,12 @@
   - Edge-injected customizable splash screen (`emblem` breathing halo / `emoji` bounce / `skeleton` shimmer) + local SWR cache + single-key admin overview cache (50× fewer KV reads) + automatic Telegram native dark/light chrome sync.
   - Send `/set` with any `.webp` / `.webm` / 60fps `.tgs` sticker or Custom Emoji to instantly update your main emblem; 3-way privacy card avatar (`bot` default / server-proxied `owner` TG avatar / `custom` URL) + fully editable & hideable ticket stub labels.
   - Admin-only **Owner Overview** card on the home tab, built-in **In-App Version Checker & optional 1-click Fork Sync**, plus optional 1-click **Group Check-in, Points & Badges System**.
-- **🌐 Public / Private Site Directory & 📡 Pluggable Server Probe**
+- **🌐 Public / Private Site Directory & 📡 Modular Multi-Protocol Probe**
   - Categories, search, drag-free reordering, and 1-tap **`Public` vs `🔒 Private`** visibility toggle (private sites are strictly omitted server-side for non-admins).
   - Pluggable probe registry supporting **Komari (v2/v1)**, **Nezha (v1 public WebSocket / v1 REST / v0 REST)**, **NodeGet (NodeSeek official probe)**, and **Generic JSON** probes, with built-in connection testing, redirect-loop protection, 15s edge caching, and **`🔒 Private (Admin Only)`** visibility toggle.
 - **🤖 Verification-First `/start`, Auto-Reply & Keyword Engine**
   - **Instant Onboarding**: Saving your welcome text auto-syncs Telegram's pre-Start intro box (`setMyDescription`); strangers tapping `/start` (or the card's PM button) immediately get a verification challenge and can type right after passing; configurable verification grace period (`1–3650` days) and live bottom-left menu button toggle without re-running `/setup`.
   - **Busy Auto-Reply & Keyword Rules (up to 50)**: Per-visitor KV cooldown receipts + case-insensitive **contains/exact** keyword rules (forward to admin or silent direct reply), strictly gated behind verification.
-- **💬 In-Panel Direct Text/Photo Chat + `/bind` Forum Topics Inbox**
-  - **Chat Right Inside the Mini App**: Tap **`💬 Chat`** on any visitor card to inspect the last 60 message bubbles, **type text or upload photos directly from the Mini App**, and **recall sent messages in 1 tap** — every reply silently mirrors to the visitor's Forum Topic so both surfaces stay in sync.
-  - Create a private Telegram group with **Topics** enabled, make the bot an admin, and send **`/bind`** — no `-100...` group ID lookup required! Includes `/del` topic recall, clickable visitor nicknames, signed private photo gallery, link archive, notes, and 1-tap Ban/Trust/Close.
 
 ---
 
