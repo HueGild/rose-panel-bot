@@ -136,12 +136,16 @@ export default function App() {
 
   const isAdmin = Boolean(bootstrap?.isAdmin);
   const enableCheckin = Boolean(bootstrap?.config?.community?.enableCheckin);
+  const showProbeTab = isAdmin || Boolean(bootstrap?.config?.probe?.configured);
 
   const navItems = [
     { id: 'profile', label: '票根', icon: Ticket },
     { id: 'sites', label: '小站', icon: Globe },
-    { id: 'probe', label: '探针', icon: Server },
   ];
+
+  if (showProbeTab) {
+    navItems.push({ id: 'probe', label: '探针', icon: Server });
+  }
 
   if (isAdmin) {
     navItems.push({

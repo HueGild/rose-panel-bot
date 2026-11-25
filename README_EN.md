@@ -53,6 +53,28 @@ Switch freely between **3 verification modes** inside **⚙️ Settings → Comm
 2. **100% Visual Management Inside Telegram**: Edit bio, public/private sites, Komari URL, sticker badges, verification mode, and check-in rules right from your phone — no redeploy needed.
 3. **Zero-Downtime Migration**: Directly compatible with `telegram_private_chatbot`'s `TOPIC_MAP` KV schema and root `POST /` webhooks.
 4. **Privacy-Clean Repository**: Zero hardcoded tokens, group IDs, KV IDs, or private bookmarks in Git.
+5. **Modular Lightweight Design & AI-Native Installer**: Deploy as an ultra-lightweight personal card with just `BOT_TOKEN`, or toggle any module on demand. Includes a standard [AGENTS.md](AGENTS.md) so AI coding agents automatically ask which modules you want before installing!
+
+---
+
+## 🧩 Modular Add-Ons & 🤖 AI-Guided Setup
+
+Pick only what you need — unused modules stay cleanly out of the way:
+
+| Module | Default | Activation | Notes |
+| :--- | :---: | :--- | :--- |
+| **🎫 Personal Ticket + 🌐 Public/Private Sites** | Core | `BOT_TOKEN` + `TOPIC_MAP` KV | Ultra-lightweight baseline with custom TG sticker emblems & private bookmarks |
+| **📡 Komari Server Probe** | Optional | Set `KOMARI_URL` (env or in-app) | Automatically hides the `Probe` tab for visitors when unconfigured |
+| **👤 Bidirectional PM Bot + 4-Layer Shield** | Optional | Set `SUPERGROUP_ID` | Forum Topics, photo/link archive, CAS blacklist, and flyer-ad blocking |
+| **🛡️ CF Turnstile Strict Mode** | Optional | Set `TURNSTILE_SITE_KEY` & `SECRET` | Auto-escalates suspicious ads or toggleable manually in Settings |
+| **🌸 Group Check-in, Points & Badges** | Optional | `ENABLE_CHECKIN="true"` or in-app switch | Off by default for clean personal cards; 1-click on for Telegram groups |
+| **🔌 Extra Optional Extensions** | Opt-in | Ask your AI agent during setup | Need Nezha/Uptime Kuma probes or channel comment guard? Your AI agent follows [AGENTS.md](AGENTS.md) to add them only if requested |
+
+> **🤖 AI-Guided Installation (Antigravity / Claude Code / Codex / Cursor)**:  
+> Open this repo with your AI assistant and say:
+> ```text
+> Read AGENTS.md in this repo, ask me which modules I want (or if I prefer a lightweight install), and guide me through deploying RosePanel Bot.
+> ```
 
 ---
 
