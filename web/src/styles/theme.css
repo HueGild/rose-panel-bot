@@ -1541,3 +1541,211 @@ select {
 .chat-input:focus {
   border-color: var(--accent);
 }
+
+/* What's New Modal & GitHub Star Strip (CC Switch style) */
+.whatsnew-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  background: rgba(20, 12, 16, 0.48);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+}
+
+.whatsnew-modal {
+  width: 100%;
+  max-width: 400px;
+  max-height: 82vh;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 22px;
+  box-shadow: 0 24px 56px rgba(32, 10, 20, 0.28);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: sheetIn 0.2s cubic-bezier(0.2, 0.9, 0.3, 1);
+}
+
+.whatsnew-head {
+  padding: 18px 20px 10px;
+}
+
+.whatsnew-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 16.5px;
+  font-weight: 800;
+  color: var(--text);
+}
+
+.whatsnew-sub {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+.whatsnew-body {
+  padding: 6px 20px 12px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.whatsnew-ver-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.whatsnew-ver-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.whatsnew-ver-name {
+  font-size: 13.5px;
+  font-weight: 800;
+  color: var(--text);
+}
+
+.whatsnew-ver-link {
+  border: none;
+  background: transparent;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11.5px;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.whatsnew-items {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.whatsnew-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  font-size: 12.5px;
+  line-height: 1.48;
+  color: var(--text-secondary);
+}
+
+.whatsnew-tag {
+  flex-shrink: 0;
+  padding: 1.5px 6px;
+  border-radius: 6px;
+  font-size: 10.5px;
+  font-weight: 700;
+  margin-top: 1.5px;
+  background: var(--bg-subtle);
+  color: var(--text-secondary);
+}
+
+.whatsnew-tag.new {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.whatsnew-tag.imp {
+  background: rgba(59, 130, 246, 0.12);
+  color: #2563eb;
+}
+
+[data-theme="dark"] .whatsnew-tag.imp {
+  background: rgba(96, 165, 250, 0.16);
+  color: #93c5fd;
+}
+
+.whatsnew-tag.fix {
+  background: var(--green-soft);
+  color: var(--green);
+}
+
+.whatsnew-item-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.whatsnew-foot {
+  padding: 12px 20px 16px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.star-support-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 11px 13px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.11), rgba(229, 107, 146, 0.10));
+  border: 1px solid rgba(245, 158, 11, 0.24);
+  margin-top: 10px;
+}
+
+[data-theme="dark"] .star-support-strip {
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.14), rgba(229, 107, 146, 0.12));
+  border-color: rgba(245, 158, 11, 0.28);
+}
+
+.star-support-text {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 12px;
+  line-height: 1.45;
+  font-weight: 600;
+  color: var(--text);
+  flex: 1;
+  min-width: 0;
+}
+
+.star-support-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.star-support-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 11px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
+}
+
+.star-support-close {
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  padding: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}

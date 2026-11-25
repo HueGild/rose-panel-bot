@@ -18,6 +18,7 @@ import SettingsDrawer from './components/SettingsDrawer.jsx';
 import SitesTab from './components/SitesTab.jsx';
 import TicketTab from './components/TicketTab.jsx';
 import VisitorsTab from './components/VisitorsTab.jsx';
+import WhatsNewModal, { SEEN_VERSION_STORAGE_KEY } from './components/WhatsNewModal.jsx';
 import { apiRequest, getDevRole, setDevRole } from './lib/api.js';
 import {
   getLaunchTarget,
@@ -149,6 +150,11 @@ export default function App() {
   const [checkinLoading, setCheckinLoading] = useState(false);
   const [toast, setToast] = useState('');
   const [previewRole, setPreviewRole] = useState(() => getDevRole());
+  const [whatsNewState, setWhatsNewState] = useState({
+    open: false,
+    mode: 'auto',
+    previousVersion: '',
+  });
   const splashMeta = readSplashMeta();
 
   const showToast = useCallback((msg) => {
@@ -181,6 +187,24 @@ export default function App() {
         if (target.visitorId) setDeepVisitorId(target.visitorId);
       } else if (['profile', 'sites', 'probe'].includes(target.tab)) {
         setActiveTab(target.tab);
+      }
+
+      if (
+        res.isAdmin &&
+        res.appVersion &&
+        !res.isPreview &&
+        !(typeof navigator !== 'undefined' && navigator.webdriver) &&
+        !target.settings &&
+        !target.visitorId
+      ) {
+        try {
+          const seenVer = localStorage.getItem(SEEN_VERSION_STORAGE_KEY) || '';
+          if (seenVer !== String(res.appVersion)) {
+            setWhatsNewState({ open: true, mode: 'auto', previousVersion: seenVer });
+          }
+        } catch {
+          // Ignore storage errors
+        }
       }
     } catch (err) {
       setError(err.message || '加载失败');
@@ -348,6 +372,9 @@ export default function App() {
             }}
             onCheckin={handleCheckin}
             checkinLoading={checkinLoading}
+            onOpenWhatsNew={() =>
+              setWhatsNewState({ open: true, mode: 'manual', previousVersion: '' })
+            }
             onToast={showToast}
           />
         )}
@@ -430,6 +457,9 @@ export default function App() {
           initialSection={settingsSection}
           adminConfig={bootstrap.adminConfig}
           appVersion={bootstrap.appVersion}
+          onOpenWhatsNew={() =>
+            setWhatsNewState({ open: true, mode: 'manual', previousVersion: '' })
+          }
           onClose={() => setSettingsSection(null)}
           onSaved={(savedRes) => {
             setBootstrap((prev) =>
@@ -444,6 +474,24 @@ export default function App() {
             loadBootstrap();
           }}
           onToast={showToast}
+        />
+      )}
+
+      {isAdmin && whatsNewState.open && (
+        <WhatsNewModal
+          appVersion={bootstrap?.appVersion}
+          previousVersion={whatsNewState.previousVersion}
+          mode={whatsNewState.mode}
+          onClose={() => {
+            try {
+              if (bootstrap?.appVersion) {
+                localStorage.setItem(SEEN_VERSION_STORAGE_KEY, String(bootstrap.appVersion));
+              }
+            } catch {
+              // Ignore storage errors
+            }
+            setWhatsNewState((prev) => ({ ...prev, open: false }));
+          }}
         />
       )}
     </div>

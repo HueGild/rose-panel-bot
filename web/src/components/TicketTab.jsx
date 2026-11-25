@@ -31,6 +31,7 @@ export default function TicketTab({
   onOpenVisitor,
   onCheckin,
   checkinLoading,
+  onOpenWhatsNew,
   onToast,
 }) {
   const [showLevels, setShowLevels] = useState(false);
@@ -538,11 +539,24 @@ export default function TicketTab({
       {isAdmin && visitorSummary && (
         <div className="card">
           <div className="card-header" style={{ marginBottom: 10 }}>
-            <span className="card-title" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span className="card-title" style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
               <ShieldCheck size={15} color="var(--accent)" /> 站长速览
               <span className="pill" style={{ padding: '2px 8px', fontSize: 10 }}>
                 <Lock size={10} /> 仅自己可见
               </span>
+              {onOpenWhatsNew && (
+                <button
+                  type="button"
+                  className="pill rose"
+                  style={{ padding: '2px 8px', fontSize: 10, border: 'none', cursor: 'pointer' }}
+                  onClick={() => {
+                    haptic('light');
+                    onOpenWhatsNew();
+                  }}
+                >
+                  <Sparkles size={10} /> 近期更新
+                </button>
+              )}
             </span>
             <button
               type="button"

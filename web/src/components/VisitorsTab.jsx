@@ -233,6 +233,8 @@ export default function VisitorsTab({ initialVisitorId = '', onClearInitial, onT
           (m) => !(m.sender === 'admin' && Number(m.pmMessageId) === Number(pmMessageId))
         ),
       }));
+      loadVisitorHistory(uid, { silent: true });
+      loadList(search, filter);
       onToast('🗑️ 已撤回发给对方的该条消息');
     } catch (err) {
       if (activeUidRef.current === uid) onToast(err.message);

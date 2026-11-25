@@ -16,6 +16,12 @@ import {
 import { apiRequest } from '../lib/api.js';
 import { confirmDialog, openExternalUrl } from '../lib/telegram.js';
 import { TgStickerMedia, TicketEmblem } from './Emblems.jsx';
+import {
+  CHANGELOG_URL,
+  HIDE_STAR_STRIP_STORAGE_KEY,
+  REPO_URL,
+  StarSupportBanner,
+} from './WhatsNewModal.jsx';
 
 const PROBE_PROVIDER_OPTIONS = [
   {
@@ -56,6 +62,7 @@ export default function SettingsDrawer({
   initialSection = 'profile',
   adminConfig,
   appVersion = '',
+  onOpenWhatsNew,
   onClose,
   onSaved,
   onToast,
@@ -65,6 +72,13 @@ export default function SettingsDrawer({
   const [saving, setSaving] = useState(false);
   const [testingProbe, setTestingProbe] = useState(false);
   const [probeTestResult, setProbeTestResult] = useState(null);
+  const [hideStarStrip, setHideStarStrip] = useState(() => {
+    try {
+      return localStorage.getItem(HIDE_STAR_STRIP_STORAGE_KEY) === '1';
+    } catch {
+      return false;
+    }
+  });
 
   // Version check (Scheme A) & optional Fork 1-click sync (Scheme B)
   const [checkingUpdate, setCheckingUpdate] = useState(false);
@@ -2057,6 +2071,32 @@ export default function SettingsDrawer({
                   </button>
                 </div>
 
+                <div style={{ display: 'flex', gap: 7, marginTop: 8, flexWrap: 'wrap' }}>
+                  <button
+                    type="button"
+                    className="btn btn-subtle btn-sm"
+                    onClick={() => openExternalUrl(REPO_URL)}
+                  >
+                    <Globe size={13} /> 项目主页
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-subtle btn-sm"
+                    onClick={() => openExternalUrl(CHANGELOG_URL)}
+                  >
+                    <ExternalLink size={13} /> 更新日志
+                  </button>
+                  {onOpenWhatsNew && (
+                    <button
+                      type="button"
+                      className="btn btn-subtle btn-sm"
+                      onClick={onOpenWhatsNew}
+                    >
+                      <Sparkles size={13} /> 近期更新
+                    </button>
+                  )}
+                </div>
+
                 <div className="row-desc wrap" style={{ marginTop: 10, lineHeight: 1.5 }}>
                   💡 <b>零密钥安全更新（推荐）</b>：打开你 <b>Fork</b> 的 GitHub 仓库 → 点击 <b>Sync fork → Update branch</b>，Cloudflare 约 30 秒自动完成构建，全部配置与访客数据 100% 保留。<br />
                   ⚠️ 仅通过 GitHub <b>Fork</b> 得到的仓库才有 Sync fork 按钮；若通过 Deploy to Cloudflare 一键按钮创建的是独立副本，请参考仓库教程 FAQ Q3 手动同步或改绑 Fork 仓库。
@@ -2139,6 +2179,23 @@ export default function SettingsDrawer({
           <button className="btn btn-primary btn-block" disabled={saving} onClick={handleSave}>
             <Check size={16} /> {saving ? '保存中…' : '保存全部设置'}
           </button>
+        )}
+
+        {(section === 'update' || !hideStarStrip) && (
+          <StarSupportBanner
+            onDismiss={
+              section === 'update'
+                ? null
+                : () => {
+                    try {
+                      localStorage.setItem(HIDE_STAR_STRIP_STORAGE_KEY, '1');
+                    } catch {
+                      // Ignore storage errors
+                    }
+                    setHideStarStrip(true);
+                  }
+            }
+          />
         )}
       </div>
     </div>
