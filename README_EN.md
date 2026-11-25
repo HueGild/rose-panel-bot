@@ -28,7 +28,7 @@
   </a>
 </p>
 
-<sub><b>4-Layer Anti-Spam Telegram Bidirectional PM Bot</b> — Silent CAS Blacklist · Blocks Unverified Spam Flyers · 3-Second Sticker Visual Quizzes · Auto-Reply & Keyword Rules · Includes a <b>0-Second Personal Mini App Panel</b> (Sites / Multi-Protocol Server Probe / Visitor Archive) on Cloudflare Workers Free Tier</sub>
+<sub><b>4-Layer Anti-Spam Telegram Bidirectional PM Bot</b> — Instant <code>/start</code> Verification · Silent CAS Blacklist · 3-Second Sticker Visual Quizzes · <b>In-Panel Direct Text/Photo Chat & Recall</b> · Auto-Reply & Keyword Rules · Includes a <b>0-Second Personal Mini App Panel</b> (Sites / Multi-Protocol Server Probe / Visitor Archive) on Cloudflare Workers Free Tier</sub>
 
 </div>
 
@@ -52,25 +52,29 @@
 ## 🎭 Signature Features: Custom Sticker Quizzes, Animated Emblems & In-App Updates
 
 <div align="center">
-  <img src="docs/assets/showcase-antispam.png" alt="Send any static or animated TG sticker via /add to create custom visual anti-spam quizzes" width="94%" />
+  <p><b>🎭 3-Second Sticker Quizzes via <code>/add</code> · Instant <code>/start</code> Verification</b></p>
+  <img src="docs/assets/showcase-antispam.png" alt="Send any static or animated TG sticker via /add to create custom visual anti-spam quizzes" width="96%" />
   <br /><br />
-  <img src="docs/assets/showcase-badges.png" alt="Send /set with any sticker or custom emoji to update the animated main emblem" width="94%" />
+  <p><b>✨ Animated Sticker Emblems via <code>/set</code> · Saved Collection & 0ms Edge Splash</b></p>
+  <img src="docs/assets/showcase-badges.png" alt="Send /set with any sticker or custom emoji to update the animated main emblem" width="96%" />
   <br /><br />
-  <img src="docs/assets/showcase-updater.png" alt="In-panel release reminder and one-click Fork sync for Cloudflare deployments" width="94%" />
-  <br />
-  <sub>For Fork deployments, new releases show an in-panel reminder and support 1-click hot-update right inside the Bot (zero reconfiguration, 100% KV data preserved)</sub>
+  <p><b>🔄 Fork Deploy · In-App Red-Dot Release Reminder · 1-Click Hot Sync (100% KV Data Preserved)</b></p>
+  <img src="docs/assets/showcase-updater.png" alt="In-panel release reminder and one-click Fork sync for Cloudflare deployments" width="96%" />
 </div>
 
 ---
 
-## 📱 4-Tab Mini App Gallery (Card · Sites · Probe · Visitors)
+## 📱 4-Tab Retina Mini App Gallery (Card · Sites · Probe · In-Panel Chat)
 
 <div align="center">
-  <img src="docs/assets/preview-row1.png" alt="1 Personal Card & Contact Etiquette · 2 Public & Private Sites" width="94%" />
+  <p><b>🪪 1 · Personal Card & Direct PM Wake-Up　｜　🌐 2 · Public & Private Dual-Layer Sites</b></p>
+  <img src="docs/assets/preview-row1.png" alt="1 Personal Card & Contact Etiquette · 2 Public & Private Sites" width="96%" />
   <br /><br />
-  <img src="docs/assets/preview-row2.png" alt="3 Multi-Protocol Server Probe (Komari / Nezha / NodeGet / JSON) · 4 Visitors & 4-Layer Anti-Spam Shield" width="94%" />
+  <p><b>📡 3 · Multi-Protocol Probe (Komari / Nezha / NodeGet / JSON)　｜　🛡️ 4 · 4-Layer Anti-Spam & Visitor Archive</b></p>
+  <img src="docs/assets/preview-row2.png" alt="3 Multi-Protocol Server Probe (Komari / Nezha / NodeGet / JSON) · 4 Visitors & 4-Layer Anti-Spam Shield" width="96%" />
   <br /><br />
-  <img src="docs/assets/preview-row3.png" alt="Dark Rose-Obsidian Theme & Visitor Detail Drawer" width="94%" />
+  <p><b>🌙 Dark Rose-Obsidian Theme　｜　💬 In-Panel Direct Chat (Read Bubbles, Type Text, Send Photos & Recall)</b></p>
+  <img src="docs/assets/preview-row3.png" alt="Dark Rose-Obsidian Theme & In-Panel Visitor Chat Drawer" width="96%" />
 </div>
 
 ---
@@ -91,13 +95,12 @@
 - **🌐 Public / Private Site Directory & 📡 Pluggable Server Probe**
   - Categories, search, drag-free reordering, and 1-tap **`Public` vs `🔒 Private`** visibility toggle (private sites are strictly omitted server-side for non-admins).
   - Pluggable probe registry supporting **Komari (v2/v1)**, **Nezha (v1 public WebSocket / v1 REST / v0 REST)**, **NodeGet (NodeSeek official probe)**, and **Generic JSON** probes, with built-in connection testing, redirect-loop protection, 15s edge caching, and **`🔒 Private (Admin Only)`** visibility toggle.
-- **🤖 Auto-Reply, Keyword Replies & Configurable `/start` Welcome Card**
-  - **Busy/Offline Auto-Reply**: Customizable auto-receipt with per-visitor KV cooldown (prevents spammy duplicate receipts), triggered only after verification passes.
-  - **Keyword Auto-Reply Engine (up to 50 rules)**: Comma/newline/pipe-separated keywords, case-insensitive **contains** or **exact** matching, with per-rule toggle between **forward to admin (with silent topic note)** or **silent direct reply without disturbing your group**.
-  - **Configurable `/start` Welcome Card**: Toggle off `/start` auto-welcome completely, or keep text-only welcome without the inline panel button (`/panel`, `/me`, and the menu button always remain available).
-- **💬 In-Group `/bind` Setup + Visitor Profile Cards & Media Archive**
-  - Create a private Telegram group with **Topics** enabled, make the bot an admin, and send **`/bind`** — **no `-100...` group ID lookup or manual `SUPERGROUP_ID` editing required!**
-  - Topic visitor cards link the visitor's display name (`tg://user?id=`) for 1-tap profile lookup and support an optional **visitor avatar photo card** toggle; auto-archives exchanged photos (HMAC-signed private proxy + lightbox) & links with 1-tap Ban/Trust/Close.
+- **🤖 Verification-First `/start`, Auto-Reply & Keyword Engine**
+  - **Instant Onboarding**: Saving your welcome text auto-syncs Telegram's pre-Start intro box (`setMyDescription`); strangers tapping `/start` (or the card's PM button) immediately get a verification challenge and can type right after passing; configurable verification grace period (`1–3650` days) and live bottom-left menu button toggle without re-running `/setup`.
+  - **Busy Auto-Reply & Keyword Rules (up to 50)**: Per-visitor KV cooldown receipts + case-insensitive **contains/exact** keyword rules (forward to admin or silent direct reply), strictly gated behind verification.
+- **💬 In-Panel Direct Text/Photo Chat + `/bind` Forum Topics Inbox**
+  - **Chat Right Inside the Mini App**: Tap **`💬 Chat`** on any visitor card to inspect the last 60 message bubbles, **type text or upload photos directly from the Mini App**, and **recall sent messages in 1 tap** — every reply silently mirrors to the visitor's Forum Topic so both surfaces stay in sync.
+  - Create a private Telegram group with **Topics** enabled, make the bot an admin, and send **`/bind`** — no `-100...` group ID lookup required! Includes `/del` topic recall, clickable visitor nicknames, signed private photo gallery, link archive, notes, and 1-tap Ban/Trust/Close.
 
 ---
 
@@ -116,7 +119,7 @@ flowchart LR
   TS -- "Verified" --> INBOX
 ```
 
-Switch anytime among **4 verification modes** inside **⚙️ Settings → Community & Anti-Spam**:
+Switch anytime among **4 verification modes** inside **⚙️ Settings → Anti-Spam Verification**:
 
 | Mode | Experience & Mechanism | Anti-Abuse Protection |
 | :--- | :--- | :--- |
@@ -242,7 +245,7 @@ Reverse-proxy `127.0.0.1:8787` with Caddy (`reverse_proxy 127.0.0.1:8787`) for a
 
 - **Everyone**: `/start` · `/panel` · `/me` · `/checkin` (community mode) · `/rank` (community mode)
 - **Admin PM**: `/set` (animated sticker emblem) · `/add` (add custom sticker quiz) · `/resetbadge` · `/cancel`
-- **Admin Forum Topics**: `/bind` (1-click inbox bind) · `/unbind` · `/info` · `/ban` · `/unban` · `/trust` · `/reset` · `/close` · `/open`
+- **Admin Forum Topics**: `/bind` (1-click inbox bind) · `/unbind` · `/del` (reply to recall PM) · `/info` · `/ban` · `/unban` · `/trust` · `/reset` · `/close` · `/open`
 
 ---
 
