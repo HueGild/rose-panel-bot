@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 
 export function Avatar({ src, userId, name = 'R', size = '' }) {
   const [failed, setFailed] = useState(false);
@@ -14,6 +14,150 @@ export function Avatar({ src, userId, name = 'R', size = '' }) {
       )}
     </div>
   );
+}
+
+/**
+ * Renders a Telegram animated vector sticker (.tgs decompressed to Lottie JSON by Worker edge)
+ */
+export function LottieSticker({ src, size = 60, fallback = '🌸' }) {
+  const containerRef = useRef(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let anim = null;
+    let cancelled = false;
+    setFailed(false);
+
+    (async () => {
+      try {
+        const [res, lottieMod] = await Promise.all([
+          fetch(src),
+          import('lottie-web/build/player/lottie_light'),
+        ]);
+        if (!res.ok) throw new Error('load failed');
+        const animationData = await res.json();
+        if (cancelled || !containerRef.current) return;
+        const lottie = lottieMod.default || lottieMod;
+        anim = lottie.loadAnimation({
+          container: containerRef.current,
+          renderer: 'svg',
+          loop: true,
+          autoplay: true,
+          animationData,
+        });
+      } catch {
+        if (!cancelled) setFailed(true);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      anim?.destroy?.();
+    };
+  }, [src]);
+
+  if (failed) {
+    return (
+      <div
+        style={{
+          width: size,
+          height: size,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontSize: Math.round(size * 0.52),
+        }}
+      >
+        {fallback}
+      </div>
+    );
+  }
+
+  return <div ref={containerRef} style={{ width: size, height: size, flexShrink: 0 }} />;
+}
+
+/**
+ * Renders any single Telegram Sticker (static WebP, video WebM, or animated TGS Lottie)
+ */
+export function TgStickerMedia({ fileId, format = 'webp', size = 60, emoji = '🌸', previewOnly = false }) {
+  const [failed, setFailed] = useState(false);
+  const src = `/api/sticker/${encodeURIComponent(fileId)}`;
+
+  if (!fileId || failed) {
+    return (
+      <div
+        style={{
+          width: size,
+          height: size,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontSize: Math.round(size * 0.5),
+        }}
+      >
+        {emoji || '🌸'}
+      </div>
+    );
+  }
+
+  if (format === 'tgs') {
+    return <LottieSticker src={src} size={size} fallback={emoji || '✨'} />;
+  }
+
+  if (format === 'webm') {
+    return (
+      <video
+        src={src}
+        autoPlay={!previewOnly}
+        loop
+        muted
+        playsInline
+        onError={() => setFailed(true)}
+        style={{ width: size, height: size, objectFit: 'contain', display: 'block', borderRadius: 10 }}
+      />
+    );
+  }
+
+  return (
+    <img
+      src={src}
+      alt={emoji || 'badge'}
+      loading="lazy"
+      onError={() => setFailed(true)}
+      style={{ width: size, height: size, objectFit: 'contain', display: 'block' }}
+    />
+  );
+}
+
+/**
+ * Universal Ticket Emblem renderer: supports Built-in Rose SVGs, Telegram Stickers/Custom Emojis, and Image URLs
+ */
+export function TicketEmblem({ emblem, size = 62 }) {
+  const [urlFailed, setUrlFailed] = useState(false);
+
+  if (emblem?.type === 'tg_sticker' && emblem?.fileId) {
+    return (
+      <TgStickerMedia
+        fileId={emblem.fileId}
+        format={emblem.format || 'webp'}
+        emoji={emblem.emoji || '🌸'}
+        size={size}
+      />
+    );
+  }
+
+  if (emblem?.type === 'url' && emblem?.url && !urlFailed) {
+    return (
+      <img
+        src={emblem.url}
+        alt="emblem"
+        onError={() => setUrlFailed(true)}
+        style={{ width: size, height: size, objectFit: 'contain', display: 'block', borderRadius: 12 }}
+      />
+    );
+  }
+
+  return <StubEmblem variant={emblem?.variant || 'owner'} size={size} />;
 }
 
 /**
@@ -85,7 +229,6 @@ export function StubEmblem({ variant = 'bottle', size = 56 }) {
     );
   }
 
-  // Default: luminous crystal potion bottle (classic ticket-stub collectible icon)
   return (
     <svg width={size} height={size} viewBox="0 0 64 64" fill="none" aria-hidden="true">
       <defs>

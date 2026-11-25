@@ -13,7 +13,7 @@ import {
   Users,
   X,
 } from 'lucide-react';
-import { Avatar, StubEmblem } from './Emblems.jsx';
+import { Avatar, StubEmblem, TicketEmblem } from './Emblems.jsx';
 import { copyText, haptic, openExternalUrl } from '../lib/telegram.js';
 
 export default function TicketTab({
@@ -365,7 +365,7 @@ export default function TicketTab({
 
         <div className="ticket-right">
           <div className="stub-label">{profile.ownerTag || '个人名片'}</div>
-          <StubEmblem variant="owner" size={58} />
+          <TicketEmblem emblem={profile.emblem} size={64} />
           <div className="stub-rank">{profile.badgeTitle || '站长'}</div>
           <div className="stub-sub">{profile.joinedText || 'RosePanel'}</div>
         </div>

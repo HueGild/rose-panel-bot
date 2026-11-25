@@ -1,4 +1,4 @@
-// Telegram Bot API client & helpers
+// Telegram Bot API client, avatar proxy & sticker/emoji (WebP/WebM/TGS) proxy helpers
 
 export async function tgCall(env, method, payload = {}) {
   if (!env.BOT_TOKEN) {
@@ -78,6 +78,36 @@ export function escapeHtml(text = '') {
 }
 
 /**
+ * Extracts Telegram sticker/emoji pack short name from a URL or raw name.
+ * Supports:
+ *   https://t.me/addstickers/MyPack
+ *   https://t.me/addemoji/MyEmojiPack
+ *   MyPack
+ */
+export function parseStickerPackName(input = '') {
+  const trimmed = String(input || '').trim();
+  if (!trimmed) return '';
+  const urlMatch = trimmed.match(/t\.me\/(?:addstickers|addemoji)\/([A-Za-z0-9_]+)/i);
+  if (urlMatch) return urlMatch[1];
+  const rawMatch = trimmed.match(/^([A-Za-z0-9_]{3,64})$/);
+  return rawMatch ? rawMatch[1] : '';
+}
+
+export function normalizeStickerObject(sticker = {}) {
+  if (!sticker?.file_id) return null;
+  let format = 'webp';
+  if (sticker.is_animated) format = 'tgs';
+  else if (sticker.is_video) format = 'webm';
+  return {
+    fileId: sticker.file_id,
+    thumbFileId: sticker.thumbnail?.file_id || sticker.thumb?.file_id || '',
+    format,
+    emoji: sticker.emoji || '',
+    setName: sticker.set_name || '',
+  };
+}
+
+/**
  * Securely proxies a Telegram user's profile photo without exposing BOT_TOKEN.
  */
 export async function handleAvatarProxy(env, userId) {
@@ -93,7 +123,6 @@ export async function handleAvatarProxy(env, userId) {
     if (!sizes || sizes.length === 0) {
       return new Response(null, { status: 404 });
     }
-    // Prefer medium resolution (~320px) for fast Mini App loading
     const chosen = sizes[Math.min(1, sizes.length - 1)] || sizes[0];
     const fileInfo = await tgCall(env, 'getFile', { file_id: chosen.file_id });
     const filePath = fileInfo?.result?.file_path;
@@ -109,6 +138,58 @@ export async function handleAvatarProxy(env, userId) {
       headers: {
         'Content-Type': imgRes.headers.get('Content-Type') || 'image/jpeg',
         'Cache-Control': 'public, max-age=3600',
+      },
+    });
+  } catch {
+    return new Response(null, { status: 404 });
+  }
+}
+
+/**
+ * Securely proxies a Telegram Sticker or Custom Emoji by file_id without exposing BOT_TOKEN.
+ * Automatically decompresses `.tgs` (gzipped Lottie) into clean JSON for web lottie playback!
+ */
+export async function handleStickerProxy(env, fileId) {
+  const cleanId = decodeURIComponent(String(fileId || '')).trim();
+  if (!env.BOT_TOKEN || !/^[A-Za-z0-9_-]{16,180}$/.test(cleanId)) {
+    return new Response(null, { status: 404 });
+  }
+  try {
+    const fileInfo = await tgCall(env, 'getFile', { file_id: cleanId });
+    const filePath = fileInfo?.result?.file_path;
+    if (!filePath) {
+      return new Response(null, { status: 404 });
+    }
+    const res = await fetch(`https://api.telegram.org/file/bot${env.BOT_TOKEN}/${filePath}`);
+    if (!res.ok || !res.body) {
+      return new Response(null, { status: 404 });
+    }
+
+    const lower = filePath.toLowerCase();
+
+    // Telegram animated vector stickers (.tgs) are gzip-compressed Lottie JSON
+    if (lower.endsWith('.tgs')) {
+      const decompressed = res.body.pipeThrough(new DecompressionStream('gzip'));
+      return new Response(decompressed, {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/json; charset=utf-8',
+          'Cache-Control': 'public, max-age=86400, immutable',
+        },
+      });
+    }
+
+    let contentType = res.headers.get('Content-Type') || 'application/octet-stream';
+    if (lower.endsWith('.webp')) contentType = 'image/webp';
+    else if (lower.endsWith('.webm')) contentType = 'video/webm';
+    else if (lower.endsWith('.png')) contentType = 'image/png';
+    else if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) contentType = 'image/jpeg';
+
+    return new Response(res.body, {
+      status: 200,
+      headers: {
+        'Content-Type': contentType,
+        'Cache-Control': 'public, max-age=86400, immutable',
       },
     });
   } catch {

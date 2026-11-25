@@ -4,6 +4,7 @@ import { getLeaderboard, getMemberTicket, performCheckin, resolveLevel } from '.
 import { DEFAULT_CONFIG, loadPanelConfig, savePanelConfig } from '../src/worker/config.js';
 import worker from '../src/worker/index.js';
 import { fetchKomariStatus, normalizeNodeMetrics } from '../src/worker/komari.js';
+import { normalizeStickerObject, parseStickerPackName } from '../src/worker/telegram.js';
 import { applyVisitorAction, getVisitorDetail, listVisitors, upsertVisitorProfile } from '../src/worker/visitors.js';
 
 // Minimal in-memory Cloudflare KV mock
@@ -355,5 +356,92 @@ describe('Worker API authorization & config masking', () => {
     const persisted = await loadPanelConfig(env);
     expect(persisted.profile.displayName).toBe('Rose Studio');
     expect(persisted.probe.apiKey).toBe('super-secret-key');
+  });
+
+  it('strictly hides private sites from non-admin visitors while letting admin toggle visibility', async () => {
+    const env = {
+      TOPIC_MAP: createMemoryKV(),
+      BOT_TOKEN: token,
+      ADMIN_IDS: '10001',
+    };
+
+    await savePanelConfig(env, {
+      sites: [
+        { id: 'pub-1', name: '公开博客', url: 'https://blog.test', visibility: 'public' },
+        { id: 'priv-1', name: '私密后台', url: 'https://secret.test', visibility: 'private' },
+      ],
+    });
+
+    const now = Math.floor(Date.now() / 1000);
+    const guestInit = await signInitData(
+      { auth_date: String(now), user: JSON.stringify({ id: 20002, first_name: 'Guest' }) },
+      token
+    );
+    const adminInit = await signInitData(
+      { auth_date: String(now), user: JSON.stringify({ id: 10001, first_name: 'Rose' }) },
+      token
+    );
+
+    // Guest bootstrap MUST NOT leak private sites
+    const guestBoot = await (
+      await worker.fetch(
+        new Request('https://example.workers.dev/api/bootstrap', {
+          headers: { 'X-Telegram-Init-Data': guestInit },
+        }),
+        env
+      )
+    ).json();
+    expect(guestBoot.config.sites.map((s) => s.id)).toEqual(['pub-1']);
+
+    // Admin bootstrap sees both public & private sites
+    const adminBoot = await (
+      await worker.fetch(
+        new Request('https://example.workers.dev/api/bootstrap', {
+          headers: { 'X-Telegram-Init-Data': adminInit },
+        }),
+        env
+      )
+    ).json();
+    expect(adminBoot.config.sites.map((s) => s.id)).toEqual(['pub-1', 'priv-1']);
+
+    // Admin toggles pub-1 -> private via quick toggle endpoint
+    const toggled = await (
+      await worker.fetch(
+        new Request('https://example.workers.dev/api/admin/sites/toggle', {
+          method: 'POST',
+          headers: { 'X-Telegram-Init-Data': adminInit, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: 'pub-1', visibility: 'private' }),
+        }),
+        env
+      )
+    ).json();
+    expect(toggled.ok).toBe(true);
+    expect(toggled.config.sites.find((s) => s.id === 'pub-1').visibility).toBe('private');
+
+    // Now guest sees zero sites
+    const guestBootAfter = await (
+      await worker.fetch(
+        new Request('https://example.workers.dev/api/bootstrap', {
+          headers: { 'X-Telegram-Init-Data': guestInit },
+        }),
+        env
+      )
+    ).json();
+    expect(guestBootAfter.config.sites).toHaveLength(0);
+  });
+});
+
+describe('Telegram sticker pack parser & metadata normalizer', () => {
+  it('parses addstickers, addemoji URLs and plain names', () => {
+    expect(parseStickerPackName('https://t.me/addstickers/RoseBadges')).toBe('RoseBadges');
+    expect(parseStickerPackName('https://t.me/addemoji/My_Emoji_Pack_2026')).toBe('My_Emoji_Pack_2026');
+    expect(parseStickerPackName('CustomPack123')).toBe('CustomPack123');
+    expect(parseStickerPackName('https://example.com/nope')).toBe('');
+  });
+
+  it('normalizes webp, webm, and animated tgs sticker formats', () => {
+    expect(normalizeStickerObject({ file_id: 'f1', is_animated: true, emoji: '✨' }).format).toBe('tgs');
+    expect(normalizeStickerObject({ file_id: 'f2', is_video: true, emoji: '🌸' }).format).toBe('webm');
+    expect(normalizeStickerObject({ file_id: 'f3', emoji: '🎀' }).format).toBe('webp');
   });
 });

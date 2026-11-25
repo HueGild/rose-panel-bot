@@ -2,11 +2,18 @@
 // 1. Bidirectional Anti-Spam PM Bot with Forum Topics (compatible with telegram_private_chatbot)
 // 2. Topic Visitor Info Card + Direct Mini App Profile & Moderation Buttons
 // 3. Group & Private Personal Panel + Optional Check-in / Points / Leaderboard Commands
+// 4. Admin /setbadge & /resetbadge for capturing Telegram Stickers / Custom Emojis as Ticket Emblem
 
 import { isUserAdmin } from './auth.js';
 import { getLeaderboard, getMemberTicket, performCheckin } from './checkin.js';
-import { loadPanelConfig, safeGetJSON, safePutJSON } from './config.js';
-import { buildPanelButton, escapeHtml, tgCall } from './telegram.js';
+import { loadPanelConfig, safeGetJSON, safePutJSON, savePanelConfig } from './config.js';
+import {
+  buildPanelButton,
+  escapeHtml,
+  normalizeStickerObject,
+  parseStickerPackName,
+  tgCall,
+} from './telegram.js';
 import { applyVisitorAction, formatDisplayName, getVisitorDetail, upsertVisitorProfile } from './visitors.js';
 
 const LOCAL_QUESTIONS = [
@@ -119,6 +126,100 @@ async function checkRateLimit(env, key, limit = 40, windowSec = 60) {
   return true;
 }
 
+/**
+ * Extracts a Telegram Sticker or Custom Emoji from a message (or its replied message)
+ * or imports stickers from a t.me/addstickers/... / t.me/addemoji/... URL.
+ */
+async function extractStickersFromMessage(env, msg) {
+  const sources = [msg, msg.reply_to_message].filter(Boolean);
+
+  // 1. Direct sticker object
+  for (const src of sources) {
+    if (src.sticker?.file_id) {
+      const normalized = normalizeStickerObject(src.sticker);
+      if (normalized) return { stickers: [normalized], sourceLabel: 'TG 贴纸' };
+    }
+  }
+
+  // 2. Telegram Premium Custom Emoji entities inside text or caption
+  for (const src of sources) {
+    const entities = [...(src.entities || []), ...(src.caption_entities || [])];
+    const customIds = entities
+      .filter((e) => e.type === 'custom_emoji' && e.custom_emoji_id)
+      .map((e) => e.custom_emoji_id);
+    if (customIds.length > 0) {
+      const res = await tgCall(env, 'getCustomEmojiStickers', {
+        custom_emoji_ids: customIds.slice(0, 12),
+      });
+      const stickers = (res?.result || []).map(normalizeStickerObject).filter(Boolean);
+      if (stickers.length > 0) {
+        return { stickers, sourceLabel: 'TG 收藏自定义表情' };
+      }
+    }
+  }
+
+  // 3. Sticker / Emoji pack link or name in command args or plain text
+  const rawText = String(msg.text || msg.caption || '').trim();
+  const parsedCmd = extractCommand(rawText);
+  const candidate = parsedCmd ? parsedCmd.args : rawText;
+  const packName = parseStickerPackName(candidate);
+  if (packName) {
+    const res = await tgCall(env, 'getStickerSet', { name: packName });
+    const set = res?.result;
+    const stickers = (set?.stickers || []).slice(0, 12).map(normalizeStickerObject).filter(Boolean);
+    if (stickers.length > 0) {
+      return { stickers, sourceLabel: `贴纸包「${set?.title || packName}」` };
+    }
+  }
+
+  return null;
+}
+
+async function applyCapturedStickersAsBadge(env, requestOrigin, chatId, captured, config) {
+  const primary = captured.stickers[0];
+  const existingSaved = Array.isArray(config.profile?.emblem?.savedStickers)
+    ? config.profile.emblem.savedStickers
+    : [];
+
+  const mergedSaved = [...captured.stickers, ...existingSaved].filter(
+    (item, idx, arr) => item?.fileId && arr.findIndex((x) => x.fileId === item.fileId) === idx
+  );
+
+  await savePanelConfig(env, {
+    profile: {
+      emblem: {
+        type: 'tg_sticker',
+        fileId: primary.fileId,
+        format: primary.format,
+        emoji: primary.emoji || '',
+        setName: primary.setName || '',
+        savedStickers: mergedSaved.slice(0, 30),
+      },
+    },
+  });
+
+  const formatLabel =
+    primary.format === 'tgs'
+      ? '动态矢量 (.tgs)'
+      : primary.format === 'webm'
+        ? '动态视频 (.webm)'
+        : '高清静态 (.webp)';
+
+  const extraTip =
+    captured.stickers.length > 1
+      ? `\n同时已将本次捕获的 <b>${captured.stickers.length}</b> 枚徽章加入你的「收藏徽章库」，随时可在小程序设置里一键切换！`
+      : '\n已自动加入你的「收藏徽章库」，可在小程序设置里随时切换。';
+
+  await tgCall(env, 'sendMessage', {
+    chat_id: chatId,
+    text: `✨ <b>票根徽章已更新！</b>\n\n• 来源：${escapeHtml(captured.sourceLabel)}\n• 格式：${formatLabel}${extraTip}`,
+    parse_mode: 'HTML',
+    reply_markup: {
+      inline_keyboard: [[buildPanelButton(env, requestOrigin, '🎫 立即打开面板预览效果', { isGroup: false })]],
+    },
+  });
+}
+
 async function ensureVisitorTopic(env, requestOrigin, tgUser, preview = '') {
   const uid = String(tgUser.id);
   const existing = await safeGetJSON(env.TOPIC_MAP, `user:${uid}`, null);
@@ -172,7 +273,6 @@ async function forwardMessageToTopic(env, requestOrigin, msg) {
       message_id: msg.message_id,
     });
   } catch (err) {
-    // Topic was deleted in supergroup -> recreate automatically
     if (/thread not found|topic_deleted|message thread not found/i.test(String(err.message))) {
       const rec = (await safeGetJSON(env.TOPIC_MAP, `user:${uid}`, {})) || {};
       delete rec.thread_id;
@@ -304,7 +404,6 @@ async function handleGroupPanelCommand(env, requestOrigin, msg, config) {
     return;
   }
 
-  // Personal card mode in group
   const text = [
     `🌸 <b>${escapeHtml(config.profile.displayName)}</b> · <i>${escapeHtml(config.profile.statusText)}</i>`,
     `${escapeHtml(config.profile.tagline)}`,
@@ -391,7 +490,6 @@ async function handleAdminSupergroupMessage(env, requestOrigin, msg, config) {
   const threadId = msg.message_thread_id;
   const parsed = extractCommand(msg.text || '');
 
-  // Commands that work anywhere in supergroup
   if (parsed?.cmd === 'panel' || parsed?.cmd === 'me') {
     await handleGroupPanelCommand(env, requestOrigin, msg, config);
     return;
@@ -522,7 +620,6 @@ async function handleCallbackQuery(env, requestOrigin, cq, config) {
       parse_mode: 'HTML',
     }).catch(() => {});
 
-    // Forward queued messages
     const pending = Array.isArray(state.pending) ? state.pending : [];
     for (const item of pending) {
       await forwardMessageToTopic(env, requestOrigin, {
@@ -637,6 +734,84 @@ export async function handleTelegramUpdate(update, env, requestOrigin) {
   if (chatType === 'private') {
     const uid = String(msg.from.id);
     const parsed = extractCommand(msg.text || '');
+    const isAdmin = await isUserAdmin(env, msg.from.id, tgCall);
+
+    // Admin badge capture commands (/setbadge & /resetbadge)
+    if (isAdmin && parsed?.cmd === 'setbadge') {
+      try {
+        const captured = await extractStickersFromMessage(env, msg);
+        if (captured) {
+          await env.TOPIC_MAP.delete(`await_badge:${uid}`);
+          await applyCapturedStickersAsBadge(env, requestOrigin, msg.chat.id, captured, config);
+          return;
+        }
+      } catch (err) {
+        await tgCall(env, 'sendMessage', {
+          chat_id: msg.chat.id,
+          text: `⚠️ 读取贴纸/表情失败：${err.message}`,
+        });
+        return;
+      }
+
+      await env.TOPIC_MAP.put(`await_badge:${uid}`, '1', { expirationTtl: 300 });
+      await tgCall(env, 'sendMessage', {
+        chat_id: msg.chat.id,
+        text: [
+          `✨ <b>已进入票根徽章设置模式（5 分钟内有效）</b>`,
+          ``,
+          `请直接发送以下任意一种内容给我：`,
+          `1. 任意一张 <b>Telegram 贴纸</b>（支持静态/动态）`,
+          `2. 包含你收藏的 <b>TG 自定义表情（Custom Emoji）</b> 的消息`,
+          `3. 贴纸包或表情包链接（如 <code>https://t.me/addstickers/...</code> 或 <code>https://t.me/addemoji/...</code>）`,
+          ``,
+          `<i>发送 /resetbadge 可恢复默认玫瑰徽章。</i>`,
+        ].join('\n'),
+        parse_mode: 'HTML',
+      });
+      return;
+    }
+
+    if (isAdmin && parsed?.cmd === 'resetbadge') {
+      await env.TOPIC_MAP.delete(`await_badge:${uid}`);
+      await savePanelConfig(env, {
+        profile: { emblem: { type: 'builtin', variant: 'owner' } },
+      });
+      await tgCall(env, 'sendMessage', {
+        chat_id: msg.chat.id,
+        text: '🌸 已恢复默认的玫瑰矢量徽章！',
+        reply_markup: {
+          inline_keyboard: [[buildPanelButton(env, requestOrigin, '🎫 打开个人面板查看', { isGroup: false })]],
+        },
+      });
+      return;
+    }
+
+    // If admin is in /setbadge capture window, intercept their next sticker / custom emoji / pack URL
+    if (isAdmin && !parsed) {
+      const waitingBadge = await env.TOPIC_MAP.get(`await_badge:${uid}`);
+      if (waitingBadge === '1') {
+        try {
+          const captured = await extractStickersFromMessage(env, msg);
+          if (captured) {
+            await env.TOPIC_MAP.delete(`await_badge:${uid}`);
+            await applyCapturedStickersAsBadge(env, requestOrigin, msg.chat.id, captured, config);
+            return;
+          }
+          await tgCall(env, 'sendMessage', {
+            chat_id: msg.chat.id,
+            text: '未识别到贴纸、TG 自定义表情或贴纸包链接，请重新发送（支持直接发贴纸、发收藏表情，或发 t.me/addstickers/... 链接）。',
+          });
+          return;
+        } catch (err) {
+          await env.TOPIC_MAP.delete(`await_badge:${uid}`);
+          await tgCall(env, 'sendMessage', {
+            chat_id: msg.chat.id,
+            text: `⚠️ 获取贴纸失败：${err.message}`,
+          });
+          return;
+        }
+      }
+    }
 
     if (parsed) {
       if (parsed.cmd === 'start' || parsed.cmd === 'panel' || parsed.cmd === 'me') {
@@ -652,7 +827,6 @@ export async function handleTelegramUpdate(update, env, requestOrigin) {
         return;
       }
       // Intercept unknown slash commands from regular visitors so they don't spam the owner
-      const isAdmin = await isUserAdmin(env, msg.from.id, tgCall);
       if (!isAdmin) return;
     }
 
@@ -681,7 +855,6 @@ export async function handleTelegramUpdate(update, env, requestOrigin) {
     }
 
     // Check anti-spam verification
-    const isAdmin = await isUserAdmin(env, msg.from.id, tgCall);
     const verified = await env.TOPIC_MAP.get(`verified:${uid}`);
     const needsVerify = await env.TOPIC_MAP.get(`needs_verify:${uid}`);
 

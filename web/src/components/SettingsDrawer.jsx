@@ -1,6 +1,18 @@
 import React, { useState } from 'react';
-import { Check, Plus, RefreshCw, Trash2, X } from 'lucide-react';
+import {
+  ArrowDown,
+  ArrowUp,
+  Check,
+  Globe,
+  Lock,
+  Plus,
+  RefreshCw,
+  Sparkles,
+  Trash2,
+  X,
+} from 'lucide-react';
 import { apiRequest } from '../lib/api.js';
+import { TgStickerMedia, TicketEmblem } from './Emblems.jsx';
 
 export default function SettingsDrawer({
   initialSection = 'profile',
@@ -15,6 +27,11 @@ export default function SettingsDrawer({
   const [testingProbe, setTestingProbe] = useState(false);
   const [probeTestResult, setProbeTestResult] = useState(null);
 
+  // Telegram Sticker / Custom Emoji pack browser state
+  const [packInput, setPackInput] = useState('');
+  const [loadingPack, setLoadingPack] = useState(false);
+  const [loadedPack, setLoadedPack] = useState(null);
+
   const updateField = (group, key, value) => {
     setDraft((prev) => ({
       ...prev,
@@ -22,19 +39,72 @@ export default function SettingsDrawer({
     }));
   };
 
-  const handleAddSite = () => {
+  const updateEmblem = (patch) => {
+    setDraft((prev) => ({
+      ...prev,
+      profile: {
+        ...prev.profile,
+        emblem: {
+          ...(prev.profile?.emblem || {}),
+          ...patch,
+        },
+      },
+    }));
+  };
+
+  const handleSelectSticker = (sticker) => {
+    const existingSaved = Array.isArray(draft.profile?.emblem?.savedStickers)
+      ? draft.profile.emblem.savedStickers
+      : [];
+    const mergedSaved = [sticker, ...existingSaved]
+      .filter((item, idx, arr) => item?.fileId && arr.findIndex((x) => x.fileId === item.fileId) === idx)
+      .slice(0, 30);
+
+    updateEmblem({
+      type: 'tg_sticker',
+      fileId: sticker.fileId,
+      format: sticker.format || 'webp',
+      emoji: sticker.emoji || '',
+      setName: sticker.setName || '',
+      savedStickers: mergedSaved,
+    });
+    onToast('✨ 已选中该徽章，点底部「保存全部设置」生效');
+  };
+
+  const handleFetchStickerPack = async () => {
+    if (!packInput.trim()) {
+      onToast('请粘贴 t.me/addstickers/... 或 t.me/addemoji/... 链接');
+      return;
+    }
+    try {
+      setLoadingPack(true);
+      const res = await apiRequest('/api/admin/stickers/pack', {
+        method: 'POST',
+        body: { input: packInput.trim() },
+      });
+      setLoadedPack(res);
+      onToast(`已加载「${res.title}」（共 ${res.stickers?.length || 0} 枚）`);
+    } catch (err) {
+      onToast(err.message);
+    } finally {
+      setLoadingPack(false);
+    }
+  };
+
+  const handleAddSite = (visibility = 'public') => {
     setDraft((prev) => ({
       ...prev,
       sites: [
         ...(prev.sites || []),
         {
-          id: `site-${Date.now()}`,
-          name: '新站点',
+          id: `site-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+          name: visibility === 'private' ? '常用私密站点' : '新公开小站',
           url: 'https://',
           description: '',
-          category: '工具',
-          icon: '✨',
+          category: visibility === 'private' ? '常用' : '工具',
+          icon: visibility === 'private' ? '🔐' : '✨',
           badge: '',
+          visibility,
         },
       ],
     }));
@@ -44,6 +114,16 @@ export default function SettingsDrawer({
     setDraft((prev) => {
       const next = [...prev.sites];
       next[idx] = { ...next[idx], [key]: val };
+      return { ...prev, sites: next };
+    });
+  };
+
+  const handleMoveSite = (idx, delta) => {
+    setDraft((prev) => {
+      const target = idx + delta;
+      if (target < 0 || target >= prev.sites.length) return prev;
+      const next = [...prev.sites];
+      [next[idx], next[target]] = [next[target], next[idx]];
       return { ...prev, sites: next };
     });
   };
@@ -122,6 +202,8 @@ export default function SettingsDrawer({
     }
   };
 
+  const emblem = draft.profile?.emblem || { type: 'builtin', variant: 'owner', savedStickers: [] };
+
   return (
     <div className="sheet-backdrop" onClick={onClose}>
       <div className="sheet-panel" onClick={(e) => e.stopPropagation()}>
@@ -135,7 +217,7 @@ export default function SettingsDrawer({
 
         <div className="chip-row">
           {[
-            { id: 'profile', label: '名片信息' },
+            { id: 'profile', label: '名片与徽章' },
             { id: 'sites', label: '个人小站' },
             { id: 'probe', label: 'Komari 探针' },
             { id: 'modes', label: '社区与防骚扰' },
@@ -150,166 +232,384 @@ export default function SettingsDrawer({
           ))}
         </div>
 
-        {/* Section 1: Profile */}
+        {/* Section 1: Profile & Ticket Emblem (TG Stickers / Custom Emojis!) */}
         {section === 'profile' && (
-          <div className="card">
-            <div className="field">
-              <label className="field-label">显示昵称</label>
-              <input
-                className="input"
-                value={draft.profile.displayName}
-                onChange={(e) => updateField('profile', 'displayName', e.target.value)}
-              />
-            </div>
-            <div className="field">
-              <label className="field-label">Bot / 个人账号标识</label>
-              <input
-                className="input"
-                value={draft.profile.handle}
-                onChange={(e) => updateField('profile', 'handle', e.target.value)}
-              />
-            </div>
-            <div className="field">
-              <label className="field-label">当前状态文案</label>
-              <input
-                className="input"
-                value={draft.profile.statusText}
-                onChange={(e) => updateField('profile', 'statusText', e.target.value)}
-                placeholder="例如：在线营业中 / 摸鱼中 / 勿扰"
-              />
-            </div>
-            <div className="field">
-              <label className="field-label">个人简介</label>
-              <textarea
-                className="textarea"
-                value={draft.profile.tagline}
-                onChange={(e) => updateField('profile', 'tagline', e.target.value)}
-              />
-            </div>
-            <div className="field">
-              <label className="field-label">自定义头像图片链接（留空自动取站长 TG 头像）</label>
-              <input
-                className="input"
-                value={draft.profile.avatarUrl}
-                onChange={(e) => updateField('profile', 'avatarUrl', e.target.value)}
-                placeholder="https://..."
-              />
-            </div>
-            <div className="field">
-              <label className="field-label">置顶公告（留空则隐藏）</label>
-              <input
-                className="input"
-                value={draft.profile.notice}
-                onChange={(e) => updateField('profile', 'notice', e.target.value)}
-                placeholder="可选：向访客展示一条置顶公告"
-              />
-            </div>
-
-            <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--border)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                <span className="field-label" style={{ margin: 0 }}>社交与联系方式</span>
-                <button className="btn btn-soft btn-sm" onClick={handleAddSocial}>
-                  <Plus size={13} /> 添加
-                </button>
+          <>
+            {/* Ticket Stub Emblem Picker Card */}
+            <div className="card">
+              <div className="card-header" style={{ marginBottom: 10 }}>
+                <span className="card-title" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <Sparkles size={15} color="var(--accent)" /> 票根主徽章（支持 TG 贴纸 / 收藏表情）
+                </span>
               </div>
-              {(draft.profile.socials || []).map((soc, idx) => (
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 12 }}>
                 <div
-                  key={soc.id || idx}
                   style={{
+                    width: 72,
+                    height: 72,
+                    borderRadius: 18,
                     background: 'var(--bg-subtle)',
-                    borderRadius: 14,
-                    padding: 10,
-                    marginBottom: 8,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0,
                   }}
                 >
-                  <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
+                  <TicketEmblem emblem={emblem} size={60} />
+                </div>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  {[
+                    { id: 'builtin', label: '内置玫瑰' },
+                    { id: 'tg_sticker', label: 'TG 贴纸·表情' },
+                    { id: 'url', label: '图片链接' },
+                  ].map((mode) => (
+                    <button
+                      key={mode.id}
+                      type="button"
+                      className={`pill ${emblem.type === mode.id ? 'rose' : ''}`}
+                      style={{ cursor: 'pointer' }}
+                      onClick={() => updateEmblem({ type: mode.id })}
+                    >
+                      {mode.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {emblem.type === 'builtin' && (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+                  {[
+                    { id: 'owner', label: '玫瑰花瓣' },
+                    { id: 'bottle', label: '水晶药水瓶' },
+                    { id: 'crown', label: '星辰皇冠' },
+                  ].map((opt) => (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      className={`sticker-cell ${emblem.variant === opt.id ? 'selected' : ''}`}
+                      onClick={() => updateEmblem({ type: 'builtin', variant: opt.id })}
+                    >
+                      <TicketEmblem emblem={{ type: 'builtin', variant: opt.id }} size={44} />
+                      <span style={{ fontSize: 11, marginTop: 4 }}>{opt.label}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {emblem.type === 'url' && (
+                <div className="field" style={{ marginBottom: 0 }}>
+                  <label className="field-label">透明底 PNG / WebP / GIF 图片链接</label>
+                  <input
+                    className="input"
+                    value={emblem.url || ''}
+                    onChange={(e) => updateEmblem({ type: 'url', url: e.target.value })}
+                    placeholder="https://example.com/badge.webp"
+                  />
+                </div>
+              )}
+
+              {emblem.type === 'tg_sticker' && (
+                <div>
+                  <div
+                    style={{
+                      fontSize: 12,
+                      color: 'var(--accent)',
+                      background: 'var(--accent-soft)',
+                      borderRadius: 12,
+                      padding: '8px 10px',
+                      marginBottom: 10,
+                      lineHeight: 1.5,
+                    }}
+                  >
+                    💡 <b>最快捷方式</b>：直接私聊机器人发 <code>/setbadge</code>，再发任意一张贴纸或收藏的 TG 自定义表情即可秒设！也可在下方贴贴纸包链接挑选：
+                  </div>
+
+                  <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
+                    <input
+                      className="input"
+                      value={packInput}
+                      onChange={(e) => setPackInput(e.target.value)}
+                      placeholder="粘贴 t.me/addstickers/... 或 addemoji/..."
+                    />
+                    <button
+                      type="button"
+                      className="btn btn-soft"
+                      style={{ flexShrink: 0 }}
+                      disabled={loadingPack}
+                      onClick={handleFetchStickerPack}
+                    >
+                      {loadingPack ? <RefreshCw size={14} className="spin" /> : '拉取'}
+                    </button>
+                  </div>
+
+                  {loadedPack?.stickers?.length > 0 && (
+                    <div style={{ marginBottom: 12 }}>
+                      <div className="field-label">
+                        「{loadedPack.title}」点击选用（支持静态 / 动态）
+                      </div>
+                      <div className="sticker-grid">
+                        {loadedPack.stickers.map((st) => (
+                          <button
+                            key={st.fileId}
+                            type="button"
+                            className={`sticker-cell ${emblem.fileId === st.fileId ? 'selected' : ''}`}
+                            onClick={() => handleSelectSticker(st)}
+                          >
+                            <TgStickerMedia
+                              fileId={st.thumbFileId || st.fileId}
+                              format={st.thumbFileId ? 'webp' : st.format}
+                              emoji={st.emoji}
+                              size={42}
+                              previewOnly
+                            />
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {emblem.savedStickers?.length > 0 && (
+                    <div>
+                      <div className="field-label">我的收藏徽章库（点击切换）</div>
+                      <div className="sticker-grid">
+                        {emblem.savedStickers.map((st) => (
+                          <button
+                            key={st.fileId}
+                            type="button"
+                            className={`sticker-cell ${emblem.fileId === st.fileId ? 'selected' : ''}`}
+                            onClick={() => handleSelectSticker(st)}
+                          >
+                            <TgStickerMedia
+                              fileId={st.thumbFileId || st.fileId}
+                              format={st.thumbFileId ? 'webp' : st.format}
+                              emoji={st.emoji}
+                              size={42}
+                              previewOnly
+                            />
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="card">
+              <div className="field">
+                <label className="field-label">显示昵称</label>
+                <input
+                  className="input"
+                  value={draft.profile.displayName}
+                  onChange={(e) => updateField('profile', 'displayName', e.target.value)}
+                />
+              </div>
+              <div className="field">
+                <label className="field-label">Bot / 个人账号标识</label>
+                <input
+                  className="input"
+                  value={draft.profile.handle}
+                  onChange={(e) => updateField('profile', 'handle', e.target.value)}
+                />
+              </div>
+              <div className="field">
+                <label className="field-label">当前状态文案</label>
+                <input
+                  className="input"
+                  value={draft.profile.statusText}
+                  onChange={(e) => updateField('profile', 'statusText', e.target.value)}
+                  placeholder="例如：在线营业中 / 摸鱼中 / 勿扰"
+                />
+              </div>
+              <div className="field">
+                <label className="field-label">个人简介</label>
+                <textarea
+                  className="textarea"
+                  value={draft.profile.tagline}
+                  onChange={(e) => updateField('profile', 'tagline', e.target.value)}
+                />
+              </div>
+              <div className="field">
+                <label className="field-label">自定义头像图片链接（留空自动取站长 TG 头像）</label>
+                <input
+                  className="input"
+                  value={draft.profile.avatarUrl}
+                  onChange={(e) => updateField('profile', 'avatarUrl', e.target.value)}
+                  placeholder="https://..."
+                />
+              </div>
+              <div className="field">
+                <label className="field-label">置顶公告（留空则隐藏）</label>
+                <input
+                  className="input"
+                  value={draft.profile.notice}
+                  onChange={(e) => updateField('profile', 'notice', e.target.value)}
+                  placeholder="可选：向访客展示一条置顶公告"
+                />
+              </div>
+
+              <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--border)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                  <span className="field-label" style={{ margin: 0 }}>社交与联系方式</span>
+                  <button className="btn btn-soft btn-sm" onClick={handleAddSocial}>
+                    <Plus size={13} /> 添加
+                  </button>
+                </div>
+                {(draft.profile.socials || []).map((soc, idx) => (
+                  <div
+                    key={soc.id || idx}
+                    style={{
+                      background: 'var(--bg-subtle)',
+                      borderRadius: 14,
+                      padding: 10,
+                      marginBottom: 8,
+                    }}
+                  >
+                    <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
+                      <input
+                        className="input"
+                        style={{ background: 'var(--bg-elevated)' }}
+                        value={soc.label}
+                        placeholder="名称"
+                        onChange={(e) => handleUpdateSocial(idx, 'label', e.target.value)}
+                      />
+                      <button className="icon-btn" onClick={() => handleRemoveSocial(idx)}>
+                        <Trash2 size={14} color="var(--red)" />
+                      </button>
+                    </div>
+                    <input
+                      className="input"
+                      style={{ background: 'var(--bg-elevated)', marginBottom: 6 }}
+                      value={soc.value}
+                      placeholder="展示文字"
+                      onChange={(e) => handleUpdateSocial(idx, 'value', e.target.value)}
+                    />
                     <input
                       className="input"
                       style={{ background: 'var(--bg-elevated)' }}
-                      value={soc.label}
-                      placeholder="名称"
-                      onChange={(e) => handleUpdateSocial(idx, 'label', e.target.value)}
+                      value={soc.url}
+                      placeholder="跳转 URL（留空则点击复制）"
+                      onChange={(e) => handleUpdateSocial(idx, 'url', e.target.value)}
                     />
-                    <button className="icon-btn" onClick={() => handleRemoveSocial(idx)}>
-                      <Trash2 size={14} color="var(--red)" />
+                  </div>
+                ))}
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* Section 2: Sites (Public & Private Bookmarks + Reorder) */}
+        {section === 'sites' && (
+          <div>
+            {(draft.sites || []).map((site, idx) => {
+              const isPriv = site.visibility === 'private';
+              return (
+                <div className="card" key={site.id || idx}>
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      marginBottom: 8,
+                      gap: 6,
+                    }}
+                  >
+                    <button
+                      type="button"
+                      className={`pill ${isPriv ? 'amber' : 'green'}`}
+                      style={{ cursor: 'pointer' }}
+                      onClick={() => handleUpdateSite(idx, 'visibility', isPriv ? 'public' : 'private')}
+                    >
+                      {isPriv ? <Lock size={11} /> : <Globe size={11} />}
+                      {isPriv ? '仅我可见（私密隐藏）' : '公开可见'}
                     </button>
+
+                    <div style={{ display: 'flex', gap: 5 }}>
+                      <button
+                        type="button"
+                        className="icon-btn"
+                        disabled={idx === 0}
+                        title="上移"
+                        onClick={() => handleMoveSite(idx, -1)}
+                      >
+                        <ArrowUp size={13} />
+                      </button>
+                      <button
+                        type="button"
+                        className="icon-btn"
+                        disabled={idx === draft.sites.length - 1}
+                        title="下移"
+                        onClick={() => handleMoveSite(idx, 1)}
+                      >
+                        <ArrowDown size={13} />
+                      </button>
+                      <button
+                        type="button"
+                        className="icon-btn"
+                        title="删除"
+                        onClick={() => handleRemoveSite(idx)}
+                      >
+                        <Trash2 size={14} color="var(--red)" />
+                      </button>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+                    <input
+                      className="input"
+                      style={{ width: 56, textAlign: 'center' }}
+                      value={site.icon}
+                      onChange={(e) => handleUpdateSite(idx, 'icon', e.target.value)}
+                      placeholder="🌐"
+                    />
+                    <input
+                      className="input"
+                      value={site.name}
+                      onChange={(e) => handleUpdateSite(idx, 'name', e.target.value)}
+                      placeholder="站点名称"
+                    />
+                  </div>
+                  <div className="field">
+                    <input
+                      className="input"
+                      value={site.url}
+                      onChange={(e) => handleUpdateSite(idx, 'url', e.target.value)}
+                      placeholder="https://your-site.com"
+                    />
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
+                    <input
+                      className="input"
+                      value={site.category}
+                      onChange={(e) => handleUpdateSite(idx, 'category', e.target.value)}
+                      placeholder="分类（如 博客 / 常用 / 后台）"
+                    />
+                    <input
+                      className="input"
+                      value={site.badge}
+                      onChange={(e) => handleUpdateSite(idx, 'badge', e.target.value)}
+                      placeholder="角标（可选，如 主站）"
+                    />
                   </div>
                   <input
                     className="input"
-                    style={{ background: 'var(--bg-elevated)', marginBottom: 6 }}
-                    value={soc.value}
-                    placeholder="展示文字"
-                    onChange={(e) => handleUpdateSocial(idx, 'value', e.target.value)}
-                  />
-                  <input
-                    className="input"
-                    style={{ background: 'var(--bg-elevated)' }}
-                    value={soc.url}
-                    placeholder="跳转 URL（留空则点击复制）"
-                    onChange={(e) => handleUpdateSocial(idx, 'url', e.target.value)}
+                    value={site.description}
+                    onChange={(e) => handleUpdateSite(idx, 'description', e.target.value)}
+                    placeholder="一句话介绍"
                   />
                 </div>
-              ))}
-            </div>
-          </div>
-        )}
+              );
+            })}
 
-        {/* Section 2: Sites */}
-        {section === 'sites' && (
-          <div>
-            {(draft.sites || []).map((site, idx) => (
-              <div className="card" key={site.id || idx}>
-                <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
-                  <input
-                    className="input"
-                    style={{ width: 58, textAlign: 'center' }}
-                    value={site.icon}
-                    onChange={(e) => handleUpdateSite(idx, 'icon', e.target.value)}
-                    placeholder="🌐"
-                  />
-                  <input
-                    className="input"
-                    value={site.name}
-                    onChange={(e) => handleUpdateSite(idx, 'name', e.target.value)}
-                    placeholder="站点名称"
-                  />
-                  <button className="icon-btn" onClick={() => handleRemoveSite(idx)}>
-                    <Trash2 size={15} color="var(--red)" />
-                  </button>
-                </div>
-                <div className="field">
-                  <input
-                    className="input"
-                    value={site.url}
-                    onChange={(e) => handleUpdateSite(idx, 'url', e.target.value)}
-                    placeholder="https://your-site.com"
-                  />
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
-                  <input
-                    className="input"
-                    value={site.category}
-                    onChange={(e) => handleUpdateSite(idx, 'category', e.target.value)}
-                    placeholder="分类（如 博客 / 工具）"
-                  />
-                  <input
-                    className="input"
-                    value={site.badge}
-                    onChange={(e) => handleUpdateSite(idx, 'badge', e.target.value)}
-                    placeholder="角标（可选，如 主站）"
-                  />
-                </div>
-                <input
-                  className="input"
-                  value={site.description}
-                  onChange={(e) => handleUpdateSite(idx, 'description', e.target.value)}
-                  placeholder="一句话介绍"
-                />
-              </div>
-            ))}
-            <button className="btn btn-soft btn-block" style={{ marginBottom: 12 }} onClick={handleAddSite}>
-              <Plus size={16} /> 新增个人小站
-            </button>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 12 }}>
+              <button className="btn btn-soft btn-block" onClick={() => handleAddSite('public')}>
+                <Globe size={15} /> + 公开小站
+              </button>
+              <button className="btn btn-subtle btn-block" onClick={() => handleAddSite('private')}>
+                <Lock size={15} /> + 私密常用站
+              </button>
+            </div>
           </div>
         )}
 
@@ -348,7 +648,7 @@ export default function SettingsDrawer({
             <div className="list-row">
               <div className="row-main">
                 <div className="row-title" style={{ fontSize: 14 }}>演示模式（未填地址时展示示例节点）</div>
-                <div className="row-desc">便于在未接入探针前预览节点卡片效果</div>
+                <div className="row-desc wrap">便于在未接入探针前预览节点卡片效果</div>
               </div>
               <button
                 type="button"
@@ -448,7 +748,7 @@ export default function SettingsDrawer({
             <div className="list-row" style={{ marginTop: 8 }}>
               <div className="row-main">
                 <div className="row-title" style={{ fontSize: 14 }}>私聊防骚扰人机验证</div>
-                <div className="row-desc">陌生人首次私聊需通过 0 延迟常识题库验证</div>
+                <div className="row-desc wrap">陌生人首次私聊需通过 0 延迟常识题库验证</div>
               </div>
               <button
                 type="button"

@@ -11,7 +11,13 @@ import {
   savePanelConfig,
 } from './config.js';
 import { fetchKomariStatus } from './komari.js';
-import { handleAvatarProxy, tgCall } from './telegram.js';
+import {
+  handleAvatarProxy,
+  handleStickerProxy,
+  normalizeStickerObject,
+  parseStickerPackName,
+  tgCall,
+} from './telegram.js';
 import { applyVisitorAction, getVisitorDetail, listVisitors } from './visitors.js';
 
 function json(data, status = 200) {
@@ -42,6 +48,12 @@ export async function handleApiRequest(request, env, url) {
     return handleAvatarProxy(env, avatarMatch[1]);
   }
 
+  // Telegram Sticker / Custom Emoji proxy (supports .webp, .webm, and auto-decompressed .tgs Lottie JSON)
+  const stickerMatch = path.match(/^\/api\/sticker\/([^/]+)$/);
+  if (stickerMatch && method === 'GET') {
+    return handleStickerProxy(env, stickerMatch[1]);
+  }
+
   // Authenticate all other API endpoints via Telegram initData HMAC-SHA256
   const auth = await authenticateRequest(request, env, tgCall);
   if (!auth.ok) {
@@ -69,7 +81,7 @@ export async function handleApiRequest(request, env, url) {
       isAdmin: auth.isAdmin,
       isPreview: auth.isPreview,
       startParam: auth.startParam,
-      config: sanitizePublicConfig(config, env),
+      config: sanitizePublicConfig(config, env, auth.isAdmin),
       adminConfig: auth.isAdmin ? sanitizeAdminConfig(config) : null,
       checkin,
       levels: LEVELS,
@@ -135,7 +147,6 @@ export async function handleApiRequest(request, env, url) {
       if (!body?.action) return json({ ok: false, error: '缺少 action 参数' }, 400);
       try {
         const visitor = await applyVisitorAction(env, actionMatch[1], body.action, body);
-        // Optional polite notice to user when closing/opening conversation
         if (body.notifyUser && env.BOT_TOKEN) {
           if (body.action === 'close') {
             await tgCall(env, 'sendMessage', {
@@ -155,6 +166,64 @@ export async function handleApiRequest(request, env, url) {
       }
     }
 
+    // POST /api/admin/sites/toggle — instant public/private toggle for a single site
+    if (path === '/api/admin/sites/toggle' && method === 'POST') {
+      const body = await readJsonBody(request);
+      const siteId = String(body?.id || '');
+      if (!siteId) return json({ ok: false, error: '缺少站点 ID' }, 400);
+
+      let found = false;
+      const nextSites = config.sites.map((s) => {
+        if (String(s.id) !== siteId) return s;
+        found = true;
+        const nextVis =
+          body.visibility === 'private' || body.visibility === 'public'
+            ? body.visibility
+            : s.visibility === 'private'
+              ? 'public'
+              : 'private';
+        return { ...s, visibility: nextVis };
+      });
+      if (!found) return json({ ok: false, error: '未找到该站点' }, 404);
+
+      const saved = await savePanelConfig(env, { sites: nextSites });
+      return json({
+        ok: true,
+        config: sanitizePublicConfig(saved, env, true),
+        adminConfig: sanitizeAdminConfig(saved),
+      });
+    }
+
+    // POST /api/admin/stickers/pack — fetch a Telegram Sticker or Custom Emoji pack by URL or name
+    if (path === '/api/admin/stickers/pack' && method === 'POST') {
+      const body = await readJsonBody(request);
+      const packName = parseStickerPackName(body?.input || body?.name || '');
+      if (!packName) {
+        return json(
+          { ok: false, error: '请输入有效的 Telegram 贴纸包/表情包链接（如 https://t.me/addstickers/... 或 https://t.me/addemoji/...）' },
+          400
+        );
+      }
+      try {
+        const res = await tgCall(env, 'getStickerSet', { name: packName });
+        const set = res?.result;
+        const stickers = (set?.stickers || [])
+          .slice(0, 60)
+          .map(normalizeStickerObject)
+          .filter(Boolean);
+        return json({
+          ok: true,
+          name: set?.name || packName,
+          title: set?.title || packName,
+          stickerType: set?.sticker_type || 'regular',
+          total: set?.stickers?.length || stickers.length,
+          stickers,
+        });
+      } catch (err) {
+        return json({ ok: false, error: `拉取贴纸包失败：${err.message}` }, 400);
+      }
+    }
+
     // GET /api/admin/config
     if (path === '/api/admin/config' && method === 'GET') {
       return json({ ok: true, config: sanitizeAdminConfig(config) });
@@ -169,7 +238,7 @@ export async function handleApiRequest(request, env, url) {
       const saved = await savePanelConfig(env, body);
       return json({
         ok: true,
-        config: sanitizePublicConfig(saved, env),
+        config: sanitizePublicConfig(saved, env, true),
         adminConfig: sanitizeAdminConfig(saved),
       });
     }

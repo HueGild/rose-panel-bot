@@ -21,6 +21,17 @@ export const BADGE_CATALOG = [
   { id: 'loyal_10', name: '常驻旅人', desc: '累计签到满 10 天', icon: '🎫' },
 ];
 
+export const DEFAULT_EMBLEM = {
+  type: 'builtin', // builtin | tg_sticker | url
+  variant: 'owner', // owner | bottle | crown
+  fileId: '',
+  format: 'webp', // webp | webm | tgs
+  url: '',
+  emoji: '',
+  setName: '',
+  savedStickers: [],
+};
+
 export const DEFAULT_CONFIG = {
   profile: {
     displayName: 'Rose',
@@ -33,6 +44,7 @@ export const DEFAULT_CONFIG = {
     badgeTitle: '站长 · Owner',
     joinedText: 'Cloudflare Edge',
     notice: '',
+    emblem: { ...DEFAULT_EMBLEM },
     socials: [
       { id: 'tg', label: 'Telegram 私聊', value: '直接发送消息即可联系我', url: '', icon: 'message' },
       { id: 'github', label: 'GitHub', value: 'github.com/mango0114', url: 'https://github.com/mango0114', icon: 'github' },
@@ -47,6 +59,7 @@ export const DEFAULT_CONFIG = {
       category: '博客',
       icon: '✍️',
       badge: '主站',
+      visibility: 'public',
     },
     {
       id: 'site-nav',
@@ -56,6 +69,7 @@ export const DEFAULT_CONFIG = {
       category: '导航',
       icon: '🧭',
       badge: '直达',
+      visibility: 'public',
     },
   ],
   probe: {
@@ -105,17 +119,53 @@ export async function safePutJSON(kv, key, value, options = undefined) {
   await kv.put(key, JSON.stringify(value), options);
 }
 
+export function normalizeSite(site = {}, idx = 0) {
+  return {
+    id: String(site.id || `site-${Date.now()}-${idx}`),
+    name: String(site.name || '未命名站点'),
+    url: String(site.url || ''),
+    description: String(site.description || ''),
+    category: String(site.category || '常用'),
+    icon: String(site.icon || '🌐'),
+    badge: String(site.badge || ''),
+    visibility: site.visibility === 'private' ? 'private' : 'public',
+  };
+}
+
+export function normalizeEmblem(baseEmblem = DEFAULT_EMBLEM, override = null) {
+  const merged = {
+    ...DEFAULT_EMBLEM,
+    ...(baseEmblem || {}),
+    ...(override || {}),
+  };
+  if (!['builtin', 'tg_sticker', 'url'].includes(merged.type)) {
+    merged.type = 'builtin';
+  }
+  if (!['webp', 'webm', 'tgs'].includes(merged.format)) {
+    merged.format = 'webp';
+  }
+  merged.savedStickers = Array.isArray(merged.savedStickers) ? merged.savedStickers.slice(0, 30) : [];
+  return merged;
+}
+
 export function mergeConfig(base, override) {
-  if (!override || typeof override !== 'object') return structuredClone(base);
+  if (!override || typeof override !== 'object') {
+    const cloned = structuredClone(base);
+    cloned.sites = cloned.sites.map(normalizeSite);
+    cloned.profile.emblem = normalizeEmblem(cloned.profile.emblem);
+    return cloned;
+  }
+  const rawSites = Array.isArray(override.sites) ? override.sites : base.sites;
   return {
     profile: {
       ...base.profile,
       ...(override.profile || {}),
+      emblem: normalizeEmblem(base.profile?.emblem, override.profile?.emblem),
       socials: Array.isArray(override.profile?.socials)
         ? override.profile.socials
         : structuredClone(base.profile.socials),
     },
-    sites: Array.isArray(override.sites) ? override.sites : structuredClone(base.sites),
+    sites: rawSites.map(normalizeSite),
     probe: {
       ...base.probe,
       ...(override.probe || {}),
@@ -177,10 +227,30 @@ export async function savePanelConfig(env, nextConfig) {
   return merged;
 }
 
-export function sanitizePublicConfig(config, env) {
+/**
+ * Returns panel configuration tailored to caller privileges.
+ * CRITICAL SECURITY: Private sites (`visibility === 'private'`) and saved sticker library
+ * are strictly stripped server-side for non-admin visitors.
+ */
+export function sanitizePublicConfig(config, env, isAdmin = false) {
+  const visibleSites = isAdmin
+    ? config.sites
+    : config.sites.filter((s) => (s.visibility || 'public') !== 'private');
+
+  const activeEmblem = {
+    type: config.profile.emblem?.type || 'builtin',
+    variant: config.profile.emblem?.variant || 'owner',
+    fileId: config.profile.emblem?.fileId || '',
+    format: config.profile.emblem?.format || 'webp',
+    url: config.profile.emblem?.url || '',
+  };
+
   return {
-    profile: config.profile,
-    sites: config.sites,
+    profile: {
+      ...config.profile,
+      emblem: activeEmblem,
+    },
+    sites: visibleSites,
     probe: {
       provider: config.probe.provider,
       configured: Boolean(config.probe.url || config.probe.demoMode),

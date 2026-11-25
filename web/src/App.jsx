@@ -225,6 +225,17 @@ export default function App() {
             sites={bootstrap?.config?.sites || []}
             isAdmin={isAdmin}
             onOpenSettings={(sec) => setSettingsSection(sec)}
+            onSitesUpdated={(updatedRes) =>
+              setBootstrap((prev) =>
+                prev
+                  ? {
+                      ...prev,
+                      config: updatedRes.config,
+                      adminConfig: updatedRes.adminConfig,
+                    }
+                  : prev
+              )
+            }
             onToast={showToast}
           />
         )}
