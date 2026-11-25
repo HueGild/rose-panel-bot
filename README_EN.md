@@ -40,18 +40,41 @@
 
 ---
 
-## 🎬 Live Motion Showcase
+## 🎬 Live Motion Showcase (3 Real-App Clips)
+
+### 1 · Direct In-Panel Chat & Phone Album Photo Replies
 
 <div align="center">
-  <img src="docs/assets/showcase.webp" alt="RosePanel Bot Motion Showcase" width="94%" />
+  <img src="docs/assets/demo-chat.webp" alt="Direct in-panel chat, album photo upload, and Forum Topic sync" width="94%" />
 </div>
+
+- Tap **`💬 Chat`** on any visitor card to view the last 60 two-way message bubbles, **type text or pick any photo from your phone album (JPG / PNG / WebP / GIF, up to 10 MB) and send directly**, with **1-tap two-way recall**;
+- Every reply silently mirrors to the visitor's Forum Topic so both surfaces stay seamlessly in sync, while photos & links auto-archive by sender (`Visitor` / `Me`).
+
+### 2 · First-Time Stranger `/start` Sticker Quiz (Auto-Switch on Wrong Tap)
+
+<div align="center">
+  <img src="docs/assets/demo-verify.webp" alt="Stranger /start animated sticker verification, wrong-answer quiz switch, and auto-reply" width="94%" />
+</div>
+
+- Strangers tapping **Start** (`/start`) immediately receive a human challenge: send `/add` in PM to turn your favorite **static or animated Telegram stickers** into fun visual quizzes in 3 seconds;
+- **Reshuffle on error**: with multiple quizzes in your bank, a wrong tap immediately switches to a new sticker challenge (single-quiz banks re-randomize option order) with a bottom script-trap decoy; once passed, messages flow freely for 30 days with optional **auto-reply & keyword rules**.
+
+### 3 · 0.2-Second Personal Panel & 224×84 Pixel Day/Night Bubble Slider
+
+<div align="center">
+  <img src="docs/assets/demo-panel.webp" alt="Photo archive, live multi-protocol probe refresh, private sites, and 224x84 pixel Day/Night slider" width="94%" />
+</div>
+
+- Filter exchanged photos by sender; inspect live **Komari / Nezha (v1 / v0) / NodeGet / Generic JSON** server metrics and switch between **Public & 🔒 Private (Admin Only)** site bookmarks;
+- **New 224×84 Pixel Day/Night Bubble Slider**: scrub the living pixel cottage & rose bunny inside the crystal magnifier to toggle **Light / Follow Telegram / Dark Rose-Obsidian** with a full-screen circular View Transition ripple.
 
 ---
 
-## 💬 Signature Features: In-Panel Direct Chat, Sticker Quizzes, Emblems & In-App Updates
+## 💬 More Highlights: `/add` Quizzes · `/set` Animated Emblems · 1-Click Fork Sync
 
 <div align="center">
-  <p><b>💬 Direct In-Panel Chat, Photo Replies & Recall · Automatic Photo & Link Archive</b></p>
+  <p><b>💬 Visitor Profile Hub & Direct In-Panel Chat Overview</b></p>
   <img src="docs/assets/showcase-chat.png" alt="Visitor profile hub with chat, photos, links and direct in-panel text/photo replies" width="96%" />
   <br /><br />
   <p><b>🎭 3-Second Sticker Quizzes via <code>/add</code> · Instant <code>/start</code> Verification</b></p>
@@ -60,14 +83,14 @@
   <p><b>✨ Animated Sticker Emblems via <code>/set</code> · Saved Collection & 0ms Edge Splash</b></p>
   <img src="docs/assets/showcase-badges.png" alt="Send /set with any sticker or custom emoji to update the animated main emblem" width="96%" />
   <br /><br />
-  <p><b>🔄 Fork Deploy · In-App Red-Dot Release Reminder · 1-Click Hot Sync (100% KV Data Preserved)</b></p>
+  <p><b>🔄 Fork Deploy · In-App Release Reminder · 1-Click Hot Sync (100% Data Preserved)</b></p>
   <img src="docs/assets/showcase-updater.png" alt="In-panel release reminder and one-click Fork sync for Cloudflare deployments" width="96%" />
 </div>
 
----
+<details>
+<summary><b>📱 Expand 4-Tab Retina Static Mini App Gallery (Card · Sites · Probe · Dark Theme)</b></summary>
 
-## 📱 4-Tab Retina Mini App Gallery (Card · Sites · Probe · Media Archive)
-
+<br />
 <div align="center">
   <p><b>🪪 1 · Personal Card & Direct PM Wake-Up　｜　🌐 2 · Public & Private Dual-Layer Sites</b></p>
   <img src="docs/assets/preview-row1.png" alt="1 Personal Card & Contact Etiquette · 2 Public & Private Sites" width="96%" />
@@ -78,6 +101,7 @@
   <p><b>🌙 Dark Rose-Obsidian Theme　｜　🖼️ Exchanged Photos Gallery & Link Archive (Filtered by Sender)</b></p>
   <img src="docs/assets/preview-row3.png" alt="Dark Rose-Obsidian Theme & Exchanged Photos Gallery" width="96%" />
 </div>
+</details>
 
 ---
 
@@ -93,10 +117,10 @@
   2. **Layer 2 · Unsolicited Media/Flyer Block & Auto-Escalation**: Blocks unverified first-message ad flyers (USDT/casino/VPN posters), channel forwards, and external links, auto-escalating high-risk senders to Cloudflare Turnstile.
   3. **Layer 3 · Zero-Latency Visual/Emoji Challenges + Script-Trap Honeypot**: Switch freely among Sticker Quizzes, 3×3 Emoji Odd-One-Out/Pick, Local Quizzes, and CF Turnstile; includes a bottom script-trap decoy button (defaults to temporary cooldown so misclicking humans are never permanently locked out, with an optional instant-ban mode).
   4. **Layer 4 · De-Obfuscated Keyword Filter & Edit Guard**: Strips zero-width characters, full-width Unicode (NFKC), and Cyrillic homoglyphs; monitors `edited_message` to catch "send normal text then edit into spam" bypasses.
-- **⚡ 0.2-Second Personal Mini App Panel & Animated Sticker Emblems**
-  - Edge-injected customizable splash screen (`emblem` breathing halo / `emoji` bounce / `skeleton` shimmer) + local SWR cache + single-key admin overview cache (50× fewer KV reads) + automatic Telegram native dark/light chrome sync.
+- **⚡ 0.2-Second Personal Mini App Panel, Pixel Day/Night Slider & Animated Sticker Emblems**
+  - Edge-injected customizable splash screen (`emblem` breathing halo / `emoji` bounce / `skeleton` shimmer) + local SWR cache + single-key admin overview cache (50× fewer KV reads); features an original **224×84 pixel Day/Night bubble slider** (Light / Follow Telegram / Dark Rose-Obsidian with circular View Transition reveal) synced to Telegram native chrome.
   - Send `/set` with any `.webp` / `.webm` / 60fps `.tgs` sticker or Custom Emoji to instantly update your main emblem; 3-way privacy card avatar (`bot` default / server-proxied `owner` TG avatar / `custom` URL) + fully editable & hideable ticket stub labels.
-  - Admin-only **Owner Overview** card on the home tab, built-in **In-App Version Checker & optional 1-click Fork Sync**, plus optional 1-click **Group Check-in, Points & Badges System**.
+  - Admin-only **Owner Overview** card on the home tab, automatic **What's New** release modal after upgrades, built-in **In-App Version Checker & optional 1-click Fork Sync**, plus optional 1-click **Group Check-in, Points & Badges System**.
 - **🌐 Public / Private Site Directory & 📡 Modular Multi-Protocol Probe**
   - Categories, search, drag-free reordering, and 1-tap **`Public` vs `🔒 Private`** visibility toggle (private sites are strictly omitted server-side for non-admins).
   - Pluggable probe registry supporting **Komari (v2/v1)**, **Nezha (v1 public WebSocket / v1 REST / v0 REST)**, **NodeGet (NodeSeek official probe)**, and **Generic JSON** probes, with built-in connection testing, redirect-loop protection, 15s edge caching, and **`🔒 Private (Admin Only)`** visibility toggle.
