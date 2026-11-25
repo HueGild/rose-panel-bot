@@ -27,7 +27,7 @@
   </a>
 </p>
 
-<sub><b>Anti-Spam Telegram PM Bot where you chat & send photos right inside the panel</b> — In-Panel Text/Photo Replies & Recall · 4-Layer Shield + 4 Verification Modes (incl. animated sticker quizzes) · Custom Auto-Reply & Keyword Rules · Built-in <b>Server Probe & Site Bookmarks</b> on Cloudflare Workers Free Tier</sub>
+<sub><b>Anti-Spam Telegram PM Bot where you chat & send photos right inside the panel</b> — In-Panel Text/Photo Replies & Recall · 4-Layer Shield + 4 Verification Modes (incl. animated sticker quizzes) · Custom Auto-Reply & Keyword Rules · Includes a <b>0.2-Second Personal Panel</b> (Modular Multi-Protocol Probe / Site Bookmarks) on Cloudflare Workers Free Tier</sub>
 
 </div>
 
@@ -87,7 +87,7 @@
   2. **Layer 2 · Unsolicited Media/Flyer Block & Auto-Escalation**: Blocks unverified first-message ad flyers (USDT/casino/VPN posters), channel forwards, and external links, auto-escalating high-risk senders to Cloudflare Turnstile.
   3. **Layer 3 · Zero-Latency Visual/Emoji Challenges + Script-Trap Honeypot**: Switch freely among Sticker Quizzes, 3×3 Emoji Odd-One-Out/Pick, Local Quizzes, and CF Turnstile; includes a bottom script-trap decoy button (defaults to temporary cooldown so misclicking humans are never permanently locked out, with an optional instant-ban mode).
   4. **Layer 4 · De-Obfuscated Keyword Filter & Edit Guard**: Strips zero-width characters, full-width Unicode (NFKC), and Cyrillic homoglyphs; monitors `edited_message` to catch "send normal text then edit into spam" bypasses.
-- **⚡ Personal Mini App Panel & Animated Sticker Emblems**
+- **⚡ 0.2-Second Personal Mini App Panel & Animated Sticker Emblems**
   - Edge-injected customizable splash screen (`emblem` breathing halo / `emoji` bounce / `skeleton` shimmer) + local SWR cache + single-key admin overview cache (50× fewer KV reads) + automatic Telegram native dark/light chrome sync.
   - Send `/set` with any `.webp` / `.webm` / 60fps `.tgs` sticker or Custom Emoji to instantly update your main emblem; 3-way privacy card avatar (`bot` default / server-proxied `owner` TG avatar / `custom` URL) + fully editable & hideable ticket stub labels.
   - Admin-only **Owner Overview** card on the home tab, built-in **In-App Version Checker & optional 1-click Fork Sync**, plus optional 1-click **Group Check-in, Points & Badges System**.
@@ -280,7 +280,7 @@ The panel recognized you as a regular guest — almost always because `ADMIN_IDS
 
 **RosePanel Bot** is 100% free and open-source under the MIT License with zero paywalls and zero telemetry. If it helped block Telegram spam or gave you a personal panel you love, feel free to buy the author a coffee / AI compute credits ☕✨
 
-- **Live Demo & Contact**: 👉 **[@Rose202_bot](https://t.me/Rose202_bot)** (try the personal panel and custom sticker quiz live!)
+- **Live Demo & Contact**: 👉 **[@Rose202_bot](https://t.me/Rose202_bot)** (try the 0.2-second personal panel and custom sticker quiz live!)
 - **Privacy-Friendly Sponsorship (Alipay Red-Packet Passcode)**: Send an Alipay passcode red packet + your desired display name & message (anonymous welcome) to **[@Rose202_bot](https://t.me/Rose202_bot)** and we'll add you to the Sponsors Wall below!
 
 ### 🏆 Sponsors Wall
