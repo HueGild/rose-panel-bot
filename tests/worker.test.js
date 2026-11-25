@@ -2735,6 +2735,43 @@ describe('Mini App in-panel visitor chat log, direct text/photo reply & recall',
         )
       ).json();
       expect(histAfterRecall.messages).toHaveLength(1);
+      // Recalled photo is pruned from the gallery archive too
+      expect(histAfterRecall.photos).toHaveLength(0);
+
+      const postJson = (path, body) =>
+        worker.fetch(
+          new Request(`https://panel.example.com${path}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-Telegram-Init-Data': adminInit },
+            body: JSON.stringify(body),
+          }),
+          env
+        );
+
+      // 7. Recall without an explicit pmMessageId must NOT fall back to "latest admin reply"
+      tgCalls.length = 0;
+      const badRecall = await postJson('/api/admin/visitors/90909/recall', {});
+      expect(badRecall.status).toBe(400);
+      expect(tgCalls.some((c) => c.method === 'deleteMessage')).toBe(false);
+
+      // 8. Replying to an unknown visitor UID is rejected without contacting Telegram
+      const unknownReply = await postJson('/api/admin/visitors/123456789/reply', { text: 'hi' });
+      expect(unknownReply.status).toBe(404);
+      expect(tgCalls.length).toBe(0);
+
+      // 9. Non-image bytes disguised as image/png are rejected by magic-byte sniffing
+      const fakeForm = new FormData();
+      fakeForm.append('photo', new File([new TextEncoder().encode('<html>nope</html>')], 'x.png', { type: 'image/png' }));
+      const fakeRes = await worker.fetch(
+        new Request('https://panel.example.com/api/admin/visitors/90909/reply', {
+          method: 'POST',
+          headers: { 'X-Telegram-Init-Data': adminInit },
+          body: fakeForm,
+        }),
+        env
+      );
+      expect(fakeRes.status).toBe(400);
+      expect(tgCalls.some((c) => c.method === 'sendPhoto')).toBe(false);
     } finally {
       globalThis.fetch = origFetch;
     }

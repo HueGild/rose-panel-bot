@@ -2393,6 +2393,11 @@ export async function sendAdminDirectVisitorReply(env, requestOrigin, targetUid,
     if (Number(photoFile.size) <= 0 || Number(photoFile.size) > 10 * 1024 * 1024) {
       throw new Error('单张图片大小需在 10 MB 以内');
     }
+    // MIME is client-controlled (and may be empty / octet-stream): verify real magic bytes
+    const head = new Uint8Array(await photoFile.slice(0, 12).arrayBuffer());
+    if (!sniffSupportedImage(head)) {
+      throw new Error('仅支持发送图片文件（JPG / PNG / WebP / GIF）');
+    }
   }
 
   let sentPm = null;
@@ -2508,4 +2513,16 @@ export async function sendAdminDirectVisitorReply(env, requestOrigin, targetUid,
     visitor,
     message: exchanged?.message || null,
   };
+}
+
+function sniffSupportedImage(b) {
+  if (!b || b.length < 4) return false;
+  const isJpeg = b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff;
+  const isPng = b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47;
+  const isGif = b[0] === 0x47 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x38;
+  const isWebp =
+    b.length >= 12 &&
+    b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46 &&
+    b[8] === 0x57 && b[9] === 0x45 && b[10] === 0x42 && b[11] === 0x50;
+  return isJpeg || isPng || isGif || isWebp;
 }

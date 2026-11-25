@@ -277,7 +277,15 @@ export async function handleApiRequest(request, env, url, ctx = null) {
     const replyMatch = path.match(/^\/api\/admin\/visitors\/(\d+)\/reply$/);
     if (replyMatch && method === 'POST') {
       const uid = replyMatch[1];
+      const existingVisitor = await getVisitorDetail(env, uid);
+      if (!existingVisitor) return json({ ok: false, error: '未找到该访客记录' }, 404);
+
       const ct = String(request.headers.get('content-type') || '').toLowerCase();
+      // Reject oversized uploads before buffering the multipart body (10 MB photo + form overhead)
+      const declaredLen = Number(request.headers.get('content-length') || 0);
+      if (declaredLen > 11 * 1024 * 1024) {
+        return json({ ok: false, error: '单张图片大小需在 10 MB 以内' }, 413);
+      }
       let text = '';
       let photoFile = null;
 
@@ -323,7 +331,11 @@ export async function handleApiRequest(request, env, url, ctx = null) {
     const recallMatch = path.match(/^\/api\/admin\/visitors\/(\d+)\/recall$/);
     if (recallMatch && method === 'POST') {
       const body = await readJsonBody(request);
-      const pmMessageId = Number(body?.pmMessageId) || null;
+      const pmMessageId = Number(body?.pmMessageId);
+      // Never fall back to "most recent admin reply": a missing/garbled id must not recall the wrong message.
+      if (!Number.isSafeInteger(pmMessageId) || pmMessageId <= 0) {
+        return json({ ok: false, error: '缺少有效的 pmMessageId' }, 400);
+      }
       const res = await recallAdminVisitorMessage(env, recallMatch[1], null, tgCall, pmMessageId);
       if (!res.ok) return json({ ok: false, error: res.error }, 400);
       return json({ ok: true, deletedPmMessageId: res.deletedPmMessageId });

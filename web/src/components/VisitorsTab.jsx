@@ -21,8 +21,11 @@ import {
   X,
 } from 'lucide-react';
 import { apiRequest, formatTimeAgo } from '../lib/api.js';
-import { copyText, haptic, openExternalUrl } from '../lib/telegram.js';
+import { confirmDialog, copyText, haptic, openExternalUrl } from '../lib/telegram.js';
 import { Avatar } from './Emblems.jsx';
+
+const MAX_REPLY_PHOTO_BYTES = 10 * 1024 * 1024;
+const REPLY_PHOTO_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
 
 const STATUS_META = {
   banned: { label: '已拉黑', tone: 'red' },
@@ -56,8 +59,14 @@ export default function VisitorsTab({ initialVisitorId = '', onClearInitial, onT
   const [replyText, setReplyText] = useState('');
   const [replyPhoto, setReplyPhoto] = useState(null);
   const [sendingReply, setSendingReply] = useState(false);
+  const [recallingId, setRecallingId] = useState(null);
   const chatEndRef = useRef(null);
   const fileInputRef = useRef(null);
+  // Race guards: the uid the drawer currently shows, a monotonically increasing history request
+  // sequence (stale responses are dropped), and an in-flight counter so polls never stack up.
+  const activeUidRef = useRef('');
+  const historySeqRef = useRef(0);
+  const historyInFlightRef = useRef(0);
 
   const loadList = async (q = search, f = filter) => {
     try {
@@ -84,9 +93,15 @@ export default function VisitorsTab({ initialVisitorId = '', onClearInitial, onT
   }, [search, filter]);
 
   const loadVisitorHistory = async (uid, { silent = false } = {}) => {
+    const targetUid = String(uid);
+    if (silent && historyInFlightRef.current > 0) return;
+    const seq = ++historySeqRef.current;
+    historyInFlightRef.current += 1;
     try {
       if (!silent) setHistoryLoading(true);
-      const res = await apiRequest(`/api/admin/visitors/${encodeURIComponent(uid)}/history`);
+      const res = await apiRequest(`/api/admin/visitors/${encodeURIComponent(targetUid)}/history`);
+      // Drop responses for a visitor the admin already switched away from, or superseded by a newer load/mutation
+      if (seq !== historySeqRef.current || activeUidRef.current !== targetUid) return;
       setHistoryData({
         photos: res.photos || [],
         links: res.links || [],
@@ -96,13 +111,16 @@ export default function VisitorsTab({ initialVisitorId = '', onClearInitial, onT
         setActiveVisitor(res.visitor);
       }
     } catch (err) {
-      if (!silent) onToast(err.message);
+      if (!silent && seq === historySeqRef.current && activeUidRef.current === targetUid) onToast(err.message);
     } finally {
+      historyInFlightRef.current -= 1;
       if (!silent) setHistoryLoading(false);
     }
   };
 
   const openDetail = (v) => {
+    activeUidRef.current = String(v?.userId || '');
+    historySeqRef.current += 1;
     setActiveVisitor(v);
     setNoteDraft(v.note || '');
     setDrawerView('profile');
@@ -114,7 +132,14 @@ export default function VisitorsTab({ initialVisitorId = '', onClearInitial, onT
     haptic('light');
   };
 
+  const clearReplyPhoto = () => {
+    setReplyPhoto(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
   const closeDetail = () => {
+    activeUidRef.current = '';
+    historySeqRef.current += 1;
     setActiveVisitor(null);
     setDrawerView('profile');
     setShowClearConfirm(false);
@@ -142,63 +167,95 @@ export default function VisitorsTab({ initialVisitorId = '', onClearInitial, onT
 
   const handleSendReply = async () => {
     if (!activeVisitor || sendingReply) return;
+    const uid = String(activeVisitor.userId);
     const trimmed = replyText.trim();
-    if (!trimmed && !replyPhoto) return;
+    const photo = replyPhoto;
+    if (!trimmed && !photo) return;
 
     try {
       setSendingReply(true);
       haptic('light');
-      let res;
-      if (replyPhoto) {
-        const fd = new FormData();
-        fd.append('photo', replyPhoto);
-        if (trimmed) fd.append('text', trimmed);
-        res = await apiRequest(`/api/admin/visitors/${encodeURIComponent(activeVisitor.userId)}/reply`, {
-          method: 'POST',
-          body: fd,
-        });
+      // Invalidate any poll already in flight: its snapshot predates this message
+      historySeqRef.current += 1;
+      let body;
+      if (photo) {
+        body = new FormData();
+        body.append('photo', photo, photo.name || 'photo.jpg');
+        if (trimmed) body.append('text', trimmed);
       } else {
-        res = await apiRequest(`/api/admin/visitors/${encodeURIComponent(activeVisitor.userId)}/reply`, {
-          method: 'POST',
-          body: { text: trimmed },
-        });
+        body = { text: trimmed };
       }
+      const res = await apiRequest(`/api/admin/visitors/${encodeURIComponent(uid)}/reply`, {
+        method: 'POST',
+        body,
+      });
+      historySeqRef.current += 1;
+      loadList(search, filter);
+      // Admin switched to another visitor while the upload was in flight: don't touch the new drawer
+      if (activeUidRef.current !== uid) return;
       setReplyText('');
-      setReplyPhoto(null);
-      if (fileInputRef.current) fileInputRef.current.value = '';
+      clearReplyPhoto();
       if (res.visitor) setActiveVisitor(res.visitor);
       if (res.message) {
-        setHistoryData((prev) => ({
-          ...prev,
-          messages: [...(prev.messages || []), res.message],
-        }));
+        setHistoryData((prev) => {
+          const list = prev.messages || [];
+          if (list.some((m) => m.id === res.message.id)) return prev;
+          return { ...prev, messages: [...list, res.message] };
+        });
       } else {
-        await loadVisitorHistory(activeVisitor.userId, { silent: true });
+        await loadVisitorHistory(uid, { silent: true });
       }
-      loadList(search, filter);
     } catch (err) {
-      onToast(err.message);
+      if (activeUidRef.current === uid) onToast(err.message);
     } finally {
       setSendingReply(false);
     }
   };
 
   const handleRecallBubble = async (pmMessageId) => {
-    if (!activeVisitor || !pmMessageId) return;
+    if (!activeVisitor || !pmMessageId || recallingId) return;
+    const uid = String(activeVisitor.userId);
+    const ok = await confirmDialog('撤回后对方私聊与通知群话题中的这条消息都会被删除，确定撤回吗？');
+    if (!ok || activeUidRef.current !== uid) return;
     try {
+      setRecallingId(pmMessageId);
       haptic('warning');
-      await apiRequest(`/api/admin/visitors/${encodeURIComponent(activeVisitor.userId)}/recall`, {
+      historySeqRef.current += 1;
+      await apiRequest(`/api/admin/visitors/${encodeURIComponent(uid)}/recall`, {
         method: 'POST',
         body: { pmMessageId },
       });
+      historySeqRef.current += 1;
+      if (activeUidRef.current !== uid) return;
       setHistoryData((prev) => ({
         ...prev,
-        messages: (prev.messages || []).filter((m) => Number(m.pmMessageId) !== Number(pmMessageId)),
+        messages: (prev.messages || []).filter(
+          (m) => !(m.sender === 'admin' && Number(m.pmMessageId) === Number(pmMessageId))
+        ),
       }));
       onToast('🗑️ 已撤回发给对方的该条消息');
     } catch (err) {
-      onToast(err.message);
+      if (activeUidRef.current === uid) onToast(err.message);
+    } finally {
+      setRecallingId(null);
     }
+  };
+
+  const handlePickReplyPhoto = (e) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    const type = String(f.type || '').toLowerCase();
+    if (type && !REPLY_PHOTO_TYPES.has(type)) {
+      onToast('仅支持发送 JPG / PNG / WebP / GIF 图片');
+      e.target.value = '';
+      return;
+    }
+    if (f.size <= 0 || f.size > MAX_REPLY_PHOTO_BYTES) {
+      onToast('单张图片不能超过 10 MB');
+      e.target.value = '';
+      return;
+    }
+    setReplyPhoto(f);
   };
 
   // Deep-link directly from Telegram Forum Topic button (?startapp=visitor_<uid>)
@@ -511,9 +568,10 @@ export default function VisitorsTab({ initialVisitorId = '', onClearInitial, onT
                               <button
                                 type="button"
                                 className="chat-recall-btn"
+                                disabled={Boolean(recallingId)}
                                 onClick={() => handleRecallBubble(m.pmMessageId)}
                               >
-                                撤回
+                                {recallingId === m.pmMessageId ? '撤回中…' : '撤回'}
                               </button>
                             )}
                           </div>
@@ -532,10 +590,7 @@ export default function VisitorsTab({ initialVisitorId = '', onClearInitial, onT
                       </span>
                       <button
                         type="button"
-                        onClick={() => {
-                          setReplyPhoto(null);
-                          if (fileInputRef.current) fileInputRef.current.value = '';
-                        }}
+                        onClick={clearReplyPhoto}
                         style={{ background: 'transparent', border: 'none', color: 'var(--accent)', cursor: 'pointer' }}
                       >
                         <X size={15} />
@@ -547,18 +602,9 @@ export default function VisitorsTab({ initialVisitorId = '', onClearInitial, onT
                     <input
                       ref={fileInputRef}
                       type="file"
-                      accept="image/*"
+                      accept="image/jpeg,image/png,image/webp,image/gif"
                       style={{ display: 'none' }}
-                      onChange={(e) => {
-                        const f = e.target.files?.[0];
-                        if (!f) return;
-                        if (f.size > 10 * 1024 * 1024) {
-                          onToast('单张图片不能超过 10 MB');
-                          e.target.value = '';
-                          return;
-                        }
-                        setReplyPhoto(f);
-                      }}
+                      onChange={handlePickReplyPhoto}
                     />
                     <button
                       type="button"
@@ -577,7 +623,8 @@ export default function VisitorsTab({ initialVisitorId = '', onClearInitial, onT
                       disabled={sendingReply}
                       onChange={(e) => setReplyText(e.target.value)}
                       onKeyDown={(e) => {
-                        if (e.key === 'Enter' && !e.shiftKey) {
+                        // Don't send while a CJK IME is still composing (Enter confirms the candidate)
+                        if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing && e.keyCode !== 229) {
                           e.preventDefault();
                           handleSendReply();
                         }

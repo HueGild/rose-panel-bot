@@ -702,10 +702,43 @@ export async function recallAdminVisitorMessage(
     }
   }
 
-  history.pmMessageIds = list.filter((_, i) => i !== idx);
-  if (Array.isArray(history.messages)) {
-    history.messages = history.messages.filter((m) => Number(m?.pmMessageId) !== Number(target.id));
+  // Re-read after the (slow) Telegram round-trips so messages archived concurrently by the webhook
+  // are not overwritten by the stale snapshot taken above.
+  const fresh = (await safeGetJSON(env.TOPIC_MAP, historyKey, null)) || history;
+  const targetId = Number(target.id);
+  const freshMessages = Array.isArray(fresh.messages) ? fresh.messages : [];
+  const recalledEntry = freshMessages.find(
+    (m) => Number(m?.pmMessageId) === targetId && m?.sender !== 'visitor'
+  );
+
+  fresh.pmMessageIds = (Array.isArray(fresh.pmMessageIds) ? fresh.pmMessageIds : []).filter(
+    (m) => !(Number(m?.id) === targetId && m?.sender !== 'visitor')
+  );
+  fresh.messages = freshMessages.filter((m) => !(Number(m?.pmMessageId) === targetId && m?.sender !== 'visitor'));
+
+  // Drop the recalled photo / links from the archive too, so the gallery doesn't keep serving
+  // signed URLs for content the visitor can no longer see.
+  if (recalledEntry) {
+    if (Array.isArray(fresh.photos) && recalledEntry.photoFileId) {
+      fresh.photos = fresh.photos.filter(
+        (p) => !(p?.sender === 'admin' && p?.fileId === recalledEntry.photoFileId && p?.at === recalledEntry.at)
+      );
+    }
+    if (Array.isArray(fresh.links)) {
+      fresh.links = fresh.links.filter((l) => !(l?.sender === 'admin' && l?.at === recalledEntry.at));
+    }
   }
-  await safePutJSON(env.TOPIC_MAP, historyKey, history);
+  await safePutJSON(env.TOPIC_MAP, historyKey, fresh);
+
+  if (recalledEntry) {
+    const userKey = `user:${uid}`;
+    const rec = await safeGetJSON(env.TOPIC_MAP, userKey, null);
+    if (rec) {
+      rec.photo_count = Array.isArray(fresh.photos) ? fresh.photos.length : 0;
+      rec.link_count = Array.isArray(fresh.links) ? fresh.links.length : 0;
+      await safePutJSON(env.TOPIC_MAP, userKey, rec);
+      await invalidateVisitorSummaryCache(env);
+    }
+  }
   return { ok: true, deletedPmMessageId: target.id };
 }
