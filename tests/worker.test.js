@@ -2559,3 +2559,184 @@ describe('v1.6.0 review fixes: challenge refresh cannot reset failures, rate lim
     expect(calls.filter((c) => c.method === 'getMe')).toHaveLength(1);
   });
 });
+
+describe('Mini App in-panel visitor chat log, direct text/photo reply & recall', () => {
+  it('blocks non-admins, sends text & multipart photo replies to visitor + mirrors to topic, signs chat history, and recalls cleanly', async () => {
+    const kv = createMemoryKV();
+    const botToken = '999111:CHAT_DRAWER_TOKEN';
+    const env = {
+      TOPIC_MAP: kv,
+      BOT_TOKEN: botToken,
+      ADMIN_IDS: '10001',
+      SUPERGROUP_ID: '-100888777',
+    };
+
+    await upsertVisitorProfile(
+      env,
+      { id: 90909, first_name: 'Hula', username: 'hula_user' },
+      { threadId: 77, closed: true, incrementMsg: false }
+    );
+    await kv.put('thread:77', '90909');
+    await kv.put('verified:90909', 'emoji:v1');
+
+    const tgCalls = [];
+    const origFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn(async (url, init) => {
+      const method = String(url).split('/').pop();
+      let bodySummary = {};
+      if (init?.body instanceof FormData) {
+        bodySummary = {
+          isForm: true,
+          chat_id: init.body.get('chat_id'),
+          caption: init.body.get('caption'),
+          hasPhoto: Boolean(init.body.get('photo')),
+        };
+      } else if (typeof init?.body === 'string') {
+        bodySummary = JSON.parse(init.body);
+      }
+      tgCalls.push({ method, body: bodySummary });
+
+      if (method === 'sendPhoto' && bodySummary.isForm) {
+        return new Response(
+          JSON.stringify({
+            ok: true,
+            result: {
+              message_id: 702,
+              photo: [{ file_id: 'thumb_fid_1' }, { file_id: 'full_fid_1' }],
+            },
+          }),
+          { status: 200 }
+        );
+      }
+      if (method === 'sendPhoto') {
+        return new Response(JSON.stringify({ ok: true, result: { message_id: 802 } }), { status: 200 });
+      }
+      if (method === 'sendMessage' && Number(bodySummary.chat_id) === 90909) {
+        return new Response(JSON.stringify({ ok: true, result: { message_id: 701 } }), { status: 200 });
+      }
+      if (method === 'sendMessage') {
+        return new Response(JSON.stringify({ ok: true, result: { message_id: 801 } }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ ok: true, result: true }), { status: 200 });
+    });
+
+    try {
+      const guestInit = await signInitData(
+        { auth_date: String(Math.floor(Date.now() / 1000)), user: JSON.stringify({ id: 90909, first_name: 'Hula' }) },
+        botToken
+      );
+      const adminInit = await signInitData(
+        { auth_date: String(Math.floor(Date.now() / 1000)), user: JSON.stringify({ id: 10001, first_name: 'Owner' }) },
+        botToken
+      );
+
+      // 1. Non-admin strictly blocked (403)
+      const guestTry = await worker.fetch(
+        new Request('https://panel.example.com/api/admin/visitors/90909/reply', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Telegram-Init-Data': guestInit },
+          body: JSON.stringify({ text: 'hack' }),
+        }),
+        env
+      );
+      expect(guestTry.status).toBe(403);
+
+      // 2. Visitor sends a normal PM first -> logged in chronological `messages`
+      await handleTelegramUpdate(
+        {
+          message: {
+            message_id: 500,
+            from: { id: 90909, first_name: 'Hula', username: 'hula_user' },
+            chat: { id: 90909, type: 'private' },
+            text: '请问友链怎么换呀？',
+          },
+        },
+        env,
+        'https://panel.example.com'
+      );
+      // Note: conversation was closed earlier -> let's see! Admin replying via Mini App auto-reopens it!
+
+      // 3. Admin sends direct text reply from Mini App -> delivers to visitor, mirrors silently to topic 77, and reopens closed thread
+      tgCalls.length = 0;
+      const textReplyRes = await worker.fetch(
+        new Request('https://panel.example.com/api/admin/visitors/90909/reply', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Telegram-Init-Data': adminInit },
+          body: JSON.stringify({ text: '直接在面板里回复你啦 🌸' }),
+        }),
+        env
+      );
+      const textReplyJson = await textReplyRes.json();
+      expect(textReplyJson.ok).toBe(true);
+      expect(textReplyJson.visitor.isClosed).toBe(false);
+      expect(tgCalls.some((c) => c.method === 'sendMessage' && Number(c.body.chat_id) === 90909)).toBe(true);
+      expect(
+        tgCalls.some(
+          (c) =>
+            c.method === 'sendMessage' &&
+            c.body.chat_id === '-100888777' &&
+            c.body.message_thread_id === 77 &&
+            c.body.disable_notification === true
+        )
+      ).toBe(true);
+
+      // 4. Admin sends multipart photo + caption from Mini App -> delivers photo via FormData, mirrors to topic, signs URLs
+      tgCalls.length = 0;
+      const form = new FormData();
+      form.append('photo', new File([new Uint8Array([137, 80, 78, 71])], 'card.png', { type: 'image/png' }));
+      form.append('text', '这是我的站点图标');
+      const photoReplyRes = await worker.fetch(
+        new Request('https://panel.example.com/api/admin/visitors/90909/reply', {
+          method: 'POST',
+          headers: { 'X-Telegram-Init-Data': adminInit },
+          body: form,
+        }),
+        env
+      );
+      const photoReplyJson = await photoReplyRes.json();
+      expect(photoReplyJson.ok).toBe(true);
+      expect(photoReplyJson.message.photoUrl).toContain('/api/media/full_fid_1');
+      expect(tgCalls.some((c) => c.method === 'sendPhoto' && c.body.isForm && c.body.chat_id === '90909')).toBe(true);
+      expect(tgCalls.some((c) => c.method === 'sendPhoto' && c.body.chat_id === '-100888777')).toBe(true);
+
+      // 5. History endpoint returns signed chronological messages & archived photo
+      const histRes = await worker.fetch(
+        new Request('https://panel.example.com/api/admin/visitors/90909/history', {
+          headers: { 'X-Telegram-Init-Data': adminInit },
+        }),
+        env
+      );
+      const histJson = await histRes.json();
+      expect(histJson.messages).toHaveLength(2);
+      expect(histJson.photos).toHaveLength(1);
+
+      // 6. Admin recalls the photo bubble right inside Mini App -> deletes BOTH visitor PM (702) AND topic mirror (802)!
+      tgCalls.length = 0;
+      const recallRes = await worker.fetch(
+        new Request('https://panel.example.com/api/admin/visitors/90909/recall', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Telegram-Init-Data': adminInit },
+          body: JSON.stringify({ pmMessageId: 702 }),
+        }),
+        env
+      );
+      expect((await recallRes.json()).ok).toBe(true);
+      expect(tgCalls.some((c) => c.method === 'deleteMessage' && c.body.chat_id === 90909 && c.body.message_id === 702)).toBe(true);
+      expect(
+        tgCalls.some((c) => c.method === 'deleteMessage' && c.body.chat_id === '-100888777' && c.body.message_id === 802)
+      ).toBe(true);
+
+      const histAfterRecall = await (
+        await worker.fetch(
+          new Request('https://panel.example.com/api/admin/visitors/90909/history', {
+            headers: { 'X-Telegram-Init-Data': adminInit },
+          }),
+          env
+        )
+      ).json();
+      expect(histAfterRecall.messages).toHaveLength(1);
+    } finally {
+      globalThis.fetch = origFetch;
+    }
+  });
+});

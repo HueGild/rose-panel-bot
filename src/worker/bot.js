@@ -27,6 +27,7 @@ import {
   normalizeStickerObject,
   parseStickerPackName,
   tgCall,
+  tgCallForm,
 } from './telegram.js';
 import {
   applyVisitorAction,
@@ -2359,4 +2360,152 @@ export async function syncTelegramBotSurface(env, requestOrigin, config = null, 
   }).catch((e) => ({ error: e.message }));
 
   return { ok: true, results };
+}
+
+/**
+ * Sends a direct reply (text and/or photo) from the Admin inside the Mini App Visitor Chat Drawer
+ * directly to the visitor in private chat, while silently mirroring into the Forum Supergroup Topic
+ * (if bound) and archiving into `history:<uid>` so Mini App and Telegram Topics stay 100% synced.
+ */
+export async function sendAdminDirectVisitorReply(env, requestOrigin, targetUid, payload = {}) {
+  const uid = String(targetUid || '').trim();
+  if (!/^\d+$/.test(uid)) {
+    throw new Error('无效的访客 UID');
+  }
+  if (!env.BOT_TOKEN) {
+    throw new Error('尚未配置 BOT_TOKEN，本地预览模式下无法向真实 Telegram 发送消息');
+  }
+
+  const rawText = String(payload.text || '').trim();
+  const photoFile = payload.photoFile || null;
+
+  if (!rawText && !photoFile) {
+    throw new Error('请输入消息内容或选择一张图片');
+  }
+  if (photoFile) {
+    const mime = String(photoFile.type || '').toLowerCase();
+    if (mime && !mime.startsWith('image/') && mime !== 'application/octet-stream') {
+      throw new Error('仅支持发送图片文件（JPG / PNG / WebP / GIF）');
+    }
+    if (mime === 'image/svg+xml') {
+      throw new Error('Telegram 照片接口不支持 SVG，请发送 PNG / JPG / WebP 图片');
+    }
+    if (Number(photoFile.size) <= 0 || Number(photoFile.size) > 10 * 1024 * 1024) {
+      throw new Error('单张图片大小需在 10 MB 以内');
+    }
+  }
+
+  let sentPm = null;
+  try {
+    if (photoFile) {
+      const caption = rawText.slice(0, 1000);
+      const fd = new FormData();
+      fd.append('chat_id', String(Number(uid)));
+      fd.append('photo', photoFile, photoFile.name || 'photo.jpg');
+      if (caption) fd.append('caption', caption);
+      const res = await tgCallForm(env, 'sendPhoto', fd);
+      sentPm = res?.result || null;
+    } else {
+      const text = rawText.slice(0, 4000);
+      const res = await tgCall(env, 'sendMessage', {
+        chat_id: Number(uid),
+        text,
+      });
+      sentPm = res?.result || null;
+    }
+  } catch (err) {
+    throw new Error(`发送失败（对方可能已停用或拉黑机器人）：${err.message}`);
+  }
+
+  const rec = (await safeGetJSON(env.TOPIC_MAP, `user:${uid}`, { userId: uid })) || { userId: uid };
+  if (rec.closed) {
+    rec.closed = false;
+    await safePutJSON(env.TOPIC_MAP, `user:${uid}`, rec);
+  }
+
+  // Silently mirror into the Admin Forum Supergroup Topic if bound
+  let topicMsgId = null;
+  const supergroupId = await resolveSupergroupId(env);
+  if (supergroupId) {
+    try {
+      const preview = photoFile ? rawText.slice(0, 80) || '[图片]' : rawText.slice(0, 80);
+      let { threadId } = await ensureVisitorTopic(
+        env,
+        requestOrigin,
+        {
+          id: Number(uid),
+          first_name: rec.first_name || rec.title || '',
+          last_name: rec.last_name || '',
+          username: rec.username || '',
+        },
+        preview
+      );
+
+      const mirrorOnce = async (tid) => {
+        if (photoFile && Array.isArray(sentPm?.photo) && sentPm.photo.length > 0) {
+          const largestId = sentPm.photo[sentPm.photo.length - 1].file_id;
+          return tgCall(env, 'sendPhoto', {
+            chat_id: supergroupId,
+            message_thread_id: tid,
+            photo: largestId,
+            caption: rawText ? `📱 [面板回复] ${rawText}`.slice(0, 1024) : '📱 [面板发出图片]',
+            disable_notification: true,
+          });
+        }
+        return tgCall(env, 'sendMessage', {
+          chat_id: supergroupId,
+          message_thread_id: tid,
+          text: `📱 [面板回复]\n${rawText}`.slice(0, 4096),
+          disable_notification: true,
+        });
+      };
+
+      try {
+        const mirrored = await mirrorOnce(threadId);
+        topicMsgId = mirrored?.result?.message_id || null;
+      } catch (topicErr) {
+        if (/thread not found|topic_deleted|message thread not found/i.test(String(topicErr.message))) {
+          const latestRec = (await safeGetJSON(env.TOPIC_MAP, `user:${uid}`, {})) || {};
+          delete latestRec.thread_id;
+          await safePutJSON(env.TOPIC_MAP, `user:${uid}`, latestRec);
+          await env.TOPIC_MAP.delete(`thread:${threadId}`);
+          ({ threadId } = await ensureVisitorTopic(
+            env,
+            requestOrigin,
+            {
+              id: Number(uid),
+              first_name: rec.first_name || rec.title || '',
+              last_name: rec.last_name || '',
+              username: rec.username || '',
+            },
+            preview
+          ));
+          const mirroredRetry = await mirrorOnce(threadId);
+          topicMsgId = mirroredRetry?.result?.message_id || null;
+        }
+      }
+    } catch {
+      // Non-fatal: visitor already received the message in private chat
+    }
+  }
+
+  const syntheticMsg = {
+    message_id: topicMsgId,
+    text: photoFile ? '' : rawText.slice(0, 4000),
+    caption: photoFile ? rawText.slice(0, 1000) : '',
+    photo: Array.isArray(sentPm?.photo) ? sentPm.photo : null,
+  };
+
+  const exchanged = await recordVisitorExchange(env, uid, syntheticMsg, {
+    sender: 'admin',
+    pmMessageId: sentPm?.message_id || null,
+    incrementCount: true,
+    preview: previewTextOfMessage(syntheticMsg),
+  });
+
+  const visitor = await getVisitorDetail(env, uid, supergroupId);
+  return {
+    visitor,
+    message: exchanged?.message || null,
+  };
 }

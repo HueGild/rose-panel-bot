@@ -2,7 +2,12 @@
 
 import { getBlockedSpamCount } from './antispam.js';
 import { authenticateRequest, parseAdminIds, signMediaToken, verifyMediaToken } from './auth.js';
-import { initiateChatFromMiniApp, resolveBotUsername, syncTelegramBotSurface } from './bot.js';
+import {
+  initiateChatFromMiniApp,
+  resolveBotUsername,
+  sendAdminDirectVisitorReply,
+  syncTelegramBotSurface,
+} from './bot.js';
 import { getLeaderboard, getMemberTicket, performCheckin } from './checkin.js';
 import {
   BADGE_CATALOG,
@@ -30,6 +35,7 @@ import {
   getVisitorHistory,
   getVisitorOverview,
   listVisitors,
+  recallAdminVisitorMessage,
 } from './visitors.js';
 
 function json(data, status = 200) {
@@ -205,7 +211,7 @@ export async function handleApiRequest(request, env, url, ctx = null) {
       return json({ ok: true, visitor: detail });
     }
 
-    // GET /api/admin/visitors/:userId/history — archived photos (with signed URLs) & links
+    // GET /api/admin/visitors/:userId/history — archived messages, photos (with signed URLs) & links
     const historyMatch = path.match(/^\/api\/admin\/visitors\/(\d+)\/history$/);
     if (historyMatch && method === 'GET') {
       const uid = historyMatch[1];
@@ -215,29 +221,112 @@ export async function handleApiRequest(request, env, url, ctx = null) {
       ]);
       if (!detail) return json({ ok: false, error: '未找到该访客记录' }, 404);
 
-      const signedPhotos = await Promise.all(
-        history.photos.map(async (p) => {
-          const fullToken = await signMediaToken(p.fileId, env.BOT_TOKEN, 1800);
-          const thumbId = p.thumbFileId || p.fileId;
-          const thumbToken =
-            thumbId === p.fileId ? fullToken : await signMediaToken(thumbId, env.BOT_TOKEN, 1800);
-          return {
-            id: p.id,
-            caption: p.caption || '',
-            sender: p.sender || 'visitor',
-            at: p.at,
-            url: `/api/media/${encodeURIComponent(p.fileId)}?exp=${fullToken.exp}&sig=${fullToken.sig}`,
-            thumbUrl: `/api/media/${encodeURIComponent(thumbId)}?exp=${thumbToken.exp}&sig=${thumbToken.sig}`,
-          };
-        })
-      );
+      const signPhotoIds = async (fileId, thumbIdInput) => {
+        if (!fileId || !env.BOT_TOKEN) return { url: '', thumbUrl: '' };
+        const fullToken = await signMediaToken(fileId, env.BOT_TOKEN, 1800);
+        const thumbId = thumbIdInput || fileId;
+        const thumbToken =
+          thumbId === fileId ? fullToken : await signMediaToken(thumbId, env.BOT_TOKEN, 1800);
+        return {
+          url: `/api/media/${encodeURIComponent(fileId)}?exp=${fullToken.exp}&sig=${fullToken.sig}`,
+          thumbUrl: `/api/media/${encodeURIComponent(thumbId)}?exp=${thumbToken.exp}&sig=${thumbToken.sig}`,
+        };
+      };
+
+      const [signedPhotos, signedMessages] = await Promise.all([
+        Promise.all(
+          history.photos.map(async (p) => {
+            const urls = await signPhotoIds(p.fileId, p.thumbFileId);
+            return {
+              id: p.id,
+              caption: p.caption || '',
+              sender: p.sender || 'visitor',
+              at: p.at,
+              url: urls.url,
+              thumbUrl: urls.thumbUrl,
+            };
+          })
+        ),
+        Promise.all(
+          (history.messages || []).map(async (m) => {
+            const urls = m.photoFileId ? await signPhotoIds(m.photoFileId, m.thumbFileId) : { url: '', thumbUrl: '' };
+            return {
+              id: m.id,
+              sender: m.sender || 'visitor',
+              text: m.text || '',
+              mediaTag: m.mediaTag || '',
+              pmMessageId: m.pmMessageId || null,
+              at: m.at,
+              photoUrl: urls.url,
+              thumbUrl: urls.thumbUrl,
+            };
+          })
+        ),
+      ]);
 
       return json({
         ok: true,
         visitor: detail,
         photos: signedPhotos,
         links: history.links,
+        messages: signedMessages,
       });
+    }
+
+    // POST /api/admin/visitors/:userId/reply — send direct text or photo reply from inside Mini App
+    const replyMatch = path.match(/^\/api\/admin\/visitors\/(\d+)\/reply$/);
+    if (replyMatch && method === 'POST') {
+      const uid = replyMatch[1];
+      const ct = String(request.headers.get('content-type') || '').toLowerCase();
+      let text = '';
+      let photoFile = null;
+
+      if (ct.includes('multipart/form-data')) {
+        try {
+          const form = await request.formData();
+          text = String(form.get('text') || form.get('caption') || '').trim();
+          const f = form.get('photo');
+          if (f && typeof f === 'object' && typeof f.arrayBuffer === 'function' && Number(f.size) > 0) {
+            photoFile = f;
+          }
+        } catch {
+          return json({ ok: false, error: '无法解析上传的图片表单' }, 400);
+        }
+      } else {
+        const body = await readJsonBody(request);
+        text = String(body?.text || '').trim();
+      }
+
+      try {
+        const sent = await sendAdminDirectVisitorReply(env, url.origin, uid, { text, photoFile });
+        let signedMessage = sent.message;
+        if (signedMessage?.photoFileId && env.BOT_TOKEN) {
+          const fullToken = await signMediaToken(signedMessage.photoFileId, env.BOT_TOKEN, 1800);
+          const thumbId = signedMessage.thumbFileId || signedMessage.photoFileId;
+          const thumbToken =
+            thumbId === signedMessage.photoFileId
+              ? fullToken
+              : await signMediaToken(thumbId, env.BOT_TOKEN, 1800);
+          signedMessage = {
+            ...signedMessage,
+            photoUrl: `/api/media/${encodeURIComponent(signedMessage.photoFileId)}?exp=${fullToken.exp}&sig=${fullToken.sig}`,
+            thumbUrl: `/api/media/${encodeURIComponent(thumbId)}?exp=${thumbToken.exp}&sig=${thumbToken.sig}`,
+          };
+        }
+        return json({ ok: true, visitor: sent.visitor, message: signedMessage });
+      } catch (err) {
+        return json({ ok: false, error: err.message || '发送失败' }, 400);
+      }
+    }
+
+    // POST /api/admin/visitors/:userId/recall — recall a sent admin message from inside Mini App chat
+    const recallMatch = path.match(/^\/api\/admin\/visitors\/(\d+)\/recall$/);
+    if (recallMatch && method === 'POST') {
+      const body = await readJsonBody(request);
+      const pmMessageId = Number(body?.pmMessageId) || null;
+      const res = await recallAdminVisitorMessage(env, recallMatch[1], null, tgCall, pmMessageId);
+      if (!res.ok) return json({ ok: false, error: res.error }, 400);
+      return json({ ok: true, deletedPmMessageId: res.deletedPmMessageId });
     }
 
     // POST /api/admin/visitors/:userId/clear — clear archive or full topic + <48h PM history

@@ -1408,3 +1408,136 @@ select {
     transform: rotate(360deg);
   }
 }
+
+/* Mini App Visitor Direct Chat Stream & Composer */
+.chat-box {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  overflow: hidden;
+}
+
+.chat-stream {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 12px;
+  max-height: 48vh;
+  min-height: 220px;
+  overflow-y: auto;
+}
+
+.chat-row {
+  display: flex;
+  flex-direction: column;
+  max-width: 84%;
+}
+
+.chat-row.them {
+  align-self: flex-start;
+  align-items: flex-start;
+}
+
+.chat-row.me {
+  align-self: flex-end;
+  align-items: flex-end;
+}
+
+.chat-bubble {
+  padding: 9px 13px;
+  border-radius: 17px;
+  font-size: 13.5px;
+  line-height: 1.48;
+  word-break: break-word;
+  white-space: pre-wrap;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+}
+
+.chat-row.them .chat-bubble {
+  background: var(--bg-elevated);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-bottom-left-radius: 5px;
+}
+
+.chat-row.me .chat-bubble {
+  background: linear-gradient(135deg, #c93b6b, var(--accent));
+  color: #ffffff;
+  border-bottom-right-radius: 5px;
+}
+
+.chat-photo {
+  display: block;
+  max-width: 190px;
+  max-height: 190px;
+  border-radius: 12px;
+  object-fit: cover;
+  cursor: pointer;
+  margin-bottom: 4px;
+}
+
+.chat-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10.5px;
+  color: var(--text-muted);
+  margin-top: 3px;
+  padding: 0 3px;
+}
+
+.chat-recall-btn {
+  border: none;
+  background: transparent;
+  color: var(--accent);
+  font-size: 10.5px;
+  font-weight: 600;
+  padding: 0;
+  cursor: pointer;
+}
+
+.chat-composer-wrap {
+  background: var(--bg-elevated);
+  border-top: 1px solid var(--border);
+  padding: 9px 10px;
+}
+
+.chat-pending-img {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px;
+  margin-bottom: 8px;
+  border-radius: 12px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.chat-composer {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.chat-input {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--border);
+  background: var(--bg-subtle);
+  border-radius: 18px;
+  padding: 8px 12px;
+  font-size: 13.5px;
+  line-height: 1.4;
+  max-height: 92px;
+  resize: none;
+  outline: none;
+}
+
+.chat-input:focus {
+  border-color: var(--accent);
+}

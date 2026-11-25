@@ -16,6 +16,7 @@ const VISITOR_SUMMARY_TTL_MS = 10 * 60 * 1000;
 const MAX_PHOTOS = 150;
 const MAX_LINKS = 200;
 const MAX_PM_IDS = 200;
+const MAX_MESSAGES = 60;
 
 export async function invalidateVisitorSummaryCache(env) {
   if (!env?.TOPIC_MAP) return;
@@ -159,7 +160,9 @@ export async function recordVisitorExchange(env, userId, msg, options = {}) {
     photos: [],
     links: [],
     pmMessageIds: [],
+    messages: [],
   };
+  if (!Array.isArray(history.messages)) history.messages = [];
 
   const photo = extractPhotoFromMessage(msg);
   if (photo) {
@@ -189,14 +192,49 @@ export async function recordVisitorExchange(env, userId, msg, options = {}) {
     history.links = history.links.slice(0, MAX_LINKS);
   }
 
-  if (pmMessageId && Number.isFinite(Number(pmMessageId))) {
+  const numericPmId = pmMessageId && Number.isFinite(Number(pmMessageId)) ? Number(pmMessageId) : null;
+  const numericTopicId = msg?.message_id && Number.isFinite(Number(msg.message_id)) ? Number(msg.message_id) : null;
+
+  if (numericPmId) {
     history.pmMessageIds.unshift({
-      id: Number(pmMessageId),
-      topicMsgId: msg?.message_id ? Number(msg.message_id) : null,
+      id: numericPmId,
+      topicMsgId: numericTopicId,
       sender,
       at: nowMs,
     });
     history.pmMessageIds = history.pmMessageIds.slice(0, MAX_PM_IDS);
+  }
+
+  const rawMsgText = String(msg?.text || msg?.caption || '').trim();
+  const mediaTag = !photo
+    ? msg?.video
+      ? '[视频]'
+      : msg?.voice
+        ? '[语音]'
+        : msg?.sticker
+          ? `[贴纸 ${msg.sticker.emoji || ''}]`.trim()
+          : msg?.document
+            ? `[文件 ${msg.document.file_name || ''}]`.trim()
+            : ''
+    : '';
+
+  let addedMessage = null;
+  if (rawMsgText || photo || mediaTag) {
+    addedMessage = {
+      id: `m_${nowMs}_${Math.floor(Math.random() * 10000)}`,
+      sender,
+      text: rawMsgText.slice(0, 1500),
+      mediaTag,
+      photoFileId: photo?.fileId || '',
+      thumbFileId: photo?.thumbFileId || '',
+      pmMessageId: numericPmId,
+      topicMsgId: numericTopicId,
+      at: nowIso,
+    };
+    history.messages.push(addedMessage);
+    if (history.messages.length > MAX_MESSAGES) {
+      history.messages = history.messages.slice(-MAX_MESSAGES);
+    }
   }
 
   await safePutJSON(env.TOPIC_MAP, historyKey, history);
@@ -240,23 +278,26 @@ export async function recordVisitorExchange(env, userId, msg, options = {}) {
     photoCount: history.photos.length,
     linkCount: history.links.length,
     totalCount: rec.msg_count,
+    message: addedMessage,
   };
 }
 
 export async function getVisitorHistory(env, userId) {
   const uid = String(userId || '');
   if (!env.TOPIC_MAP || !/^\d+$/.test(uid)) {
-    return { photos: [], links: [], pmMessageIds: [] };
+    return { photos: [], links: [], pmMessageIds: [], messages: [] };
   }
   const history = (await safeGetJSON(env.TOPIC_MAP, `history:${uid}`, null)) || {
     photos: [],
     links: [],
     pmMessageIds: [],
+    messages: [],
   };
   return {
     photos: Array.isArray(history.photos) ? history.photos : [],
     links: Array.isArray(history.links) ? history.links : [],
     pmMessageIds: Array.isArray(history.pmMessageIds) ? history.pmMessageIds : [],
+    messages: Array.isArray(history.messages) ? history.messages : [],
   };
 }
 
@@ -606,7 +647,13 @@ export async function applyVisitorAction(env, userId, action, payload = {}) {
  * Recalls an admin reply sent to a visitor in private chat (either matching a replied-to topic message
  * or falling back to the most recent admin reply within 48 hours).
  */
-export async function recallAdminVisitorMessage(env, userId, replyToTopicMsgId = null, tgCallFn = null) {
+export async function recallAdminVisitorMessage(
+  env,
+  userId,
+  replyToTopicMsgId = null,
+  tgCallFn = null,
+  explicitPmMessageId = null
+) {
   const uid = String(userId || '');
   if (!env.TOPIC_MAP || !/^\d+$/.test(uid) || typeof tgCallFn !== 'function') {
     return { ok: false, error: '参数无效' };
@@ -616,11 +663,14 @@ export async function recallAdminVisitorMessage(env, userId, replyToTopicMsgId =
     photos: [],
     links: [],
     pmMessageIds: [],
+    messages: [],
   };
   const list = Array.isArray(history.pmMessageIds) ? history.pmMessageIds : [];
-  const idx = replyToTopicMsgId
-    ? list.findIndex((m) => Number(m?.topicMsgId) === Number(replyToTopicMsgId) && m?.sender !== 'visitor')
-    : list.findIndex((m) => m?.sender === 'admin');
+  const idx = explicitPmMessageId
+    ? list.findIndex((m) => Number(m?.id) === Number(explicitPmMessageId) && m?.sender !== 'visitor')
+    : replyToTopicMsgId
+      ? list.findIndex((m) => Number(m?.topicMsgId) === Number(replyToTopicMsgId) && m?.sender !== 'visitor')
+      : list.findIndex((m) => m?.sender === 'admin');
 
   if (idx === -1) {
     return {
@@ -641,7 +691,21 @@ export async function recallAdminVisitorMessage(env, userId, replyToTopicMsgId =
     return { ok: false, error: `撤回失败（可能已超过 Telegram 48 小时撤回时限）：${err.message}` };
   }
 
+  // If recalled from Mini App (`explicitPmMessageId`) and a mirrored topic message exists, clean it up too
+  if (explicitPmMessageId && target.topicMsgId) {
+    const supergroupId = await resolveSupergroupId(env);
+    if (supergroupId) {
+      await tgCallFn(env, 'deleteMessage', {
+        chat_id: supergroupId,
+        message_id: Number(target.topicMsgId),
+      }).catch(() => {});
+    }
+  }
+
   history.pmMessageIds = list.filter((_, i) => i !== idx);
+  if (Array.isArray(history.messages)) {
+    history.messages = history.messages.filter((m) => Number(m?.pmMessageId) !== Number(target.id));
+  }
   await safePutJSON(env.TOPIC_MAP, historyKey, history);
   return { ok: true, deletedPmMessageId: target.id };
 }
