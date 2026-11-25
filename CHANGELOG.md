@@ -4,6 +4,18 @@
 
 ---
 
+## [v1.2.1] - 2026-11-25
+
+**GitHub 主页视觉精装版**：全面升级仓库门面颜值、动效演示与搜索曝光。
+
+### 🎨 视觉与文档升级 (Docs & Showcase)
+- **定制矢量玫瑰瓷 Banner (`docs/assets/banner.svg`)** 与 **GitHub 社交分享封面图 (`docs/assets/social-preview.png`)**。
+- **15 秒聚焦打字机动态演示 (`docs/assets/showcase.webp`)**：以 100% 真实运行界面呈现 5 大核心场景（玫瑰名片 → 四层防广告护盾 → 公开/私密双层小站 → Komari 10 段探针 → 深色暗黑主题），在 GitHub 首页自动循环播放。
+- **四屏高清实机画廊 (`docs/assets/preview-gallery.png`)**：真实 2x Retina 画面搭配 iPhone 钛金属边框与状态栏呈现。
+- **重排中文主页 `README.md`**：居中 Hero 头部、GitHub 原生 Mermaid 四层防广告流程图、折叠式多平台部署卡片，并补全 GitHub Topics 检索标签。
+
+---
+
 ## [v1.2.0] - 2026-11-25
 
 **傻瓜式一键部署 & 群内 `/bind` 秒绑通知群版**：彻底消除新手查 `-100...` 群 ID 和手动配置环境变量的门槛。
