@@ -1,6 +1,7 @@
 name = "rose-panel-bot"
 main = "src/worker/index.js"
 compatibility_date = "2025-02-01"
+keep_vars = true
 
 [assets]
 directory = "./dist"
