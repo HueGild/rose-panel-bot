@@ -37,6 +37,11 @@ Switch freely between **3 verification modes** inside **⚙️ Settings → Comm
 | **📝 Local Quiz** | 2×2 local commonsense buttons, zero external API calls | Same reshuffle-on-error + cooldown protection |
 | **🛡️ CF Turnstile Strict Mode** | 1-tap escalation during heavy bot raids; runs Cloudflare Turnstile natively inside Telegram WebApp overlay | Server-side `siteverify` validation; auto-falls back to Emoji mode if Turnstile keys aren't configured |
 
+- **4-Layer Intelligent Anti-Spam Shield (Millisecond Edge Latency)**:
+  1. **CAS Global Blacklist**: Checks [Combot Anti-Spam (CAS)](https://cas.chat/) on first contact from unverified strangers (KV-cached 6h/24h, fail-open) to silently drop known userbot spammers with zero friction for real users.
+  2. **Unsolicited Media/Flyer Block & Smart Escalation**: Unverified first-message photos/videos/stickers (e.g. USDT/casino/VPN ad flyers), channel forwards, external links, zero-width spoofing, or ad display names are never pre-queued and automatically escalate to CF Turnstile strict mode.
+  3. **Honeypot Trap + Reshuffle Cooldown**: Decoy button silently bans blind callback scripts; wrong answers reshuffle and trigger silent cooldown.
+  4. **De-Obfuscated Keyword Filter & Edit Guard**: Strips zero-width chars, full-width Unicode (NFKC), and Cyrillic homoglyphs; monitors `edited_message` to catch "send innocent text then edit into spam link" exploits.
 - **30-Day Grace Period**: Verified users stay verified for 30 days; admins can also grant **⭐ Permanent Trust** or **🚫 Silent Ban** anytime.
 - **End-to-End Security**: Official Telegram `initData` HMAC-SHA256 verification on APIs, server-side filtering for private sites, and 30-minute HMAC-signed proxy URLs for private chat photos (`BOT_TOKEN` never reaches clients).
 
@@ -166,7 +171,7 @@ Reverse-proxy `127.0.0.1:8787` with Caddy (`reverse_proxy 127.0.0.1:8787`) for a
 
 ## 🙏 Credits & Tech Stack
 
-- Integrations & Compatibility: [Komari Monitor](https://github.com/komari-monitor/komari) · [jikssha/telegram_private_chatbot](https://github.com/jikssha/telegram_private_chatbot)
+- Integrations & Compatibility: [Komari Monitor](https://github.com/komari-monitor/komari) · [Combot Anti-Spam (CAS)](https://cas.chat/) · [jikssha/telegram_private_chatbot](https://github.com/jikssha/telegram_private_chatbot)
 - Built With: [Cloudflare Workers](https://workers.cloudflare.com/) · [Telegram Mini Apps](https://core.telegram.org/bots/webapps) · [React](https://react.dev/) · [Vite](https://vitejs.dev/) · [Lucide Icons](https://lucide.dev/) · [lottie-web](https://github.com/airbnb/lottie-web)
 
 MIT License © 2026 [mango0114](https://github.com/mango0114)

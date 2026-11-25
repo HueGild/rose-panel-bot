@@ -38,7 +38,12 @@
 | **📝 常识题库** | 本地 2×2 常识问答按钮，0 外部依赖 | 同样享有错 1 次换题、连错 2 次自动冷却保护 |
 | **🛡️ CF Turnstile 严格模式** | 面对大规模定向扫号攻击时一键开启，直接在 Telegram 内嵌 WebApp 中完成 Cloudflare Turnstile 服务端核验 | 服务端 `siteverify` 强校验；未配置 Turnstile 密钥时自动回退至 Emoji 模式防卡死 |
 
-- **30 天免打扰**：验证通过后 30 天内无需重复验证；站长也可在话题内或面板里设为 **⭐ 永久信任**（终身免验）或 **🚫 一键拉黑**（静默丢弃消息）。
+- **四层智能反广告护盾（毫秒级零卡顿）**：
+  1. **CAS 全球黑名单联防**：陌生人首次联系查询免费公开的 [Combot Anti-Spam (CAS)](https://cas.chat/) 数据库（KV 缓存 6h/24h），命中已知广告协议号直接静默拦截，**真人 0 感知**；
+  2. **高危广告自动升级 & 拦截首条海报图**：未验证前直接发 **USDT / 赌场 / 机场等纯图片海报**、**频道转发**、**外链**、**零宽混淆**或**广告昵称**时，拒收暂存并自动升级至 CF Turnstile 严格核验；
+  3. **蜜罐陷阱 + 换题冷却**：诱饵按钮自动拉黑盲点脚本，答错换新题，连错进入静默冷却；
+  4. **去混淆关键词屏蔽 & 编辑偷改监听**：自动去除零宽字符/全角/西里尔同形字混淆，同时监听 `edited_message` 拦截「先发正常话、几秒后改广告」的绕过行为。
+- **30 天免打扰**：验证通过后 30 天内无需重复验证；站长也可随时设为 **⭐ 永久信任** 或 **🚫 一键拉黑**。
 - **API 与数据安全**：Mini App 接口全部通过 Telegram 官方 `initData` HMAC-SHA256 验签；私密小站与访客聊天图片均做服务端鉴权隔离，`BOT_TOKEN` 绝不暴露到前端。
 
 ---
@@ -172,7 +177,7 @@ npx wrangler dev --ip 127.0.0.1 --port 8787 --persist-to ./.wrangler/state --sho
 
 ## 🙏 致谢与技术栈
 
-- 协议适配与兼容：[Komari Monitor](https://github.com/komari-monitor/komari) · [jikssha/telegram_private_chatbot](https://github.com/jikssha/telegram_private_chatbot)
+- 协议适配与兼容：[Komari Monitor](https://github.com/komari-monitor/komari) · [Combot Anti-Spam (CAS)](https://cas.chat/) · [jikssha/telegram_private_chatbot](https://github.com/jikssha/telegram_private_chatbot)
 - 开源基础设施：[Cloudflare Workers](https://workers.cloudflare.com/) · [Telegram Mini Apps](https://core.telegram.org/bots/webapps) · [React](https://react.dev/) · [Vite](https://vitejs.dev/) · [Lucide Icons](https://lucide.dev/) · [lottie-web](https://github.com/airbnb/lottie-web)
 
 MIT License © 2026 [mango0114](https://github.com/mango0114)

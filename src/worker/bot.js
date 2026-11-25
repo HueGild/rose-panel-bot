@@ -5,6 +5,11 @@
 // 4. Group & Private Personal Panel + Optional Check-in / Points / Leaderboard Commands
 // 5. Admin /setbadge & /resetbadge for capturing Telegram Stickers / Custom Emojis as Ticket Emblem
 
+import {
+  assessIncomingRisk,
+  checkCasBlacklist,
+  recordBlockedSpam,
+} from './antispam.js';
 import { isUserAdmin } from './auth.js';
 import { getLeaderboard, getMemberTicket, performCheckin } from './checkin.js';
 import { loadPanelConfig, safeGetJSON, safePutJSON, savePanelConfig } from './config.js';
@@ -97,15 +102,20 @@ function shuffle(arr) {
  * Generates an inline-button anti-spam challenge for either `emoji` (odd-one-out / semantic pick, 3x3)
  * or `quiz` (local commonsense 2x2).
  */
-export function generateInlineChallenge(mode = 'emoji', verifyId = 'test') {
+export function generateInlineChallenge(mode = 'emoji', verifyId = 'test', enableHoneypot = true) {
+  const withTrap = (rows) =>
+    enableHoneypot
+      ? [...rows, [{ text: '🤖 我是机器人（真人勿点）', callback_data: `v:${verifyId}:trap` }]]
+      : rows;
+
   if (mode === 'quiz') {
     const q = LOCAL_QUESTIONS[randomInt(LOCAL_QUESTIONS.length)];
     const options = shuffle([q.ok, ...q.bad]);
     const correctIndex = options.indexOf(q.ok);
-    const keyboard = [
+    const keyboard = withTrap([
       options.slice(0, 2).map((opt, idx) => ({ text: opt, callback_data: `v:${verifyId}:${idx}` })),
       options.slice(2, 4).map((opt, idx) => ({ text: opt, callback_data: `v:${verifyId}:${idx + 2}` })),
-    ];
+    ]);
     return {
       correctIndex,
       promptHtml: `🛡️ <b>首次联系需要简单人机验证</b>\n\n请问：<b>${escapeHtml(q.q)}</b>\n\n<i>验证通过后 30 天内免验证，消息将自动送达。</i>`,
@@ -119,11 +129,13 @@ export function generateInlineChallenge(mode = 'emoji', verifyId = 'test') {
     const [common, odd] = ODD_ONE_PAIRS[randomInt(ODD_ONE_PAIRS.length)];
     const correctIndex = randomInt(9);
     const cells = Array.from({ length: 9 }, (_, i) => (i === correctIndex ? odd : common));
-    const keyboard = [0, 3, 6].map((rowStart) =>
-      cells.slice(rowStart, rowStart + 3).map((icon, offset) => ({
-        text: icon,
-        callback_data: `v:${verifyId}:${rowStart + offset}`,
-      }))
+    const keyboard = withTrap(
+      [0, 3, 6].map((rowStart) =>
+        cells.slice(rowStart, rowStart + 3).map((icon, offset) => ({
+          text: icon,
+          callback_data: `v:${verifyId}:${rowStart + offset}`,
+        }))
+      )
     );
     return {
       correctIndex,
@@ -135,11 +147,13 @@ export function generateInlineChallenge(mode = 'emoji', verifyId = 'test') {
   const picked = shuffle(EMOJI_ITEMS).slice(0, 9);
   const correctIndex = randomInt(9);
   const target = picked[correctIndex];
-  const keyboard = [0, 3, 6].map((rowStart) =>
-    picked.slice(rowStart, rowStart + 3).map((item, offset) => ({
-      text: item.icon,
-      callback_data: `v:${verifyId}:${rowStart + offset}`,
-    }))
+  const keyboard = withTrap(
+    [0, 3, 6].map((rowStart) =>
+      picked.slice(rowStart, rowStart + 3).map((item, offset) => ({
+        text: item.icon,
+        callback_data: `v:${verifyId}:${rowStart + offset}`,
+      }))
+    )
   );
   return {
     correctIndex,
@@ -453,7 +467,7 @@ export async function completeTurnstileVerification(env, requestOrigin, verifyId
   return { ok: true };
 }
 
-async function startVerificationChallenge(env, requestOrigin, msg, config) {
+async function startVerificationChallenge(env, requestOrigin, msg, config, risk = null) {
   const uid = String(msg.from.id);
 
   // Check cooldown lock (after repeated failed attempts)
@@ -466,11 +480,14 @@ async function startVerificationChallenge(env, requestOrigin, msg, config) {
   if (existingChalId) {
     const existingState = await safeGetJSON(env.TOPIC_MAP, `chal:${existingChalId}`, null);
     if (existingState) {
-      const pending = Array.isArray(existingState.pending) ? existingState.pending : [];
-      if (pending.length < 3) {
-        pending.push(serializePendingMessage(msg));
-        existingState.pending = pending;
-        await safePutJSON(env.TOPIC_MAP, `chal:${existingChalId}`, existingState, { expirationTtl: 300 });
+      // Do not queue suspicious forwarded/link ad payloads before verification
+      if (!risk?.isHighRisk) {
+        const pending = Array.isArray(existingState.pending) ? existingState.pending : [];
+        if (pending.length < 3) {
+          pending.push(serializePendingMessage(msg));
+          existingState.pending = pending;
+          await safePutJSON(env.TOPIC_MAP, `chal:${existingChalId}`, existingState, { expirationTtl: 300 });
+        }
       }
       await tgCall(env, 'sendMessage', {
         chat_id: msg.chat.id,
@@ -482,13 +499,22 @@ async function startVerificationChallenge(env, requestOrigin, msg, config) {
 
   const desiredMode = config.pmBot.verificationMode || 'emoji';
   const turnstileReady = Boolean(env.TURNSTILE_SITE_KEY && env.TURNSTILE_SECRET);
-  const mode = desiredMode === 'turnstile' && !turnstileReady ? 'emoji' : desiredMode;
+  const shouldEscalate = Boolean(config.pmBot.smartEscalation && risk?.isHighRisk && turnstileReady);
+  const mode = shouldEscalate
+    ? 'turnstile'
+    : desiredMode === 'turnstile' && !turnstileReady
+      ? 'emoji'
+      : desiredMode;
   const verifyId = randomId(12);
+
+  // Never pre-queue forwarded ad/link spam; require user to resend cleanly after passing strict verification
+  const initialPending = risk?.isHighRisk ? [] : [serializePendingMessage(msg)];
 
   const baseState = {
     mode,
     userId: uid,
     failures: 0,
+    escalated: shouldEscalate,
     user: {
       id: msg.from.id,
       first_name: msg.from.first_name || '',
@@ -496,15 +522,20 @@ async function startVerificationChallenge(env, requestOrigin, msg, config) {
       username: msg.from.username || '',
       language_code: msg.from.language_code || '',
     },
-    pending: [serializePendingMessage(msg)],
+    pending: initialPending,
   };
 
   // Strict Mode: Cloudflare Turnstile inside Telegram WebApp overlay
   if (mode === 'turnstile') {
     const verifyUrl = `${requestOrigin.replace(/\/$/, '')}/verify?vid=${encodeURIComponent(verifyId)}`;
+    const notice = shouldEscalate
+      ? risk?.isMedia
+        ? '🛡️ <b>安全验证（拦截首条图片/媒体）</b>\n\n为防广告海报骚扰，首次联系请先完成 Cloudflare 人机核验，通过后再发送图片或消息。'
+        : '🛡️ <b>安全验证（触发智能风控升级）</b>\n\n检测到消息含转发/外链或异常特征，请先完成 Cloudflare 人机核验，通过后重新发送正常消息即可联系站长。'
+      : '🛡️ <b>安全验证（严格模式）</b>\n\n请点击下方按钮完成 Cloudflare 人机核验，验证通过后您的消息将自动送达（30 天内免重复验证）。';
     const sent = await tgCall(env, 'sendMessage', {
       chat_id: msg.chat.id,
-      text: `🛡️ <b>安全验证（严格模式）</b>\n\n请点击下方按钮完成 Cloudflare 人机核验，验证通过后您的消息将自动送达（30 天内免重复验证）。`,
+      text: notice,
       parse_mode: 'HTML',
       reply_markup: {
         inline_keyboard: [[{ text: '🛡️ 点击完成人机验证', web_app: { url: verifyUrl } }]],
@@ -517,8 +548,8 @@ async function startVerificationChallenge(env, requestOrigin, msg, config) {
     return;
   }
 
-  // Zero-latency Inline Mode (`emoji` or `quiz`)
-  const chal = generateInlineChallenge(mode, verifyId);
+  // Zero-latency Inline Mode (`emoji` or `quiz`) with optional Honeypot trap button
+  const chal = generateInlineChallenge(mode, verifyId, config.pmBot.enableHoneypot !== false);
   baseState.correctIndex = chal.correctIndex;
 
   await safePutJSON(env.TOPIC_MAP, `chal:${verifyId}`, baseState, { expirationTtl: 300 });
@@ -790,6 +821,25 @@ async function handleCallbackQuery(env, requestOrigin, cq, config) {
       return;
     }
 
+    // Layer 3: Honeypot trap button — blind spam scripts clicking the decoy get silently banned immediately!
+    if (idxStr === 'trap') {
+      await env.TOPIC_MAP.put(`banned:${state.userId}`, '1');
+      await env.TOPIC_MAP.delete(`chal:${verifyId}`);
+      await env.TOPIC_MAP.delete(`user_challenge:${state.userId}`);
+      await recordBlockedSpam(env);
+      await tgCall(env, 'answerCallbackQuery', {
+        callback_query_id: cq.id,
+        text: '🛡️ 触发反垃圾蜜罐陷阱，已拒绝访问。',
+        show_alert: true,
+      }).catch(() => {});
+      await tgCall(env, 'editMessageText', {
+        chat_id: cq.message.chat.id,
+        message_id: cq.message.message_id,
+        text: '🛡️ 验证未通过。',
+      }).catch(() => {});
+      return;
+    }
+
     if (Number(idxStr) !== Number(state.correctIndex)) {
       const maxFails = Math.max(1, Number(config.pmBot.maxVerifyFailures || 2));
       const cooldownMins = Math.max(1, Number(config.pmBot.cooldownMinutes || 10));
@@ -799,6 +849,7 @@ async function handleCallbackQuery(env, requestOrigin, cq, config) {
         await env.TOPIC_MAP.put(`verify_cool:${state.userId}`, '1', { expirationTtl: cooldownMins * 60 });
         await env.TOPIC_MAP.delete(`chal:${verifyId}`);
         await env.TOPIC_MAP.delete(`user_challenge:${state.userId}`);
+        await recordBlockedSpam(env);
 
         await tgCall(env, 'answerCallbackQuery', {
           callback_query_id: cq.id,
@@ -815,7 +866,11 @@ async function handleCallbackQuery(env, requestOrigin, cq, config) {
       }
 
       // 1st mistake -> reshuffle brand new challenge to defeat brute-force scripts!
-      const refreshed = generateInlineChallenge(state.mode || 'emoji', verifyId);
+      const refreshed = generateInlineChallenge(
+        state.mode || 'emoji',
+        verifyId,
+        config.pmBot.enableHoneypot !== false
+      );
       state.failures = nextFails;
       state.correctIndex = refreshed.correctIndex;
       await safePutJSON(env.TOPIC_MAP, `chal:${verifyId}`, state, { expirationTtl: 300 });
@@ -921,6 +976,33 @@ export async function handleTelegramUpdate(update, env, requestOrigin) {
 
   if (update.callback_query) {
     await handleCallbackQuery(env, requestOrigin, update.callback_query, config);
+    return;
+  }
+
+  // Layer 4: Guard against "send clean text then edit into spam ad" bypass
+  if (update.edited_message && update.edited_message.chat?.type === 'private' && update.edited_message.from && !update.edited_message.from.is_bot) {
+    const edited = update.edited_message;
+    const uid = String(edited.from.id);
+    const isAdmin = await isUserAdmin(env, edited.from.id, tgCall);
+    const verified = await env.TOPIC_MAP.get(`verified:${uid}`);
+    const isBanned = (await env.TOPIC_MAP.get(`banned:${uid}`)) === '1';
+
+    if (!isAdmin && !isBanned && verified !== 'trusted') {
+      const risk = assessIncomingRisk(edited, config.pmBot);
+      if (risk.isBlockedKeyword || risk.hasLink || risk.reasons.includes('zero_width_obfuscation')) {
+        await recordBlockedSpam(env);
+        const detail = await getVisitorDetail(env, uid);
+        if (detail?.thread_id && env.SUPERGROUP_ID) {
+          await tgCall(env, 'sendMessage', {
+            chat_id: env.SUPERGROUP_ID,
+            message_thread_id: detail.thread_id,
+            text: `⚠️ <b>拦截到编辑偷改广告行为</b>\n访客编辑了历史消息并插入可疑内容（<code>${escapeHtml(risk.reasons.join(', '))}</code>），已自动拦截。`,
+            parse_mode: 'HTML',
+            reply_markup: buildVisitorModerationKeyboard(env, requestOrigin, detail),
+          }).catch(() => {});
+        }
+      }
+    }
     return;
   }
 
@@ -1075,9 +1157,26 @@ export async function handleTelegramUpdate(update, env, requestOrigin) {
     const verified = await env.TOPIC_MAP.get(`verified:${uid}`);
     const needsVerify = await env.TOPIC_MAP.get(`needs_verify:${uid}`);
     const verifyMode = config.pmBot.verificationMode || (config.pmBot.enableVerification ? 'emoji' : 'off');
+    const isTrusted = verified === 'trusted';
+
+    // Layer 2 & 4: Evaluate de-obfuscated keyword blocklist & risk signals (<1ms local CPU)
+    const risk = !isAdmin && !isTrusted ? assessIncomingRisk(msg, config.pmBot) : null;
+    if (risk?.isBlockedKeyword) {
+      await recordBlockedSpam(env);
+      return;
+    }
 
     if (!isAdmin && verifyMode !== 'off' && (!verified || needsVerify)) {
-      await startVerificationChallenge(env, requestOrigin, msg, config);
+      // Layer 1: CAS global spammer blacklist check (only for unverified strangers, KV-cached 6h/24h)
+      if (config.pmBot.enableCasCheck !== false) {
+        const cas = await checkCasBlacklist(env, uid);
+        if (cas.isSpammer) {
+          await env.TOPIC_MAP.put(`banned:${uid}`, '1');
+          await recordBlockedSpam(env);
+          return;
+        }
+      }
+      await startVerificationChallenge(env, requestOrigin, msg, config, risk);
       return;
     }
 

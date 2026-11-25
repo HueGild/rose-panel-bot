@@ -818,6 +818,96 @@ export default function SettingsDrawer({
                   </div>
                 </div>
               )}
+
+              {/* 4-Layer Anti-Spam Shield Toggles */}
+              <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--border)' }}>
+                <div className="field-label" style={{ marginBottom: 6 }}>🛡️ 四层智能反广告护盾</div>
+
+                <div className="list-row">
+                  <div className="row-main">
+                    <div className="row-title" style={{ fontSize: 13 }}>CAS 全球反垃圾黑名单联防</div>
+                    <div className="row-desc wrap">陌生人首次联系查 api.cas.chat（KV 缓存），命中已知协议号直接静默拦截</div>
+                  </div>
+                  <button
+                    type="button"
+                    className={`switch ${draft.pmBot.enableCasCheck !== false ? 'on' : ''}`}
+                    onClick={() => updateField('pmBot', 'enableCasCheck', draft.pmBot.enableCasCheck === false)}
+                  >
+                    <span className="switch-knob" />
+                  </button>
+                </div>
+
+                <div className="list-row">
+                  <div className="row-main">
+                    <div className="row-title" style={{ fontSize: 13 }}>拦截未验证首条图片 / 广告海报</div>
+                    <div className="row-desc wrap">防 USDT/赌场/机场纯图广告：未验证发图不转发，必须先过验证再发图</div>
+                  </div>
+                  <button
+                    type="button"
+                    className={`switch ${draft.pmBot.blockUnverifiedMedia !== false ? 'on' : ''}`}
+                    onClick={() =>
+                      updateField('pmBot', 'blockUnverifiedMedia', draft.pmBot.blockUnverifiedMedia === false)
+                    }
+                  >
+                    <span className="switch-knob" />
+                  </button>
+                </div>
+
+                <div className="list-row">
+                  <div className="row-main">
+                    <div className="row-title" style={{ fontSize: 13 }}>高危广告自动升级 CF Turnstile</div>
+                    <div className="row-desc wrap">检测到转发、外链、首条图片、零宽混淆或广告昵称自动拉高验证等级</div>
+                  </div>
+                  <button
+                    type="button"
+                    className={`switch ${draft.pmBot.smartEscalation !== false ? 'on' : ''}`}
+                    onClick={() => updateField('pmBot', 'smartEscalation', draft.pmBot.smartEscalation === false)}
+                  >
+                    <span className="switch-knob" />
+                  </button>
+                </div>
+
+                <div className="list-row">
+                  <div className="row-main">
+                    <div className="row-title" style={{ fontSize: 13 }}>蜜罐防盲点陷阱</div>
+                    <div className="row-desc wrap">在验证题底部埋设诱饵按钮，无脑脚本误点直接静默拉黑</div>
+                  </div>
+                  <button
+                    type="button"
+                    className={`switch ${draft.pmBot.enableHoneypot !== false ? 'on' : ''}`}
+                    onClick={() => updateField('pmBot', 'enableHoneypot', draft.pmBot.enableHoneypot === false)}
+                  >
+                    <span className="switch-knob" />
+                  </button>
+                </div>
+
+                <div className="field" style={{ marginTop: 10 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 }}>
+                    <label className="field-label" style={{ margin: 0 }}>
+                      广告屏蔽关键词（自动去零宽/全角/同形字混淆）
+                    </label>
+                    <button
+                      type="button"
+                      className="pill rose"
+                      style={{ cursor: 'pointer', fontSize: 11, padding: '3px 8px' }}
+                      onClick={() => {
+                        const preset = 'USDT, 跑分, 博彩, 赌场, 棋牌, 机场, 翻墙节点, 承兑, 兼职日结, 代收代付, 私聊领福利';
+                        const cur = (draft.pmBot.blockedKeywords || '').trim();
+                        updateField('pmBot', 'blockedKeywords', cur ? `${cur}, ${preset}` : preset);
+                        onToast('已填入常见广告屏蔽词');
+                      }}
+                    >
+                      + 填入常见词
+                    </button>
+                  </div>
+                  <textarea
+                    className="textarea"
+                    value={draft.pmBot.blockedKeywords || ''}
+                    onChange={(e) => updateField('pmBot', 'blockedKeywords', e.target.value)}
+                    placeholder="逗号或换行分隔，例如：USDT, 赌场, 机场, 跑分"
+                  />
+                </div>
+              </div>
             </div>
 
             <div className="field" style={{ marginTop: 10 }}>

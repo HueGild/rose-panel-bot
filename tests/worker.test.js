@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { assessIncomingRisk, checkCasBlacklist, normalizeAntiSpamText } from '../src/worker/antispam.js';
 import { signMediaToken, verifyMediaToken, verifyTelegramInitData } from '../src/worker/auth.js';
 import { generateInlineChallenge } from '../src/worker/bot.js';
 import { getLeaderboard, getMemberTicket, performCheckin, resolveLevel } from '../src/worker/checkin.js';
@@ -536,15 +537,17 @@ describe('Visitor bidirectional archive, signed media proxy & clear history', ()
 });
 
 describe('3-Mode Anti-Spam Verification (Emoji / Quiz / CF Turnstile)', () => {
-  it('generates valid 3x3 Emoji challenges and 2x2 Quiz challenges', () => {
-    const emojiChal = generateInlineChallenge('emoji', 'vid123');
-    expect(emojiChal.keyboard).toHaveLength(3);
-    expect(emojiChal.keyboard.flat()).toHaveLength(9);
+  it('generates valid 3x3 Emoji challenges (with optional honeypot) and 2x2 Quiz challenges', () => {
+    const emojiChal = generateInlineChallenge('emoji', 'vid123', true);
+    expect(emojiChal.keyboard).toHaveLength(4); // 3 rows + 1 honeypot trap row
+    expect(emojiChal.keyboard[3][0].callback_data).toBe('v:vid123:trap');
     expect(emojiChal.correctIndex).toBeGreaterThanOrEqual(0);
     expect(emojiChal.correctIndex).toBeLessThan(9);
-    expect(emojiChal.keyboard.flat()[emojiChal.correctIndex].callback_data).toBe(`v:vid123:${emojiChal.correctIndex}`);
+    expect(emojiChal.keyboard.slice(0, 3).flat()[emojiChal.correctIndex].callback_data).toBe(
+      `v:vid123:${emojiChal.correctIndex}`
+    );
 
-    const quizChal = generateInlineChallenge('quiz', 'vid456');
+    const quizChal = generateInlineChallenge('quiz', 'vid456', false);
     expect(quizChal.keyboard).toHaveLength(2);
     expect(quizChal.keyboard.flat()).toHaveLength(4);
     expect(quizChal.correctIndex).toBeGreaterThanOrEqual(0);
@@ -558,5 +561,61 @@ describe('3-Mode Anti-Spam Verification (Emoji / Quiz / CF Turnstile)', () => {
     expect(html).toContain('challenges.cloudflare.com/turnstile/v0/api.js');
     expect(html).toContain('0xTEST_SITE_KEY');
     expect(html).toContain('vid789');
+  });
+});
+
+describe('4-Layer Intelligent Anti-Spam Shield', () => {
+  it('de-obfuscates zero-width, full-width, and Cyrillic homoglyphs and flags photo flyers & keywords', () => {
+    const norm = normalizeAntiSpamText('Ｕ\u200bＳ\u200bＤ\u200bＴ 换汇 t.mе/sсаm');
+    expect(norm.zeroWidthCount).toBe(3);
+    expect(norm.normalized).toContain('usdt');
+    expect(norm.normalized).toContain('t.me/scam');
+
+    const kwRisk = assessIncomingRisk(
+      { text: '高薪兼职 Ｕ\u200bＳ\u200bＤ\u200bＴ 日结', from: { first_name: 'Alice' } },
+      { blockedKeywords: 'USDT, 赌场, 机场' }
+    );
+    expect(kwRisk.isBlockedKeyword).toBe(true);
+    expect(kwRisk.matchedKeyword).toBe('usdt');
+
+    const flyerRisk = assessIncomingRisk(
+      { photo: [{ file_id: 'flyer_123' }], from: { first_name: 'Promo' } },
+      { blockUnverifiedMedia: true }
+    );
+    expect(flyerRisk.isHighRisk).toBe(true);
+    expect(flyerRisk.isMedia).toBe(true);
+    expect(flyerRisk.reasons).toContain('unverified_media');
+
+    const cleanHuman = assessIncomingRisk(
+      { text: '你好呀，请问你的项目怎么配置？', from: { first_name: '小明' } },
+      { blockedKeywords: 'USDT, 赌场, 机场', blockUnverifiedMedia: true }
+    );
+    expect(cleanHuman.isBlockedKeyword).toBe(false);
+    expect(cleanHuman.isHighRisk).toBe(false);
+  });
+
+  it('checks CAS blacklist with KV caching and fails open on network errors', async () => {
+    const kv = createMemoryKV();
+    const env = { TOPIC_MAP: kv };
+
+    const spamFetch = vi.fn(async () =>
+      new Response(JSON.stringify({ ok: true, result: { offenses: 3 } }), { status: 200 })
+    );
+    const r1 = await checkCasBlacklist(env, '999001', spamFetch);
+    expect(r1.isSpammer).toBe(true);
+    expect(await kv.get('cas:999001')).toBe('1');
+
+    // Second lookup hits KV cache without calling fetch
+    const r2 = await checkCasBlacklist(env, '999001', spamFetch);
+    expect(r2.isSpammer).toBe(true);
+    expect(r2.cached).toBe(true);
+    expect(spamFetch).toHaveBeenCalledTimes(1);
+
+    // Network error fails open cleanly
+    const brokenFetch = vi.fn(async () => {
+      throw new Error('network down');
+    });
+    const r3 = await checkCasBlacklist(env, '999002', brokenFetch);
+    expect(r3.isSpammer).toBe(false);
   });
 });

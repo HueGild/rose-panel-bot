@@ -1,5 +1,6 @@
 // Mini App REST API router (/api/*)
 
+import { getBlockedSpamCount } from './antispam.js';
 import { authenticateRequest, signMediaToken, verifyMediaToken } from './auth.js';
 import { getLeaderboard, getMemberTicket, performCheckin } from './checkin.js';
 import {
@@ -148,8 +149,11 @@ export async function handleApiRequest(request, env, url) {
     if (path === '/api/admin/visitors' && method === 'GET') {
       const search = url.searchParams.get('q') || '';
       const filter = url.searchParams.get('filter') || 'all';
-      const data = await listVisitors(env, { search, filter, limit: 80 });
-      return json({ ok: true, ...data });
+      const [data, blockedSpamCount] = await Promise.all([
+        listVisitors(env, { search, filter, limit: 80 }),
+        getBlockedSpamCount(env),
+      ]);
+      return json({ ok: true, ...data, blockedSpamCount });
     }
 
     // GET /api/admin/visitors/:userId

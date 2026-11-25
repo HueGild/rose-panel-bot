@@ -99,6 +99,11 @@ export const DEFAULT_CONFIG = {
     verificationMode: 'emoji', // emoji | quiz | turnstile | off
     maxVerifyFailures: 2,
     cooldownMinutes: 10,
+    enableCasCheck: true,
+    smartEscalation: true,
+    blockUnverifiedMedia: true,
+    enableHoneypot: true,
+    blockedKeywords: '',
     welcomeText: '你好呀 🌸 这里是我的私聊助手。直接发送消息即可联系我，也可以点击下方按钮打开我的个人面板查看小站与探针。',
     autoAckEnabled: true,
     verifiedDays: 30,
@@ -231,6 +236,11 @@ export async function savePanelConfig(env, nextConfig) {
   merged.pmBot.enableVerification = merged.pmBot.verificationMode !== 'off';
   merged.pmBot.maxVerifyFailures = Math.min(Math.max(Number(merged.pmBot.maxVerifyFailures) || 2, 1), 5);
   merged.pmBot.cooldownMinutes = Math.min(Math.max(Number(merged.pmBot.cooldownMinutes) || 10, 1), 1440);
+  merged.pmBot.enableCasCheck = merged.pmBot.enableCasCheck !== false;
+  merged.pmBot.smartEscalation = merged.pmBot.smartEscalation !== false;
+  merged.pmBot.blockUnverifiedMedia = merged.pmBot.blockUnverifiedMedia !== false;
+  merged.pmBot.enableHoneypot = merged.pmBot.enableHoneypot !== false;
+  merged.pmBot.blockedKeywords = String(merged.pmBot.blockedKeywords || '').slice(0, 2000);
 
   await safePutJSON(env.TOPIC_MAP, CONFIG_KV_KEY, merged);
   return merged;

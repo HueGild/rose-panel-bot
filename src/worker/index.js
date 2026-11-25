@@ -32,10 +32,10 @@ async function handleSetup(request, env, url) {
 
   const results = {};
 
-  // 1. Register Webhook (with optional secret_token header validation)
+  // 1. Register Webhook (with optional secret_token header validation & edited_message guard)
   const webhookPayload = {
     url: webhookUrl,
-    allowed_updates: ['message', 'callback_query'],
+    allowed_updates: ['message', 'edited_message', 'callback_query'],
   };
   if (env.WEBHOOK_SECRET) {
     webhookPayload.secret_token = env.WEBHOOK_SECRET;

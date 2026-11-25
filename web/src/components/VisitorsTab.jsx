@@ -33,6 +33,7 @@ const STATUS_META = {
 export default function VisitorsTab({ initialVisitorId = '', onClearInitial, onToast }) {
   const [visitors, setVisitors] = useState([]);
   const [stats, setStats] = useState({ total: 0, active: 0, trusted: 0, banned: 0, closed: 0 });
+  const [blockedSpamCount, setBlockedSpamCount] = useState(0);
   const [filter, setFilter] = useState('all');
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
@@ -58,6 +59,9 @@ export default function VisitorsTab({ initialVisitorId = '', onClearInitial, onT
       const res = await apiRequest(`/api/admin/visitors?${params.toString()}`);
       setVisitors(res.items || []);
       setStats(res.stats || stats);
+      if (typeof res.blockedSpamCount === 'number') {
+        setBlockedSpamCount(res.blockedSpamCount);
+      }
     } catch (err) {
       onToast(err.message);
     } finally {
@@ -202,6 +206,26 @@ export default function VisitorsTab({ initialVisitorId = '', onClearInitial, onT
 
   return (
     <>
+      {blockedSpamCount > 0 && (
+        <div
+          className="card"
+          style={{
+            padding: '10px 14px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            background: 'var(--accent-soft)',
+            borderColor: 'transparent',
+            fontSize: 12,
+            color: 'var(--accent)',
+            fontWeight: 600,
+          }}
+        >
+          <span>🛡️ 四层反广告护盾运行中</span>
+          <span>已累计拦截 {blockedSpamCount} 次骚扰/广告</span>
+        </div>
+      )}
+
       <div className="search-box">
         <Search size={16} color="var(--text-muted)" />
         <input
