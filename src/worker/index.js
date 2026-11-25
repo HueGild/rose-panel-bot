@@ -69,13 +69,13 @@ async function handleSetup(request, env, url) {
     scope: { type: 'all_group_chats' },
   });
 
-  // 2b. Register rich Admin-only private commands (visible ONLY to admins in their private chat!)
+  // 2b. Register short, ergonomic Admin-only private commands (visible ONLY to admins!)
   const adminPrivateCommands = [
     ...privateCommands,
-    { command: 'setbadge', description: '发贴纸/收藏表情设为票根徽章' },
+    { command: 'set', description: '设动态贴纸徽章（跟贴纸链接或直接发贴纸）' },
+    { command: 'add', description: '添加表情包看图验证题（发贴纸再贴题目）' },
     { command: 'resetbadge', description: '恢复默认玫瑰票根徽章' },
-    { command: 'addverify', description: '录入收藏表情包看图验证题' },
-    { command: 'cancel', description: '取消当前录入流程' },
+    { command: 'cancel', description: '取消当前录入' },
   ];
 
   const adminIdSet = parseAdminIds(env);

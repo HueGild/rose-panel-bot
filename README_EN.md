@@ -187,7 +187,7 @@ Reverse-proxy `127.0.0.1:8787` with Caddy (`reverse_proxy 127.0.0.1:8787`) for a
 ## 🤖 Commands
 
 - **Everyone**: `/start`, `/panel`, `/me`, `/checkin` (community mode), `/rank` (community mode)
-- **Admin Private Chat**: `/setbadge` (capture sticker / Custom Emoji / pack link), `/resetbadge`, `/addverify` (add custom sticker visual verification quiz)
+- **Admin Private Chat**: `/set` (set animated sticker/Custom Emoji emblem, alias `/setbadge`), `/add` (add custom sticker visual verification quiz, alias `/addverify`), `/resetbadge`, `/cancel`
 - **Admin Forum Topics**: `/info`, `/ban`, `/unban`, `/trust`, `/reset`, `/close`, `/open`
 
 ---

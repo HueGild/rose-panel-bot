@@ -1221,8 +1221,8 @@ export async function handleTelegramUpdate(update, env, requestOrigin) {
     const parsed = extractCommand(msg.text || '');
     const isAdmin = await isUserAdmin(env, msg.from.id, tgCall);
 
-    // Admin badge capture commands (/setbadge & /resetbadge)
-    if (isAdmin && parsed?.cmd === 'setbadge') {
+    // Admin badge capture commands (/set or /setbadge, /resetbadge)
+    if (isAdmin && (parsed?.cmd === 'set' || parsed?.cmd === 'setbadge')) {
       try {
         const captured = await extractStickersFromMessage(env, msg);
         if (captured) {
@@ -1242,14 +1242,14 @@ export async function handleTelegramUpdate(update, env, requestOrigin) {
       await tgCall(env, 'sendMessage', {
         chat_id: msg.chat.id,
         text: [
-          `✨ <b>已进入票根徽章设置模式（5 分钟内有效）</b>`,
+          `✨ <b>设置票根动态贴纸徽章（5 分钟内有效）</b>`,
           ``,
           `请直接发送以下任意一种内容给我：`,
-          `1. 任意一张 <b>Telegram 贴纸</b>（支持静态/动态）`,
-          `2. 包含你收藏的 <b>TG 自定义表情（Custom Emoji）</b> 的消息`,
-          `3. 贴纸包或表情包链接（如 <code>https://t.me/addstickers/...</code> 或 <code>https://t.me/addemoji/...</code>）`,
+          `1. 贴纸包 / 表情包链接（如 <code>https://t.me/addstickers/...</code>）`,
+          `2. 任意一张 <b>Telegram 贴纸</b>（静态/动态均可）`,
+          `3. 你收藏的 <b>TG 自定义表情（Custom Emoji）</b>`,
           ``,
-          `<i>发送 /resetbadge 可恢复默认玫瑰徽章。</i>`,
+          `<i>也可以直接一步发：<code>/set https://t.me/addstickers/贴纸包名</code></i>`,
         ].join('\n'),
         parse_mode: 'HTML',
       });
@@ -1278,22 +1278,42 @@ export async function handleTelegramUpdate(update, env, requestOrigin) {
       return;
     }
 
-    // Admin 2-step custom sticker quiz builder (/addverify)
-    if (isAdmin && parsed?.cmd === 'addverify') {
+    // Admin 2-step custom sticker quiz builder (/add or /addverify)
+    if (isAdmin && (parsed?.cmd === 'add' || parsed?.cmd === 'addverify')) {
       await env.TOPIC_MAP.delete(`await_badge:${uid}`);
-      // 1-step shortcut: replying to a sticker with `/addverify 问题 | 正确 | 错1 | 错2 | 错3`
-      const replySticker = msg.reply_to_message?.sticker
+      // 1-step shortcut: replying to a sticker with `/add 问题 | 正确 | 错1 | 错2 | 错3`
+      let targetSticker = msg.reply_to_message?.sticker
         ? normalizeStickerObject(msg.reply_to_message.sticker)
         : null;
-      const inlineQuiz = parsed.args ? parseStickerQuizInput(parsed.args) : null;
+      let quizArgs = parsed.args || '';
 
-      if (replySticker && inlineQuiz) {
+      // Also support `/add https://t.me/addstickers/xxx 问题 | 正确 | 错1 | 错2 | 错3`
+      if (!targetSticker && quizArgs) {
+        const firstToken = quizArgs.split(/\s+/)[0];
+        const packName = parseStickerPackName(firstToken);
+        if (packName) {
+          try {
+            const setRes = await tgCall(env, 'getStickerSet', { name: packName });
+            const firstSticker = setRes?.result?.stickers?.[0];
+            if (firstSticker) {
+              targetSticker = normalizeStickerObject(firstSticker);
+              quizArgs = quizArgs.slice(firstToken.length).trim();
+            }
+          } catch {
+            // Fall through to normal flow
+          }
+        }
+      }
+
+      const inlineQuiz = quizArgs ? parseStickerQuizInput(quizArgs) : null;
+
+      if (targetSticker && inlineQuiz) {
         const list = Array.isArray(config.pmBot.stickerChallenges)
           ? [...config.pmBot.stickerChallenges]
           : [];
         list.unshift({
           id: `sq_${Date.now()}`,
-          ...replySticker,
+          ...targetSticker,
           ...inlineQuiz,
         });
         await savePanelConfig(env, { pmBot: { stickerChallenges: list.slice(0, 40) } });
@@ -1311,16 +1331,16 @@ export async function handleTelegramUpdate(update, env, requestOrigin) {
         return;
       }
 
-      if (replySticker) {
+      if (targetSticker) {
         await safePutJSON(
           env.TOPIC_MAP,
           `await_verify_quiz:${uid}`,
-          { step: 'question', sticker: replySticker },
+          { step: 'question', sticker: targetSticker },
           { expirationTtl: 300 }
         );
         await tgCall(env, 'sendMessage', {
           chat_id: msg.chat.id,
-          text: `✨ 已选中该贴纸！请发给我题目和选项（用 <code>|</code> 隔开，<b>第 1 个选项为正确答案</b>）：\n\n<code>这个表情在干嘛？ | 两条腿在晃 | 两个胳膊在晃 | 在睡觉 | 在吃东西</code>\n\n<i>发送 /cancel 可取消。</i>`,
+          text: `✨ 已选中该贴纸！请直接粘贴题目和 4 个选项（用 <code>|</code> 隔开，<b>第 1 个选项为正确答案</b>）：\n\n<code>上面这个画面里正在发生什么？ | 坐在木凳上晃腿 | 霸王龙在写微积分 | 外星人在修宇宙飞船 | 电饭煲在考驾照</code>\n\n<i>发送 /cancel 可取消。</i>`,
           parse_mode: 'HTML',
         });
         return;
@@ -1329,7 +1349,7 @@ export async function handleTelegramUpdate(update, env, requestOrigin) {
       await safePutJSON(env.TOPIC_MAP, `await_verify_quiz:${uid}`, { step: 'sticker' }, { expirationTtl: 300 });
       await tgCall(env, 'sendMessage', {
         chat_id: msg.chat.id,
-        text: `🎭 <b>新增表情包看图验证题（第 1/2 步）</b>\n\n请直接发送一张你收藏的 <b>Telegram 贴纸</b>（静态/动态均可）给我！\n\n<i>发送 /cancel 可取消。</i>`,
+        text: `🎭 <b>添加表情包看图验证题（第 1/2 步）</b>\n\n请直接发送一张你收藏的 <b>Telegram 贴纸</b>（静态/动态均可）给我！\n\n<i>下一步直接粘贴「问题 | 正确答案 | 错1 | 错2 | 错3」即可；发 /cancel 取消。</i>`,
         parse_mode: 'HTML',
       });
       return;

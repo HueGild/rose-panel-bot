@@ -193,7 +193,7 @@ npx wrangler dev --ip 127.0.0.1 --port 8787 --persist-to ./.wrangler/state --sho
 ## 🤖 常用指令
 
 - **通用**：`/start`、`/panel`、`/me`、`/checkin`（群社区模式）、`/rank`（群社区模式）
-- **站长私聊**：`/setbadge`（发贴纸/收藏表情秒设徽章）、`/resetbadge`、`/addverify`（录入收藏表情包看图验证题）
+- **站长私聊**：`/set`（跟贴纸链接或发贴纸秒设动态徽章，兼容 `/setbadge`）、`/add`（录入收藏表情包看图验证题，兼容 `/addverify`）、`/resetbadge`、`/cancel`
 - **管理群话题内**：`/info`、`/ban`、`/unban`、`/trust`、`/reset`、`/close`、`/open`
 
 ---
