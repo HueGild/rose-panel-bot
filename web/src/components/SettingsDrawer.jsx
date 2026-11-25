@@ -124,6 +124,70 @@ export default function SettingsDrawer({
   const [quizAnswer, setQuizAnswer] = useState('');
   const [quizWrongText, setQuizWrongText] = useState('');
 
+  // Keyword Auto-Reply rule editor state
+  const [showKeywordAdder, setShowKeywordAdder] = useState(false);
+  const [editingKeywordId, setEditingKeywordId] = useState('');
+  const [kwInput, setKwInput] = useState('');
+  const [kwMatchMode, setKwMatchMode] = useState('contains');
+  const [kwReply, setKwReply] = useState('');
+  const [kwForward, setKwForward] = useState(true);
+
+  const resetKeywordForm = () => {
+    setEditingKeywordId('');
+    setKwInput('');
+    setKwMatchMode('contains');
+    setKwReply('');
+    setKwForward(true);
+  };
+
+  const handleSaveKeywordRule = () => {
+    const keywords = kwInput.trim();
+    const reply = kwReply.trim();
+    const tokens = keywords
+      .split(/[,，\n|]/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (tokens.length === 0) {
+      onToast('请至少填写一个触发关键词');
+      return;
+    }
+    if (!reply) {
+      onToast('请填写自动回复内容');
+      return;
+    }
+    const current = Array.isArray(draft.pmBot?.keywordReplies) ? draft.pmBot.keywordReplies : [];
+    if (!editingKeywordId && current.length >= 50) {
+      onToast('最多可添加 50 条关键词回复规则');
+      return;
+    }
+    const nextRule = {
+      id: editingKeywordId || `kr-${Date.now()}`,
+      keywords,
+      matchMode: kwMatchMode === 'exact' ? 'exact' : 'contains',
+      reply,
+      forwardToAdmin: kwForward,
+      enabled: editingKeywordId
+        ? current.find((r) => r.id === editingKeywordId)?.enabled !== false
+        : true,
+    };
+    const nextList = editingKeywordId
+      ? current.map((r) => (r.id === editingKeywordId ? nextRule : r))
+      : [...current, nextRule];
+    updateField('pmBot', 'keywordReplies', nextList);
+    resetKeywordForm();
+    setShowKeywordAdder(false);
+    onToast(editingKeywordId ? '已更新规则，别忘了点底部「保存全部设置」' : '已添加关键词规则，点底部「保存全部设置」生效');
+  };
+
+  const handleEditKeywordRule = (rule) => {
+    setEditingKeywordId(rule.id);
+    setKwInput(rule.keywords || '');
+    setKwMatchMode(rule.matchMode === 'exact' ? 'exact' : 'contains');
+    setKwReply(rule.reply || '');
+    setKwForward(rule.forwardToAdmin !== false);
+    setShowKeywordAdder(true);
+  };
+
   const handleFetchQuizPack = async () => {
     if (!quizPackInput.trim()) {
       onToast('请粘贴 t.me/addstickers/... 贴纸包链接');
@@ -1409,13 +1473,343 @@ export default function SettingsDrawer({
               </div>
             </div>
 
-            <div className="field" style={{ marginTop: 10 }}>
-              <label className="field-label">私聊 /start 欢迎语</label>
-              <textarea
-                className="textarea"
-                value={draft.pmBot.welcomeText}
-                onChange={(e) => updateField('pmBot', 'welcomeText', e.target.value)}
-              />
+            <div className="list-row" style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--border)' }}>
+              <div className="row-main">
+                <div className="row-title" style={{ fontSize: 13 }}>话题访客资料卡附带对方头像</div>
+                <div className="row-desc wrap">
+                  开启后，新建话题及 /info 资料卡将附带访客 TG 头像大图（未设或隐藏头像时自动回退纯文字；点击卡片昵称亦可直达资料页）
+                </div>
+              </div>
+              <button
+                type="button"
+                className={`switch ${draft.pmBot.showVisitorAvatarInCard ? 'on' : ''}`}
+                onClick={() => updateField('pmBot', 'showVisitorAvatarInCard', !draft.pmBot.showVisitorAvatarInCard)}
+              >
+                <span className="switch-knob" />
+              </button>
+            </div>
+
+            <div className="list-row" style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--border)' }}>
+              <div className="row-main">
+                <div className="row-title" style={{ fontSize: 13 }}>私聊 /start 发送欢迎卡片</div>
+                <div className="row-desc wrap">
+                  关闭后，访客点击开始或发送 /start 时静默不弹出欢迎语卡片（发 /panel 或点左下角「个人面板」菜单仍可打开面板）。访客此时收不到任何提示，建议在 @BotFather 的 /setdescription 里写一句「直接发消息即可联系我」
+                </div>
+              </div>
+              <button
+                type="button"
+                className={`switch ${draft.pmBot.enableStartWelcome !== false ? 'on' : ''}`}
+                onClick={() => updateField('pmBot', 'enableStartWelcome', draft.pmBot.enableStartWelcome === false)}
+              >
+                <span className="switch-knob" />
+              </button>
+            </div>
+
+            {draft.pmBot.enableStartWelcome !== false && (
+              <>
+                <div className="list-row" style={{ marginTop: 8 }}>
+                  <div className="row-main">
+                    <div className="row-title" style={{ fontSize: 13 }}>欢迎卡片附带「打开个人面板」按钮</div>
+                    <div className="row-desc wrap">
+                      关闭后 /start 仅发纯文字欢迎语，隐藏卡片底部的个人面板入口按钮
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    className={`switch ${draft.pmBot.showPanelButtonInWelcome !== false ? 'on' : ''}`}
+                    onClick={() =>
+                      updateField('pmBot', 'showPanelButtonInWelcome', draft.pmBot.showPanelButtonInWelcome === false)
+                    }
+                  >
+                    <span className="switch-knob" />
+                  </button>
+                </div>
+
+                <div className="field" style={{ marginTop: 10 }}>
+                  <label className="field-label">私聊 /start 欢迎语</label>
+                  <textarea
+                    className="textarea"
+                    value={draft.pmBot.welcomeText}
+                    onChange={(e) => updateField('pmBot', 'welcomeText', e.target.value)}
+                  />
+                </div>
+              </>
+            )}
+
+            {/* Auto-Reply & Keyword Reply Section */}
+            <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--border)' }}>
+              <div className="field-label" style={{ marginBottom: 6 }}>💬 自动回复与关键词回复</div>
+
+              <div className="list-row">
+                <div className="row-main">
+                  <div className="row-title" style={{ fontSize: 13 }}>收到消息自动回复（忙碌 / 离线提示）</div>
+                  <div className="row-desc wrap">
+                    访客通过验证发消息时自动回复一条回执，按冷却间隔防刷屏（命中关键词规则时不会重复触发）
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  className={`switch ${draft.pmBot.autoReplyEnabled ? 'on' : ''}`}
+                  onClick={() => updateField('pmBot', 'autoReplyEnabled', !draft.pmBot.autoReplyEnabled)}
+                >
+                  <span className="switch-knob" />
+                </button>
+              </div>
+
+              {draft.pmBot.autoReplyEnabled && (
+                <div
+                  style={{
+                    background: 'var(--bg-subtle)',
+                    borderRadius: 14,
+                    padding: 10,
+                    marginTop: 8,
+                    marginBottom: 10,
+                  }}
+                >
+                  <div className="field" style={{ marginBottom: 8 }}>
+                    <label className="field-label">自动回复内容</label>
+                    <textarea
+                      className="textarea"
+                      value={draft.pmBot.autoReplyText ?? ''}
+                      onChange={(e) => updateField('pmBot', 'autoReplyText', e.target.value)}
+                      placeholder="例如：已收到您的消息 🌸 看到后会第一时间回复，请稍等片刻～"
+                    />
+                  </div>
+                  <div className="field" style={{ marginBottom: 0 }}>
+                    <label className="field-label">同一访客冷却间隔（分钟，1–1440，避免连发消息反复回执）</label>
+                    <input
+                      className="input"
+                      type="number"
+                      min="1"
+                      max="1440"
+                      value={draft.pmBot.autoReplyCooldownMinutes ?? 30}
+                      onChange={(e) =>
+                        updateField(
+                          'pmBot',
+                          'autoReplyCooldownMinutes',
+                          e.target.value === '' ? '' : Number(e.target.value)
+                        )
+                      }
+                    />
+                  </div>
+                </div>
+              )}
+
+              <div
+                style={{
+                  background: 'var(--bg-subtle)',
+                  borderRadius: 16,
+                  padding: 12,
+                  marginTop: 10,
+                }}
+              >
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    marginBottom: 8,
+                  }}
+                >
+                  <span style={{ fontSize: 12, fontWeight: 700 }}>
+                    🎯 关键词自动回复（{(draft.pmBot.keywordReplies || []).length} / 50 条）
+                  </span>
+                  <button
+                    type="button"
+                    className="btn btn-soft btn-sm"
+                    onClick={() => {
+                      if (showKeywordAdder) {
+                        resetKeywordForm();
+                        setShowKeywordAdder(false);
+                      } else {
+                        resetKeywordForm();
+                        setShowKeywordAdder(true);
+                      }
+                    }}
+                  >
+                    <Plus size={13} /> {showKeywordAdder ? '收起' : '添加规则'}
+                  </button>
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 8, lineHeight: 1.5 }}>
+                  仅对通过验证的访客生效（不区分大小写，多个关键词用逗号或换行分隔，按顺序命中第一条）。
+                </div>
+
+                {showKeywordAdder && (
+                  <div
+                    style={{
+                      background: 'var(--bg-elevated)',
+                      borderRadius: 14,
+                      padding: 10,
+                      marginBottom: 10,
+                      border: '1px solid var(--accent-line)',
+                    }}
+                  >
+                    <div className="field" style={{ marginBottom: 8 }}>
+                      <label className="field-label">触发关键词（逗号 / 换行 / | 分隔）</label>
+                      <input
+                        className="input"
+                        value={kwInput}
+                        onChange={(e) => setKwInput(e.target.value)}
+                        placeholder="例如：友链, 交换友链, 博客链接"
+                      />
+                    </div>
+
+                    <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+                      {[
+                        { id: 'contains', label: '包含匹配（推荐）' },
+                        { id: 'exact', label: '精确匹配' },
+                      ].map((opt) => (
+                        <button
+                          key={opt.id}
+                          type="button"
+                          className={`pill ${kwMatchMode === opt.id ? 'rose' : ''}`}
+                          style={{ cursor: 'pointer' }}
+                          onClick={() => setKwMatchMode(opt.id)}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+
+                    <div className="field" style={{ marginBottom: 8 }}>
+                      <label className="field-label">自动回复内容</label>
+                      <textarea
+                        className="textarea"
+                        value={kwReply}
+                        onChange={(e) => setKwReply(e.target.value)}
+                        placeholder="例如：欢迎互换友链！请直接发我你的站名、链接和头像～"
+                      />
+                    </div>
+
+                    <div className="list-row" style={{ marginBottom: 8 }}>
+                      <div className="row-main">
+                        <div className="row-title" style={{ fontSize: 12 }}>命中后同时转发给站长</div>
+                        <div className="row-desc wrap">关闭则仅向访客自动回复，不打扰通知群</div>
+                      </div>
+                      <button
+                        type="button"
+                        className={`switch ${kwForward ? 'on' : ''}`}
+                        onClick={() => setKwForward((v) => !v)}
+                      >
+                        <span className="switch-knob" />
+                      </button>
+                    </div>
+
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <button
+                        type="button"
+                        className="btn btn-primary"
+                        style={{ flex: 1 }}
+                        onClick={handleSaveKeywordRule}
+                      >
+                        {editingKeywordId ? '保存修改' : '加入规则列表'}
+                      </button>
+                      {editingKeywordId && (
+                        <button
+                          type="button"
+                          className="btn btn-soft"
+                          onClick={() => {
+                            resetKeywordForm();
+                            setShowKeywordAdder(false);
+                          }}
+                        >
+                          取消
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {(draft.pmBot.keywordReplies || []).length === 0 && !showKeywordAdder && (
+                  <div style={{ fontSize: 12, color: 'var(--text-muted)', textAlign: 'center', padding: '6px 0' }}>
+                    暂无关键词规则，点右上角「添加规则」即可配置常见问题秒回 ✨
+                  </div>
+                )}
+
+                {(draft.pmBot.keywordReplies || []).map((rule, idx) => (
+                  <div
+                    key={rule.id || idx}
+                    style={{
+                      background: 'var(--bg-elevated)',
+                      borderRadius: 13,
+                      padding: 10,
+                      marginBottom: 6,
+                      opacity: rule.enabled === false ? 0.55 : 1,
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap', minWidth: 0 }}>
+                        <span className="pill rose" style={{ fontSize: 10, padding: '2px 7px' }}>
+                          {rule.matchMode === 'exact' ? '精确' : '包含'}
+                        </span>
+                        <span className="pill" style={{ fontSize: 10, padding: '2px 7px' }}>
+                          {rule.forwardToAdmin !== false ? '转发站长' : '静默直回'}
+                        </span>
+                        <span style={{ fontSize: 12, fontWeight: 700, wordBreak: 'break-all' }}>
+                          {rule.keywords}
+                        </span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                        <button
+                          type="button"
+                          className="pill"
+                          style={{ cursor: 'pointer', fontSize: 10, padding: '2px 7px' }}
+                          onClick={() => handleEditKeywordRule(rule)}
+                        >
+                          编辑
+                        </button>
+                        <button
+                          type="button"
+                          className={`switch ${rule.enabled !== false ? 'on' : ''}`}
+                          style={{ transform: 'scale(0.82)' }}
+                          title={rule.enabled !== false ? '已启用' : '已暂停'}
+                          onClick={() =>
+                            updateField(
+                              'pmBot',
+                              'keywordReplies',
+                              (draft.pmBot.keywordReplies || []).map((r, i) =>
+                                i === idx ? { ...r, enabled: r.enabled === false } : r
+                              )
+                            )
+                          }
+                        >
+                          <span className="switch-knob" />
+                        </button>
+                        <button
+                          type="button"
+                          className="icon-btn"
+                          title="删除规则"
+                          onClick={() => {
+                            if (editingKeywordId === rule.id) {
+                              resetKeywordForm();
+                              setShowKeywordAdder(false);
+                            }
+                            updateField(
+                              'pmBot',
+                              'keywordReplies',
+                              (draft.pmBot.keywordReplies || []).filter((_, i) => i !== idx)
+                            );
+                          }}
+                        >
+                          <Trash2 size={14} color="var(--red)" />
+                        </button>
+                      </div>
+                    </div>
+                    <div
+                      style={{
+                        fontSize: 12,
+                        color: 'var(--text-secondary)',
+                        marginTop: 6,
+                        whiteSpace: 'pre-wrap',
+                        wordBreak: 'break-word',
+                        lineHeight: 1.45,
+                      }}
+                    >
+                      {rule.reply}
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         )}

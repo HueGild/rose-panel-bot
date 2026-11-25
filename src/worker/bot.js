@@ -286,12 +286,16 @@ function buildVisitorCardText(detail) {
     closed: '🔒 已结单',
     pending: '⏳ 待验证',
   };
+  const safeUid = /^\d+$/.test(String(detail.userId || '')) ? String(detail.userId) : '';
+  const displayNameHtml = safeUid
+    ? `<a href="tg://user?id=${safeUid}"><b>${escapeHtml(detail.displayName)}</b></a>`
+    : `<b>${escapeHtml(detail.displayName)}</b>`;
   const lines = [
     `👤 <b>访客资料卡</b>`,
     `━━━━━━━━━━━━━━━━`,
-    `• 昵称：<b>${escapeHtml(detail.displayName)}</b>`,
+    `• 昵称：${displayNameHtml}`,
     `• 用户名：${detail.username ? `@${escapeHtml(detail.username)}` : '<i>未设置</i>'}`,
-    `• UID：<code>${detail.userId}</code>`,
+    `• UID：<code>${escapeHtml(String(detail.userId))}</code>`,
     `• 状态：${statusMap[detail.status] || detail.status}`,
     `• 聊天统计：共 <b>${detail.msg_count || 0}</b> 条（对方 ${detail.visitor_msg_count || 0} · 我 ${detail.admin_msg_count || 0}）`,
     `• 归档媒体：🖼️ ${detail.photo_count || 0} 图 · 🔗 ${detail.link_count || 0} 链`,
@@ -300,6 +304,82 @@ function buildVisitorCardText(detail) {
     lines.push(`• 备注：${escapeHtml(detail.note)}`);
   }
   return lines.join('\n');
+}
+
+const TG_CAPTION_LIMIT = 1024;
+const CARD_NOTE_CAPTION_MAX = 300;
+
+// Telegram counts caption length on the parsed (visible) text, not the raw HTML.
+function visibleTextLength(html) {
+  return String(html || '')
+    .replace(/<[^>]*>/g, '')
+    .replace(/&(?:amp|lt|gt|quot);/g, '_').length;
+}
+
+// Returns an HTML caption that fits Telegram's 1024-char limit, or null if it cannot fit.
+export function buildVisitorCardCaption(detail) {
+  const full = buildVisitorCardText(detail);
+  if (visibleTextLength(full) <= TG_CAPTION_LIMIT) return full;
+
+  const note = String(detail.note || '');
+  if (note.length > CARD_NOTE_CAPTION_MAX) {
+    const trimmed = buildVisitorCardText({ ...detail, note: `${note.slice(0, CARD_NOTE_CAPTION_MAX)}…` });
+    if (visibleTextLength(trimmed) <= TG_CAPTION_LIMIT) return trimmed;
+  }
+
+  const withoutNote = buildVisitorCardText({ ...detail, note: '' });
+  return visibleTextLength(withoutNote) <= TG_CAPTION_LIMIT ? withoutNote : null;
+}
+
+async function fetchVisitorAvatarFileId(env, userId) {
+  const numericUid = Number(userId);
+  if (!Number.isFinite(numericUid) || numericUid <= 0) return null;
+  try {
+    const photos = await tgCall(env, 'getUserProfilePhotos', {
+      user_id: numericUid,
+      limit: 1,
+    });
+    const sizes = photos?.result?.photos?.[0];
+    if (!Array.isArray(sizes) || sizes.length === 0) return null;
+    // Telegram returns photo sizes sorted from smallest to largest
+    return sizes[sizes.length - 1]?.file_id || null;
+  } catch {
+    return null;
+  }
+}
+
+async function sendVisitorCardMessage(env, chatId, threadId, requestOrigin, detail, config = null) {
+  const text = buildVisitorCardText(detail);
+  const replyMarkup = buildVisitorModerationKeyboard(env, requestOrigin, detail);
+  const cfg = config || (await loadPanelConfig(env));
+  const wantPhoto = Boolean(cfg?.pmBot?.showVisitorAvatarInCard);
+
+  const caption = wantPhoto ? buildVisitorCardCaption(detail) : null;
+  if (caption) {
+    const fileId = await fetchVisitorAvatarFileId(env, detail.userId);
+    if (fileId) {
+      try {
+        return await tgCall(env, 'sendPhoto', {
+          chat_id: chatId,
+          message_thread_id: threadId,
+          photo: fileId,
+          caption,
+          parse_mode: 'HTML',
+          reply_markup: replyMarkup,
+        });
+      } catch {
+        // Gracefully fall back to compact text card if sendPhoto fails
+      }
+    }
+  }
+
+  return tgCall(env, 'sendMessage', {
+    chat_id: chatId,
+    message_thread_id: threadId,
+    text,
+    parse_mode: 'HTML',
+    reply_markup: replyMarkup,
+  });
 }
 
 function buildVisitorModerationKeyboard(env, requestOrigin, detail) {
@@ -451,21 +531,42 @@ async function ensureVisitorTopic(env, requestOrigin, tgUser, preview = '') {
 
   const detail = await getVisitorDetail(env, uid, supergroupId);
   if (detail) {
-    await tgCall(env, 'sendMessage', {
-      chat_id: supergroupId,
-      message_thread_id: threadId,
-      text: buildVisitorCardText(detail),
-      parse_mode: 'HTML',
-      reply_markup: buildVisitorModerationKeyboard(env, requestOrigin, detail),
-    });
+    await sendVisitorCardMessage(env, supergroupId, threadId, requestOrigin, detail);
   }
 
   return { threadId, isNew: true };
 }
 
+export function matchKeywordReply(text, rules = []) {
+  const raw = String(text || '').trim();
+  if (!raw || !Array.isArray(rules) || rules.length === 0) return null;
+  const rawLower = raw.toLowerCase();
+
+  for (const rule of rules) {
+    if (!rule || rule.enabled === false) continue;
+    const reply = String(rule.reply || '').trim();
+    if (!reply) continue;
+    const tokens = String(rule.keywords || '')
+      .split(/[,，\n|]/)
+      .map((k) => k.trim())
+      .filter(Boolean);
+    if (tokens.length === 0) continue;
+
+    const isExact = rule.matchMode === 'exact';
+    const matchedKeyword = tokens.find((kw) => {
+      const kwLower = kw.toLowerCase();
+      return isExact ? rawLower === kwLower : rawLower.includes(kwLower);
+    });
+    if (matchedKeyword) {
+      return { rule: { ...rule, reply }, matchedKeyword };
+    }
+  }
+  return null;
+}
+
 async function forwardMessageToTopic(env, requestOrigin, msg) {
   const supergroupId = await resolveSupergroupId(env);
-  if (!supergroupId) return;
+  if (!supergroupId) return null;
 
   const user = msg.from;
   const uid = String(user.id);
@@ -504,22 +605,89 @@ async function forwardMessageToTopic(env, requestOrigin, msg) {
     incrementCount: true,
     preview,
   }).catch(() => {});
+
+  return { supergroupId, threadId };
 }
 
-async function flushPendingMessages(env, requestOrigin, state) {
-  const pending = Array.isArray(state.pending) ? state.pending : [];
-  for (const item of pending) {
-    await forwardMessageToTopic(env, requestOrigin, {
-      from: state.user,
-      chat: { id: item.chatId },
-      message_id: item.messageId,
-      text: item.text || item.preview || '',
-      caption: item.caption || '',
-      entities: item.entities || [],
-      caption_entities: item.caption_entities || [],
-      photo: item.photo || null,
-      document: item.document || null,
+async function processVisitorMessage(env, requestOrigin, msg, config = null) {
+  if (msg.from?.is_bot) return;
+  const cfg = config || (await loadPanelConfig(env));
+  const pmBot = cfg.pmBot || {};
+  // Replayed pending messages carry a placeholder preview (e.g. "[图片]") in `text`; match keywords
+  // only against what the visitor actually typed.
+  const msgText = String(msg.keywordText ?? (msg.text || msg.caption || '')).trim();
+  const matched = msgText ? matchKeywordReply(msgText, pmBot.keywordReplies) : null;
+
+  // 1. Keyword rule matched -> send tailored reply (and optionally forward to admin topic)
+  if (matched) {
+    let forwarded = null;
+    if (matched.rule.forwardToAdmin !== false) {
+      forwarded = await forwardMessageToTopic(env, requestOrigin, msg);
+    }
+    await tgCall(env, 'sendMessage', {
+      chat_id: msg.chat.id,
+      reply_to_message_id: msg.message_id,
+      allow_sending_without_reply: true,
+      text: matched.rule.reply,
     }).catch(() => {});
+
+    if (forwarded?.supergroupId && forwarded?.threadId) {
+      await tgCall(env, 'sendMessage', {
+        chat_id: forwarded.supergroupId,
+        message_thread_id: forwarded.threadId,
+        text: `🤖 <i>已触发关键词自动回复（${escapeHtml(matched.matchedKeyword)}）</i>`,
+        parse_mode: 'HTML',
+        disable_notification: true,
+      }).catch(() => {});
+    }
+    return;
+  }
+
+  // 2. Normal visitor message -> forward to admin topic
+  await forwardMessageToTopic(env, requestOrigin, msg);
+
+  // 3. Optional general auto-reply with per-visitor KV cooldown (prevents spamming repeated receipts)
+  const autoText = String(pmBot.autoReplyText || '').trim();
+  if (pmBot.autoReplyEnabled && autoText && msg.from?.id) {
+    const uid = String(msg.from.id);
+    const cdKey = `autoreply_cd:${uid}`;
+    const inCooldown = env.TOPIC_MAP ? await env.TOPIC_MAP.get(cdKey) : null;
+    if (!inCooldown) {
+      const cdMinutes = Math.min(Math.max(Number(pmBot.autoReplyCooldownMinutes) || 30, 1), 1440);
+      if (env.TOPIC_MAP) {
+        await env.TOPIC_MAP.put(cdKey, '1', { expirationTtl: cdMinutes * 60 });
+      }
+      await tgCall(env, 'sendMessage', {
+        chat_id: msg.chat.id,
+        reply_to_message_id: msg.message_id,
+        allow_sending_without_reply: true,
+        text: autoText,
+      }).catch(() => {});
+    }
+  }
+}
+
+async function flushPendingMessages(env, requestOrigin, state, config = null) {
+  const pending = Array.isArray(state.pending) ? state.pending : [];
+  const cfg = config || (await loadPanelConfig(env));
+  for (const item of pending) {
+    await processVisitorMessage(
+      env,
+      requestOrigin,
+      {
+        from: state.user,
+        chat: { id: item.chatId },
+        message_id: item.messageId,
+        text: item.text || item.preview || '',
+        keywordText: item.text || item.caption || '',
+        caption: item.caption || '',
+        entities: item.entities || [],
+        caption_entities: item.caption_entities || [],
+        photo: item.photo || null,
+        document: item.document || null,
+      },
+      cfg
+    ).catch(() => {});
   }
 }
 
@@ -693,26 +861,36 @@ async function startVerificationChallenge(env, requestOrigin, msg, config, risk 
   });
 }
 
-async function handlePrivatePanelCommand(env, requestOrigin, msg, config) {
+async function handlePrivatePanelCommand(env, requestOrigin, msg, config, { isStart = false } = {}) {
   const isAdmin = await isUserAdmin(env, msg.from.id, tgCall);
-  const welcome = config.pmBot.welcomeText || '欢迎使用个人面板！';
-  const rows = [
-    [buildPanelButton(env, requestOrigin, '✨ 打开个人面板小程序', { isGroup: false })],
-  ];
-  if (isAdmin) {
-    rows.push([
-      buildPanelButton(env, requestOrigin, '👤 访客管理与拉黑后台', {
-        isGroup: false,
-        query: 'tab=visitors',
-      }),
-    ]);
+  const rawWelcome = String(config.pmBot.welcomeText ?? '').trim();
+  const welcome = rawWelcome || (isStart ? '' : '欢迎使用个人面板！');
+  const includePanelBtn = !isStart || config.pmBot.showPanelButtonInWelcome !== false;
+
+  const rows = [];
+  if (includePanelBtn) {
+    rows.push([buildPanelButton(env, requestOrigin, '✨ 打开个人面板小程序', { isGroup: false })]);
+    if (isAdmin) {
+      rows.push([
+        buildPanelButton(env, requestOrigin, '👤 访客管理与拉黑后台', {
+          isGroup: false,
+          query: 'tab=visitors',
+        }),
+      ]);
+    }
   }
-  await tgCall(env, 'sendMessage', {
+
+  const header = `🌸 <b>${escapeHtml(config.profile.displayName)}</b>`;
+  const text = welcome ? `${header}\n\n${escapeHtml(welcome)}` : header;
+  const payload = {
     chat_id: msg.chat.id,
-    text: `🌸 <b>${escapeHtml(config.profile.displayName)}</b>\n\n${escapeHtml(welcome)}`,
+    text,
     parse_mode: 'HTML',
-    reply_markup: { inline_keyboard: rows },
-  });
+  };
+  if (rows.length > 0) {
+    payload.reply_markup = { inline_keyboard: rows };
+  }
+  await tgCall(env, 'sendMessage', payload);
 }
 
 async function handleGroupPanelCommand(env, requestOrigin, msg, config) {
@@ -888,13 +1066,7 @@ async function handleAdminSupergroupMessage(env, requestOrigin, msg, config) {
     if (cmd === 'info') {
       const detail = await getVisitorDetail(env, targetUid);
       if (detail) {
-        await tgCall(env, 'sendMessage', {
-          chat_id: msg.chat.id,
-          message_thread_id: threadId,
-          text: buildVisitorCardText(detail),
-          parse_mode: 'HTML',
-          reply_markup: buildVisitorModerationKeyboard(env, requestOrigin, detail),
-        });
+        await sendVisitorCardMessage(env, msg.chat.id, threadId, requestOrigin, detail, config);
       }
       return;
     }
@@ -1162,13 +1334,39 @@ async function handleCallbackQuery(env, requestOrigin, cq, config) {
       text: toastLabels[action] || '操作成功',
     });
     if (cq.message) {
-      await tgCall(env, 'editMessageText', {
-        chat_id: cq.message.chat.id,
-        message_id: cq.message.message_id,
-        text: buildVisitorCardText(detail),
-        parse_mode: 'HTML',
-        reply_markup: buildVisitorModerationKeyboard(env, requestOrigin, detail),
-      }).catch(() => {});
+      const replyMarkup = buildVisitorModerationKeyboard(env, requestOrigin, detail);
+      const isMediaCard = Array.isArray(cq.message.photo) && cq.message.photo.length > 0;
+      if (isMediaCard) {
+        const caption = buildVisitorCardCaption(detail);
+        const editedCaption = caption
+          ? await tgCall(env, 'editMessageCaption', {
+              chat_id: cq.message.chat.id,
+              message_id: cq.message.message_id,
+              caption,
+              parse_mode: 'HTML',
+              reply_markup: replyMarkup,
+            }).then(
+              () => true,
+              () => false
+            )
+          : false;
+        if (!editedCaption) {
+          // Caption too long or edit rejected: at least refresh the moderation buttons
+          await tgCall(env, 'editMessageReplyMarkup', {
+            chat_id: cq.message.chat.id,
+            message_id: cq.message.message_id,
+            reply_markup: replyMarkup,
+          }).catch(() => {});
+        }
+      } else {
+        await tgCall(env, 'editMessageText', {
+          chat_id: cq.message.chat.id,
+          message_id: cq.message.message_id,
+          text: buildVisitorCardText(detail),
+          parse_mode: 'HTML',
+          reply_markup: replyMarkup,
+        }).catch(() => {});
+      }
     }
     return;
   }
@@ -1630,8 +1828,14 @@ export async function handleTelegramUpdate(update, env, requestOrigin) {
     }
 
     if (parsed) {
-      if (parsed.cmd === 'start' || parsed.cmd === 'panel' || parsed.cmd === 'me') {
-        await handlePrivatePanelCommand(env, requestOrigin, msg, config);
+      if (parsed.cmd === 'start') {
+        if (config.pmBot.enableStartWelcome !== false) {
+          await handlePrivatePanelCommand(env, requestOrigin, msg, config, { isStart: true });
+        }
+        return;
+      }
+      if (parsed.cmd === 'panel' || parsed.cmd === 'me') {
+        await handlePrivatePanelCommand(env, requestOrigin, msg, config, { isStart: false });
         return;
       }
       if (parsed.cmd === 'checkin' || parsed.cmd === 'sign') {
@@ -1646,7 +1850,10 @@ export async function handleTelegramUpdate(update, env, requestOrigin) {
     }
 
     if (!supergroupId) {
-      await handlePrivatePanelCommand(env, requestOrigin, msg, config);
+      // No notification group bound yet: reply with the welcome card, honoring the /start toggles
+      if (config.pmBot.enableStartWelcome !== false) {
+        await handlePrivatePanelCommand(env, requestOrigin, msg, config, { isStart: true });
+      }
       return;
     }
 
@@ -1691,6 +1898,6 @@ export async function handleTelegramUpdate(update, env, requestOrigin) {
       return;
     }
 
-    await forwardMessageToTopic(env, requestOrigin, msg);
+    await processVisitorMessage(env, requestOrigin, msg, config);
   }
 }

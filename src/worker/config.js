@@ -119,8 +119,15 @@ export const DEFAULT_CONFIG = {
     blockedKeywords: '',
     stickerChallenges: [],
     welcomeText: '你好呀 🌸 这里是我的私聊助手。直接发送消息即可联系我，也可以点击下方按钮打开我的个人面板查看小站与探针。',
+    enableStartWelcome: true,
+    showPanelButtonInWelcome: true,
     autoAckEnabled: true,
+    autoReplyEnabled: false,
+    autoReplyText: '已收到您的消息 🌸 看到后会第一时间回复，请稍等片刻～',
+    autoReplyCooldownMinutes: 30,
+    keywordReplies: [],
     verifiedDays: 30,
+    showVisitorAvatarInCard: false,
   },
   updater: {
     forkRepo: '', // e.g. "yourname/rose-panel-bot"
@@ -169,6 +176,23 @@ export async function safeGetJSON(kv, key, fallback = null) {
 export async function safePutJSON(kv, key, value, options = undefined) {
   if (!kv) return;
   await kv.put(key, JSON.stringify(value), options);
+}
+
+export function normalizeKeywordRule(rule = {}, idx = 0) {
+  return {
+    id: String(rule.id || `kr-${Date.now()}-${idx}`).slice(0, 64),
+    keywords: String(rule.keywords || '').trim().slice(0, 300),
+    matchMode: rule.matchMode === 'exact' ? 'exact' : 'contains',
+    reply: String(rule.reply || '').trim().slice(0, 2000),
+    forwardToAdmin: rule.forwardToAdmin !== false,
+    enabled: rule.enabled !== false,
+  };
+}
+
+export function hasValidKeywords(keywords = '') {
+  return String(keywords || '')
+    .split(/[,，\n|]/)
+    .some((k) => k.trim().length > 0);
 }
 
 export function normalizeSite(site = {}, idx = 0) {
@@ -266,6 +290,23 @@ export function mergeConfig(base, override) {
     pmBot: {
       ...base.pmBot,
       ...(override.pmBot || {}),
+      enableStartWelcome:
+        (override.pmBot?.enableStartWelcome ?? base.pmBot?.enableStartWelcome) !== false,
+      showPanelButtonInWelcome:
+        (override.pmBot?.showPanelButtonInWelcome ?? base.pmBot?.showPanelButtonInWelcome) !== false,
+      autoReplyEnabled: Boolean(override.pmBot?.autoReplyEnabled ?? base.pmBot?.autoReplyEnabled ?? false),
+      autoReplyCooldownMinutes: Math.min(
+        Math.max(Number(override.pmBot?.autoReplyCooldownMinutes ?? base.pmBot?.autoReplyCooldownMinutes) || 30, 1),
+        1440
+      ),
+      keywordReplies: Array.isArray(override.pmBot?.keywordReplies)
+        ? override.pmBot.keywordReplies.map(normalizeKeywordRule).slice(0, 50)
+        : Array.isArray(base.pmBot?.keywordReplies)
+          ? base.pmBot.keywordReplies.map(normalizeKeywordRule).slice(0, 50)
+          : [],
+      showVisitorAvatarInCard: Boolean(
+        override.pmBot?.showVisitorAvatarInCard ?? base.pmBot?.showVisitorAvatarInCard ?? false
+      ),
     },
     updater: {
       ...base.updater,
@@ -343,6 +384,22 @@ export async function savePanelConfig(env, nextConfig) {
   merged.pmBot.smartEscalation = merged.pmBot.smartEscalation !== false;
   merged.pmBot.blockUnverifiedMedia = merged.pmBot.blockUnverifiedMedia !== false;
   merged.pmBot.enableHoneypot = merged.pmBot.enableHoneypot !== false;
+  merged.pmBot.enableStartWelcome = merged.pmBot.enableStartWelcome !== false;
+  merged.pmBot.showPanelButtonInWelcome = merged.pmBot.showPanelButtonInWelcome !== false;
+  merged.pmBot.autoReplyEnabled = Boolean(merged.pmBot.autoReplyEnabled);
+  merged.pmBot.autoReplyText = String(merged.pmBot.autoReplyText ?? '').trim().slice(0, 2000);
+  merged.pmBot.autoReplyCooldownMinutes = Math.min(
+    Math.max(Number(merged.pmBot.autoReplyCooldownMinutes) || 30, 1),
+    1440
+  );
+  merged.pmBot.keywordReplies = Array.isArray(merged.pmBot.keywordReplies)
+    ? merged.pmBot.keywordReplies
+        .map(normalizeKeywordRule)
+        .filter((rule) => hasValidKeywords(rule.keywords) && rule.reply.length > 0)
+        .slice(0, 50)
+    : [];
+  merged.pmBot.showVisitorAvatarInCard = Boolean(merged.pmBot.showVisitorAvatarInCard);
+  merged.pmBot.welcomeText = String(merged.pmBot.welcomeText ?? '').slice(0, 2000);
   merged.pmBot.blockedKeywords = String(merged.pmBot.blockedKeywords || '').slice(0, 2000);
   merged.pmBot.stickerChallenges = Array.isArray(merged.pmBot.stickerChallenges)
     ? merged.pmBot.stickerChallenges.filter((item) => item?.fileId && item?.question && item?.answer).slice(0, 40)
