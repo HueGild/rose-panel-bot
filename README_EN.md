@@ -49,12 +49,16 @@
 
 ---
 
-## 🎭 Signature Features: Custom Sticker Quizzes & Animated Emblems
+## 🎭 Signature Features: Custom Sticker Quizzes, Animated Emblems & In-App Updates
 
 <div align="center">
   <img src="docs/assets/showcase-antispam.png" alt="Send any static or animated TG sticker via /add to create custom visual anti-spam quizzes" width="94%" />
   <br /><br />
   <img src="docs/assets/showcase-badges.png" alt="Send /set with any sticker or custom emoji to update the animated main emblem" width="94%" />
+  <br /><br />
+  <img src="docs/assets/showcase-updater.png" alt="In-panel release reminder and one-click Fork sync for Cloudflare deployments" width="94%" />
+  <br />
+  <sub>For Fork deployments, new releases show an in-panel reminder and support 1-click hot-update right inside the Bot (zero reconfiguration, 100% KV data preserved)</sub>
 </div>
 
 ---
@@ -64,7 +68,7 @@
 <div align="center">
   <img src="docs/assets/preview-row1.png" alt="1 Personal Card & Contact Etiquette · 2 Public & Private Sites" width="94%" />
   <br /><br />
-  <img src="docs/assets/preview-row2.png" alt="3 Komari Server Probe · 4 Visitors & 4-Layer Anti-Spam Shield" width="94%" />
+  <img src="docs/assets/preview-row2.png" alt="3 Multi-Protocol Server Probe (Komari / Nezha / NodeGet / JSON) · 4 Visitors & 4-Layer Anti-Spam Shield" width="94%" />
   <br /><br />
   <img src="docs/assets/preview-row3.png" alt="Dark Rose-Obsidian Theme & Visitor Detail Drawer" width="94%" />
 </div>

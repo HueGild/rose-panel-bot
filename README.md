@@ -52,12 +52,16 @@
 
 ---
 
-## 🎭 主打亮点：一键发静/动态贴纸设图形题 & 动态主徽章
+## 🎭 主打亮点：一键发静/动态贴纸设图形题、动态主徽章 & 站内版本更新
 
 <div align="center">
   <img src="docs/assets/showcase-antispam.png" alt="一键发静/动态贴纸快捷设置图形验证题与题库管理" width="94%" />
   <br /><br />
   <img src="docs/assets/showcase-badges.png" alt="私聊 /set 换动态贴纸主徽章与收藏徽章库" width="94%" />
+  <br /><br />
+  <img src="docs/assets/showcase-updater.png" alt="Fork 部署新版站内提醒与一键同步更新" width="94%" />
+  <br />
+  <sub>Fork 部署后，新版本会在面板内提醒，点一下即可在 Bot 内一键同步热更新（无需重配，KV 数据 100% 保留）</sub>
 </div>
 
 ---
@@ -67,7 +71,7 @@
 <div align="center">
   <img src="docs/assets/preview-row1.png" alt="1 名片与来信礼仪 · 2 公开与私密双层小站" width="94%" />
   <br /><br />
-  <img src="docs/assets/preview-row2.png" alt="3 Komari 节点探针 · 4 访客与四层防广告管理" width="94%" />
+  <img src="docs/assets/preview-row2.png" alt="3 多合一节点探针（Komari / 哪吒 / NodeGet / JSON） · 4 访客与四层防广告管理" width="94%" />
   <br /><br />
   <img src="docs/assets/preview-row3.png" alt="暗黑玫瑰瓷主题 · 访客资料卡与一键管控" width="94%" />
 </div>
