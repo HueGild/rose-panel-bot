@@ -152,7 +152,7 @@ flowchart LR
 1. 点击顶部 **Deploy to Cloudflare** 按钮（或 Fork 后在 Cloudflare Dashboard → **Workers & Pages → Create → Workers → Import a repository** 选择 `rose-panel-bot`）：
    - **Build command**：`npm run build`
    - **Deploy command**：`npx wrangler deploy`
-2. 在 Worker 的 **Settings → Variables & Bindings** 确认绑定了 `TOPIC_MAP` KV，并填入 4 个核心变量：`BOT_TOKEN`（Secret）、`WEBHOOK_SECRET`（Secret）、`ADMIN_IDS`（你的数字 UID）、`BOT_USERNAME`（不含 `@`）。
+2. 在 Worker 的 **Settings → Variables & Bindings** 确认绑定了 `TOPIC_MAP` KV，并填入 4 个核心变量：`BOT_TOKEN`（Secret）、`WEBHOOK_SECRET`（Secret）、`ADMIN_IDS`（**务必选 Text 变量文本**，填你的纯数字 UID；若一键部署默认建成了 Secret 密钥请删掉重加为 Text）、`BOT_USERNAME`（不含 `@`）。
 3. 浏览器访问一次 `https://<你的域名>/setup?secret=<WEBHOOK_SECRET>` 看到 `"ok": true`。
 4. *(如需双向私聊)* 新建开启 **「话题 (Topics)」** 的私密群、把机器人设为管理员，在群里发一句 **`/bind`** 即可完成全部配置！
 

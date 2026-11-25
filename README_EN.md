@@ -140,7 +140,7 @@ Unused modules stay completely hidden and add zero overhead; includes [AGENTS.md
 1. Click **Deploy to Cloudflare** at the top (or fork & import in Cloudflare Dashboard → **Workers & Pages → Create → Workers → Import a repository**):
    - **Build command**: `npm run build`
    - **Deploy command**: `npx wrangler deploy`
-2. In **Settings → Variables & Bindings**, confirm `TOPIC_MAP` KV is bound and set 4 core variables: `BOT_TOKEN` (Secret), `WEBHOOK_SECRET` (Secret), `ADMIN_IDS` (your numeric UID), `BOT_USERNAME` (without `@`).
+2. In **Settings → Variables & Bindings**, confirm `TOPIC_MAP` KV is bound and set 4 core variables: `BOT_TOKEN` (Secret), `WEBHOOK_SECRET` (Secret), `ADMIN_IDS` (**Text variable** with your numeric UID — if 1-click deploy created it as a Secret, delete and re-add as Text), `BOT_USERNAME` (without `@`).
 3. Visit `https://<your-domain>/setup?secret=<WEBHOOK_SECRET>` once until you see `"ok": true`.
 4. *(For bidirectional PM)* Create a private group with **Topics** enabled, add the bot as Administrator, and send **`/bind`** inside the group!
 

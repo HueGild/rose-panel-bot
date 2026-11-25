@@ -96,7 +96,7 @@ flowchart TD
        | :--- | :--- | :--- |
        | `BOT_TOKEN` | **Secret (加密)** | 第 1 步從 `@BotFather` 拿到的 Token |
        | `WEBHOOK_SECRET` | **Secret (加密)** | 自己隨便寫一串英文+數字密碼（如 `rose2026pass`） |
-       | `ADMIN_IDS` | Text | 第 2 步查到的你自己的數字 UID |
+       | `ADMIN_IDS` | **Text (純文字變數)** | 第 2 步查到的你自己的數字 UID（**⚠️ 若一鍵部署預設建成了 Secret 金鑰，務必刪掉重加為 Text 純文字，否則右上角看不到 ⚙️ 設定按鈕**） |
        | `BOT_USERNAME` | Text | 你的機器人使用者名稱（**不要帶 `@`**） |
    - *(強烈推薦)* 在 Worker 的 **Settings → Domains & Routes** 綁定自己的網域（如 `panel.yourdomain.com`）。
 
