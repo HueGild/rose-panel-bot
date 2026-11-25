@@ -32,3 +32,5 @@ ENABLE_CHECKIN = "false"
 
 [previews.vars]
 ENABLE_CHECKIN = "false"
+
+# 2026-11-25: trigger rebuild - secrets added after import need a fresh deploy to take effect
