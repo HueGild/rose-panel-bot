@@ -6,11 +6,8 @@ import {
   Copy,
   ExternalLink,
   Flame,
-  Globe,
   MessageCircle,
-  Server,
   Sparkles,
-  Users,
   X,
 } from 'lucide-react';
 import { Avatar, StubEmblem, TicketEmblem } from './Emblems.jsx';
@@ -26,7 +23,7 @@ export default function TicketTab({
   const [showLevels, setShowLevels] = useState(false);
   const [showLogs, setShowLogs] = useState(false);
 
-  const { config, user, isAdmin, checkin, levels = [], visitorSummary } = data;
+  const { config, user, isAdmin, checkin, levels = [] } = data;
   const { profile, community, bot } = config;
   const enableCheckin = Boolean(community.enableCheckin);
 
@@ -386,52 +383,6 @@ export default function TicketTab({
           🌸 {profile.notice}
         </div>
       )}
-
-      {/* Quick Shortcuts Card */}
-      <div className="card">
-        <div className="card-header">
-          <span className="card-title">快捷直达</span>
-        </div>
-        <div className="list-row" style={{ cursor: 'pointer' }} onClick={() => onNavigate('sites')}>
-          <div className="row-icon-box">
-            <Globe size={18} />
-          </div>
-          <div className="row-main">
-            <div className="row-title">我的个人小站</div>
-            <div className="row-desc">共收录 {config.sites?.length || 0} 个精选站点与服务入口</div>
-          </div>
-          <ChevronRight size={16} color="var(--text-muted)" />
-        </div>
-
-        <div className="list-row" style={{ cursor: 'pointer' }} onClick={() => onNavigate('probe')}>
-          <div className="row-icon-box">
-            <Server size={18} />
-          </div>
-          <div className="row-main">
-            <div className="row-title">{config.probe?.title || 'Komari 节点探针'}</div>
-            <div className="row-desc">{config.probe?.subtitle || '实时查看服务器在线与负载'}</div>
-          </div>
-          <ChevronRight size={16} color="var(--text-muted)" />
-        </div>
-
-        {isAdmin && (
-          <div className="list-row" style={{ cursor: 'pointer' }} onClick={() => onNavigate('visitors')}>
-            <div className="row-icon-box">
-              <Users size={18} />
-            </div>
-            <div className="row-main">
-              <div className="row-title">
-                私聊访客管理
-                <span className="pill rose">仅站长可见</span>
-              </div>
-              <div className="row-desc">
-                累计 {visitorSummary?.total ?? 0} 位访客 · 已拉黑 {visitorSummary?.banned ?? 0} 人
-              </div>
-            </div>
-            <ChevronRight size={16} color="var(--text-muted)" />
-          </div>
-        )}
-      </div>
 
       {/* Social Links Card */}
       {profile.socials?.length > 0 && (
