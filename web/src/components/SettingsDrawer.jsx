@@ -55,6 +55,7 @@ const PROBE_PROVIDER_OPTIONS = [
 export default function SettingsDrawer({
   initialSection = 'profile',
   adminConfig,
+  appVersion = '',
   onClose,
   onSaved,
   onToast,
@@ -1440,7 +1441,7 @@ export default function SettingsDrawer({
                       版本检查与更新
                     </div>
                     <div className="row-desc" style={{ marginTop: 2 }}>
-                      当前版本：<b>v{updateInfo?.currentVersion || '1.3.0'}</b>
+                      当前版本：<b>{updateInfo?.currentVersion || appVersion ? `v${updateInfo?.currentVersion || appVersion}` : '—'}</b>
                       {updateInfo?.latestVersion && (
                         <>
                           {' '}· 最新版本：<b>v{updateInfo.latestVersion}</b>
@@ -1515,16 +1516,17 @@ export default function SettingsDrawer({
                 </div>
 
                 <div className="row-desc wrap" style={{ marginTop: 10, lineHeight: 1.5 }}>
-                  💡 <b>零密钥安全更新（推荐）</b>：打开你 Fork 的 GitHub 仓库 → 点击 <b>Sync fork → Update branch</b>，Cloudflare 约 30 秒自动完成构建，全部配置与访客数据 100% 保留。
+                  💡 <b>零密钥安全更新（推荐）</b>：打开你 <b>Fork</b> 的 GitHub 仓库 → 点击 <b>Sync fork → Update branch</b>，Cloudflare 约 30 秒自动完成构建，全部配置与访客数据 100% 保留。<br />
+                  ⚠️ 仅通过 GitHub <b>Fork</b> 得到的仓库才有 Sync fork 按钮；若通过 Deploy to Cloudflare 一键按钮创建的是独立副本，请参考仓库教程 FAQ Q3 手动同步或改绑 Fork 仓库。
                 </div>
               </div>
 
               <div className="card">
                 <div className="row-title" style={{ fontSize: 14, marginBottom: 4 }}>
-                  🚀 站内一键同步上游（进阶可选）
+                  🚀 站内一键同步上游（进阶可选 · 仅限 Fork 仓库）
                 </div>
                 <div className="row-desc wrap" style={{ marginBottom: 12, lineHeight: 1.5 }}>
-                  若希望直接在面板内点一下按钮就自动同步 Fork 并触发 Cloudflare 重建，可在此选填仅限单仓库权限的 GitHub Fine-grained Token（仅需开通 <code>Contents: Read and write</code>）；不填则完全走上方手动跳转，零密钥更安心。
+                  若希望直接在面板内点一下按钮就自动同步 Fork 并触发 Cloudflare 重建，可在此选填仅限单仓库权限的 GitHub Fine-grained Token（需开通 <code>Contents: Read and write</code>；若仓库包含 <code>.github/workflows</code> 自动化文件还需勾选 <code>Workflows: Read and write</code>）；不填则完全走上方手动跳转。
                 </div>
 
                 <div className="field">
@@ -1546,13 +1548,17 @@ export default function SettingsDrawer({
                   />
                 </div>
                 <div className="field">
-                  <label className="field-label">GitHub Fine-grained Token（选填，已加密脱敏保存）</label>
+                  <label className="field-label">GitHub Fine-grained Token（选填，只保存在你自己的 Cloudflare KV，界面不回显）</label>
                   <input
                     className="input"
                     type="password"
                     value={updater.githubToken || ''}
                     onChange={(e) => updateField('updater', 'githubToken', e.target.value)}
-                    placeholder="github_pat_...（不填则使用上方手动跳转更新）"
+                    placeholder={
+                      updater.tokenFromEnv
+                        ? '已通过环境变量 GITHUB_UPDATE_TOKEN 配置（不写入 KV）'
+                        : 'github_pat_...（不填则使用上方手动跳转更新）'
+                    }
                   />
                 </div>
 

@@ -29,3 +29,6 @@ binding = "TOPIC_MAP"
 # - ENABLE_CHECKIN     (可选) "true" 开启群签到积分徽章模式，默认 "false"（极简个人名片）
 [vars]
 ENABLE_CHECKIN = "false"
+
+[previews.vars]
+ENABLE_CHECKIN = "false"

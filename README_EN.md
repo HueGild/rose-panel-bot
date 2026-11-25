@@ -246,6 +246,10 @@ The panel recognized you as a regular guest — almost always because `ADMIN_IDS
 2. Open Cloudflare Worker → **Settings → Variables & Bindings** → check `ADMIN_IDS` (**Text** type). If 1-click deploy created it as a hidden **Secret** (so you can't inspect it, or it held the old placeholder `123456789`), delete it and re-add `ADMIN_IDS` as a **Text** variable with your real numeric UID.
 3. Save & redeploy, then close and reopen the Mini App **inside Telegram** (if you rely on forum-group admin detection without `ADMIN_IDS`, make sure you ran `/bind` inside your Topics group).
 
+**Q: How do I update to a new release?**  
+- **GitHub Fork**: Open Mini App → **⚙️ Settings → 版本更新**, or click **Sync fork → Update branch** on your fork (Cloudflare rebuilds automatically; all KV data is preserved).
+- **Standalone copy created by the Deploy to Cloudflare button** (no `Sync fork` button): either **Fork** the upstream repo once and reconnect Cloudflare Build to your fork, or sync via Git: `git remote add upstream https://github.com/mango0114/rose-panel-bot.git && git fetch upstream && git merge upstream/main --allow-unrelated-histories && git push origin main`.
+
 ---
 
 ## 🙏 Credits & Tech Stack

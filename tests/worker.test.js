@@ -1254,6 +1254,92 @@ describe('In-app version checker (Scheme A) & optional Fork syncer (Scheme B)', 
     }
   });
 
+  it('falls back to raw package.json on GitHub 403/429 rate limits and caches errors for 30 min', async () => {
+    const kv = createMemoryKV();
+    const env = { TOPIC_MAP: kv };
+    const origFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn(async (url) => {
+      if (String(url).includes('api.github.com')) {
+        return new Response('rate limited', { status: 403 });
+      }
+      expect(String(url)).toBe('https://raw.githubusercontent.com/mango0114/rose-panel-bot/main/package.json');
+      return new Response(JSON.stringify({ version: '9.1.0' }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    });
+
+    try {
+      const fallbackRes = await checkLatestRelease(env);
+      expect(fallbackRes.ok).toBe(true);
+      expect(fallbackRes.latestVersion).toBe('9.1.0');
+      expect(fallbackRes.hasUpdate).toBe(true);
+      expect(fallbackRes.fallbackSource).toBe('raw-package-json');
+
+      // When both API and raw fail, cache error for 30 min so repeat opens don't hammer GitHub
+      globalThis.fetch = vi.fn(async () => new Response('down', { status: 503 }));
+      const fail1 = await checkLatestRelease(env, { forceRefresh: true });
+      expect(fail1.ok).toBe(false);
+      expect(fail1.cached).toBe(false);
+
+      const fail2 = await checkLatestRelease(env);
+      expect(fail2.ok).toBe(false);
+      expect(fail2.cached).toBe(true);
+      expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+    } finally {
+      globalThis.fetch = origFetch;
+    }
+  });
+
+  it('never writes env GITHUB_UPDATE_TOKEN into KV on savePanelConfig and returns clear 422 message for non-fork copies', async () => {
+    const kv = createMemoryKV();
+    const env = {
+      TOPIC_MAP: kv,
+      BOT_TOKEN: '123:ENV_TOK_TEST',
+      ADMIN_IDS: '10001',
+      DEV_PREVIEW: 'true',
+      GITHUB_UPDATE_TOKEN: 'env_super_secret_pat',
+    };
+
+    // Save config with masked placeholder while token is only provided via env Secret
+    await savePanelConfig(env, { updater: { forkRepo: 'bob/rose-panel-bot', branch: 'main', githubToken: '********' } });
+    const rawSaved = JSON.parse(await kv.get('config:panel'));
+    expect(rawSaved.updater.githubToken).toBe('');
+    expect(await kv.get('config:panel')).not.toContain('env_super_secret_pat');
+
+    const adminBoot = await (
+      await worker.fetch(new Request('http://localhost:8787/api/bootstrap', { headers: { 'X-Dev-Role': 'admin' } }), env)
+    ).json();
+    expect(adminBoot.adminConfig.updater.hasGithubToken).toBe(true);
+    expect(adminBoot.adminConfig.updater.tokenFromEnv).toBe(true);
+
+    const origFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn(async (_url, init) => {
+      expect(init.headers.Authorization).toBe('Bearer env_super_secret_pat');
+      return new Response(JSON.stringify({ message: 'This repository is not a fork' }), {
+        status: 422,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    });
+
+    try {
+      const syncRes = await worker.fetch(
+        new Request('http://localhost:8787/api/admin/update/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Dev-Role': 'admin' },
+          body: JSON.stringify({ forkRepo: 'bob/rose-panel-bot', branch: 'main', githubToken: '********' }),
+        }),
+        env
+      );
+      expect(syncRes.status).toBe(422);
+      const data = await syncRes.json();
+      expect(data.ok).toBe(false);
+      expect(data.error).toContain('不是 Fork');
+    } finally {
+      globalThis.fetch = origFetch;
+    }
+  });
+
   it('validates fork repo strictly, syncs via GitHub merge-upstream, and masks/isolates token in API', async () => {
     const kv = createMemoryKV();
     const env = {

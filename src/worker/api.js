@@ -371,13 +371,15 @@ export async function handleApiRequest(request, env, url) {
     // POST /api/admin/update/sync — Scheme B (Optional): sync owner's Fork with upstream via GitHub API
     if (path === '/api/admin/update/sync' && method === 'POST') {
       const body = await readJsonBody(request);
+      const rawBodyToken = body?.githubToken;
+      const resolvedToken =
+        rawBodyToken === '********' || rawBodyToken === undefined
+          ? config.updater?.githubToken || env.GITHUB_UPDATE_TOKEN || ''
+          : String(rawBodyToken || '').trim() || env.GITHUB_UPDATE_TOKEN || '';
       const syncConfig = {
         ...config.updater,
         ...(body || {}),
-        githubToken:
-          body?.githubToken === '********'
-            ? config.updater?.githubToken || ''
-            : body?.githubToken ?? config.updater?.githubToken ?? '',
+        githubToken: resolvedToken,
       };
       const result = await syncForkWithUpstream(env, syncConfig);
       return json(result, result.status || (result.ok ? 200 : 400));

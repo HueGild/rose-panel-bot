@@ -304,9 +304,8 @@ export async function loadPanelConfig(env) {
   if (!merged.updater.forkRepo && env.UPDATE_FORK_REPO) {
     merged.updater.forkRepo = String(env.UPDATE_FORK_REPO).trim();
   }
-  if (!merged.updater.githubToken && env.GITHUB_UPDATE_TOKEN) {
-    merged.updater.githubToken = String(env.GITHUB_UPDATE_TOKEN).trim();
-  }
+  // NOTE: Intentionally do NOT copy env.GITHUB_UPDATE_TOKEN into merged.updater.githubToken
+  // so saving Settings never persists an environment Secret in plaintext inside KV.
   return merged;
 }
 
@@ -425,11 +424,17 @@ export function sanitizeAdminConfig(config, env = {}) {
   } else {
     cloned.probe.hasApiKey = false;
   }
-  if (cloned.updater?.githubToken) {
-    cloned.updater.githubToken = '********';
-    cloned.updater.hasGithubToken = true;
-  } else if (cloned.updater) {
-    cloned.updater.hasGithubToken = false;
+  const hasStoredGhToken = Boolean(cloned.updater?.githubToken);
+  const hasEnvGhToken = Boolean(env.GITHUB_UPDATE_TOKEN);
+  if (cloned.updater) {
+    if (hasStoredGhToken || hasEnvGhToken) {
+      cloned.updater.githubToken = '********';
+      cloned.updater.hasGithubToken = true;
+      cloned.updater.tokenFromEnv = !hasStoredGhToken && hasEnvGhToken;
+    } else {
+      cloned.updater.hasGithubToken = false;
+      cloned.updater.tokenFromEnv = false;
+    }
   }
   cloned.pmBot.turnstileReady = Boolean(env.TURNSTILE_SITE_KEY && env.TURNSTILE_SECRET);
   return cloned;

@@ -5,6 +5,7 @@ import { APP_VERSION, UPSTREAM_REPO } from './version.js';
 
 const RELEASE_CACHE_KEY = 'cache:latest_release';
 const RELEASE_CACHE_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
+const RELEASE_ERROR_TTL_MS = 30 * 60 * 1000; // 30 minutes on failure to avoid hammering GitHub
 
 const REPO_PATTERN = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 const BRANCH_PATTERN = /^[A-Za-z0-9_.\-/]{1,64}$/;
@@ -78,8 +79,44 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = 6500) {
   }
 }
 
+async function fetchVersionFromRawPackageJson() {
+  const res = await fetchWithTimeout(
+    `https://raw.githubusercontent.com/${UPSTREAM_REPO}/main/package.json`,
+    {
+      method: 'GET',
+      headers: {
+        Accept: 'application/json',
+        'User-Agent': 'RosePanel-Bot-Updater',
+      },
+    },
+    5500
+  );
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status}`);
+  }
+  const pkg = await res.json();
+  const ver = String(pkg?.version || '').trim().replace(/^v/i, '');
+  if (!ver) throw new Error('package.json missing version');
+  return ver;
+}
+
+async function cacheReleaseResult(env, payload, ttlSeconds) {
+  if (!env.TOPIC_MAP) return;
+  try {
+    await env.TOPIC_MAP.put(
+      RELEASE_CACHE_KEY,
+      JSON.stringify({ ...payload, cachedAt: Date.now() }),
+      { expirationTtl: ttlSeconds }
+    );
+  } catch {
+    // Ignore KV cache write failures
+  }
+}
+
 /**
  * Scheme A: Read-only check against GitHub public latest release API (KV-cached 6h).
+ * Falls back to raw.githubusercontent.com/main/package.json on shared-IP 403/429 rate limits,
+ * and caches failures for 30 minutes to avoid repeated upstream calls.
  */
 export async function checkLatestRelease(env, options = {}) {
   const { forceRefresh = false } = options;
@@ -87,26 +124,41 @@ export async function checkLatestRelease(env, options = {}) {
   if (!forceRefresh && env.TOPIC_MAP) {
     try {
       const cached = await env.TOPIC_MAP.get(RELEASE_CACHE_KEY, { type: 'json' });
-      if (cached && cached.latestVersion && Date.now() - cached.cachedAt < RELEASE_CACHE_TTL_MS) {
-        const hasUpdate = compareSemver(cached.latestVersion, APP_VERSION) > 0;
-        return {
-          ok: true,
-          currentVersion: APP_VERSION,
-          latestVersion: cached.latestVersion,
-          hasUpdate,
-          releaseName: cached.releaseName || cached.latestVersion,
-          releaseUrl: cached.releaseUrl || `https://github.com/${UPSTREAM_REPO}/releases`,
-          publishedAt: cached.publishedAt || null,
-          notes: cached.notes || '',
-          upstreamRepo: UPSTREAM_REPO,
-          cached: true,
-        };
+      if (cached) {
+        if (cached.failed && Date.now() - cached.cachedAt < RELEASE_ERROR_TTL_MS) {
+          return {
+            ok: false,
+            currentVersion: APP_VERSION,
+            latestVersion: null,
+            hasUpdate: false,
+            upstreamRepo: UPSTREAM_REPO,
+            error: cached.error || '检查更新失败，请稍后重试',
+            cached: true,
+          };
+        }
+        if (cached.latestVersion && Date.now() - cached.cachedAt < RELEASE_CACHE_TTL_MS) {
+          const hasUpdate = compareSemver(cached.latestVersion, APP_VERSION) > 0;
+          return {
+            ok: true,
+            currentVersion: APP_VERSION,
+            latestVersion: cached.latestVersion,
+            hasUpdate,
+            releaseName: cached.releaseName || `v${cached.latestVersion}`,
+            releaseUrl: cached.releaseUrl || `https://github.com/${UPSTREAM_REPO}/releases`,
+            publishedAt: cached.publishedAt || null,
+            notes: cached.notes || '',
+            upstreamRepo: UPSTREAM_REPO,
+            fallbackSource: cached.fallbackSource || null,
+            cached: true,
+          };
+        }
       }
     } catch {
       // Ignore KV cache read error
     }
   }
 
+  let failureReason = '';
   try {
     const res = await fetchWithTimeout(
       `https://api.github.com/repos/${UPSTREAM_REPO}/releases/latest`,
@@ -121,79 +173,88 @@ export async function checkLatestRelease(env, options = {}) {
       6000
     );
 
-    if (!res.ok) {
-      return {
-        ok: false,
-        currentVersion: APP_VERSION,
-        latestVersion: null,
-        hasUpdate: false,
-        upstreamRepo: UPSTREAM_REPO,
-        error:
-          res.status === 403 || res.status === 429
-            ? 'GitHub 公开接口请求较频繁，请稍后再试'
-            : `检查更新失败 (HTTP ${res.status})`,
-      };
-    }
+    if (res.ok) {
+      const data = await res.json();
+      const latestVersion = String(data?.tag_name || '').trim().replace(/^v/i, '');
+      if (!latestVersion) {
+        failureReason = 'GitHub 未返回有效版本号';
+      } else {
+        const releaseUrl = String(data?.html_url || `https://github.com/${UPSTREAM_REPO}/releases`);
+        const releaseName = String(data?.name || `v${latestVersion}`);
+        const publishedAt = data?.published_at || null;
+        const notes = String(data?.body || '').trim().slice(0, 600);
 
-    const data = await res.json();
-    const latestVersion = String(data?.tag_name || '').trim().replace(/^v/i, '');
-    if (!latestVersion) {
-      return {
-        ok: false,
-        currentVersion: APP_VERSION,
-        latestVersion: null,
-        hasUpdate: false,
-        upstreamRepo: UPSTREAM_REPO,
-        error: 'GitHub 未返回有效版本号',
-      };
-    }
+        await cacheReleaseResult(
+          env,
+          { latestVersion, releaseName, releaseUrl, publishedAt, notes, fallbackSource: null },
+          21600
+        );
 
-    const releaseUrl = String(data?.html_url || `https://github.com/${UPSTREAM_REPO}/releases`);
-    const releaseName = String(data?.name || `v${latestVersion}`);
-    const publishedAt = data?.published_at || null;
-    const notes = String(data?.body || '').trim().slice(0, 600);
-
-    if (env.TOPIC_MAP) {
+        return {
+          ok: true,
+          currentVersion: APP_VERSION,
+          latestVersion,
+          hasUpdate: compareSemver(latestVersion, APP_VERSION) > 0,
+          releaseName,
+          releaseUrl,
+          publishedAt,
+          notes,
+          upstreamRepo: UPSTREAM_REPO,
+          fallbackSource: null,
+          cached: false,
+        };
+      }
+    } else if (res.status === 403 || res.status === 429) {
+      // Shared Workers egress IP hit GitHub anonymous 60/hr limit -> fallback to raw package.json
       try {
-        await env.TOPIC_MAP.put(
-          RELEASE_CACHE_KEY,
-          JSON.stringify({
+        const latestVersion = await fetchVersionFromRawPackageJson();
+        const releaseUrl = `https://github.com/${UPSTREAM_REPO}/releases`;
+        const releaseName = `v${latestVersion}`;
+        await cacheReleaseResult(
+          env,
+          {
             latestVersion,
             releaseName,
             releaseUrl,
-            publishedAt,
-            notes,
-            cachedAt: Date.now(),
-          }),
-          { expirationTtl: 21600 }
+            publishedAt: null,
+            notes: '',
+            fallbackSource: 'raw-package-json',
+          },
+          21600
         );
+        return {
+          ok: true,
+          currentVersion: APP_VERSION,
+          latestVersion,
+          hasUpdate: compareSemver(latestVersion, APP_VERSION) > 0,
+          releaseName,
+          releaseUrl,
+          publishedAt: null,
+          notes: '',
+          upstreamRepo: UPSTREAM_REPO,
+          fallbackSource: 'raw-package-json',
+          cached: false,
+        };
       } catch {
-        // Ignore KV cache write failures
+        failureReason = 'GitHub 公开接口请求较频繁，请稍后再试';
       }
+    } else {
+      failureReason = `检查更新失败 (HTTP ${res.status})`;
     }
-
-    return {
-      ok: true,
-      currentVersion: APP_VERSION,
-      latestVersion,
-      hasUpdate: compareSemver(latestVersion, APP_VERSION) > 0,
-      releaseName,
-      releaseUrl,
-      publishedAt,
-      notes,
-      upstreamRepo: UPSTREAM_REPO,
-      cached: false,
-    };
   } catch (err) {
-    return {
-      ok: false,
-      currentVersion: APP_VERSION,
-      latestVersion: null,
-      hasUpdate: false,
-      upstreamRepo: UPSTREAM_REPO,
-      error: `无法连接 GitHub 检查更新 (${err?.message || 'network error'})`,
-    };
+    failureReason = `无法连接 GitHub 检查更新 (${err?.message || 'network error'})`;
   }
+
+  await cacheReleaseResult(env, { failed: true, error: failureReason }, 1800);
+  return {
+    ok: false,
+    currentVersion: APP_VERSION,
+    latestVersion: null,
+    hasUpdate: false,
+    upstreamRepo: UPSTREAM_REPO,
+    error: failureReason,
+    cached: false,
+  };
 }
 
 /**
@@ -270,14 +331,22 @@ export async function syncForkWithUpstream(env, updaterConfig = {}) {
       return {
         ok: false,
         status: res.status,
-        error: 'GitHub Token 无效或权限不足（请确认 Fine-grained Token 已开启该仓库的 Contents: Read and write 权限）',
+        error:
+          'GitHub Token 无效或权限不足（请确认 Fine-grained Token 已开启该仓库的 Contents: Read and write；若仓库含 workflow 文件还需开启 Workflows: Read and write）',
       };
     }
-    if (res.status === 404 || res.status === 422) {
+    if (res.status === 422) {
       return {
         ok: false,
-        status: res.status,
-        error: `未找到仓库 ${repoCheck.repo} 或该仓库不是从上游 Fork 的仓库（${data?.message || `HTTP ${res.status}`}）`,
+        status: 422,
+        error: `你的仓库 ${repoCheck.repo} 不是 Fork（Cloudflare 一键部署按钮创建的是独立副本，无法直接调用 Sync fork），请参考教程 FAQ Q3 用 git 拉取上游更新，或重新 Fork 后改绑 Cloudflare`,
+      };
+    }
+    if (res.status === 404) {
+      return {
+        ok: false,
+        status: 404,
+        error: `未找到仓库 ${repoCheck.repo}，或 Token 缺少该仓库访问权限（${data?.message || 'HTTP 404'}）`,
       };
     }
 
