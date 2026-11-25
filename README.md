@@ -2,9 +2,10 @@
 
 [![Cloudflare Workers](https://img.shields.io/badge/Cloudflare-Workers-F38020?logo=cloudflare&logoColor=white)](https://workers.cloudflare.com/)
 [![Telegram Mini App](https://img.shields.io/badge/Telegram-Mini%20App-26A5E4?logo=telegram&logoColor=white)](https://core.telegram.org/bots/webapps)
+[![Release](https://img.shields.io/github/v/release/mango0114/rose-panel-bot?color=A32952&label=Release)](https://github.com/mango0114/rose-panel-bot/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-A32952.svg)](LICENSE)
 
-🇨🇳 **简体中文** | [🇺🇸 English](README_EN.md)
+🇨🇳 **简体中文** | [🇺🇸 English](README_EN.md) | [📋 更新日志](CHANGELOG.md)
 
 基于 **Cloudflare Workers** 的一体化 **Telegram Mini App 个人面板 + 公开/私密小站导航 + Komari 服务器探针 + 双向私聊防骚扰与媒体归档机器人 + 可选群签到积分系统**。
 
@@ -12,12 +13,12 @@
 
 ## ✨ 核心功能
 
-- **🎫 电影票根个人名片 / 群签到双模式**
-  - **个人名片模式（默认）**：纯净展示头像、状态、简介、社交链接与置顶公告，无多余干扰。
+- **🪪 玫瑰瓷个人名片 / 群签到双模式**
+  - **个人名片模式（默认）**：纯净展示头像、状态、简介、社交链接、个人标签、可自定义「来信礼仪」卡片与置顶公告；站长自己打开底部还会附带 **仅自己可见的「站长速览」**（已拦截广告数、活跃访客数与最近联系快捷入口）。
   - **群社区模式（设置内一键开关）**：支持群内 `/me`、`/panel`、`/checkin`、`/rank` 与小程序同步每日签到、连签递增奖励、7 阶等级进度条、8 枚成就徽章墙与排行榜。
-- **✨ TG 贴纸 / 收藏自定义表情作票根徽章**
+- **✨ TG 贴纸 / 收藏自定义表情作名片主徽章**
   - 支持静态 `.webp`、动态视频 `.webm`、矢量动态 `.tgs`（Worker 边缘自动解压 60fps Lottie）与 TG Premium 自定义表情。
-  - 私聊发 `/setbadge` 后直接发送贴纸/表情/贴纸包链接即可秒换，或在小程序设置里粘贴 `t.me/addstickers/...` / `t.me/addemoji/...` 可视化挑选。
+  - 私聊发 `/set`（兼容 `/setbadge`）后直接发送贴纸/表情/贴纸包链接即可秒换，或在小程序设置里粘贴 `t.me/addstickers/...` / `t.me/addemoji/...` 可视化挑选。
 - **🌐 个人小站（公开展示 + 站长私密书签）**
   - 分类筛选、搜索、上下排序，单站点支持一键切换 **「公开可见」** 或 **「🔒 仅我可见」**；私密站点由服务端直接剔除，访客抓包不可见。
 - **📡 Komari 探针实时监控**
@@ -35,7 +36,7 @@
 | 模式 | 原理与体验 | 防刷与冷却机制 |
 | :--- | :--- | :--- |
 | **🎯 Emoji 找茬 / 点选（默认推荐）** | 3×3 纯图标按钮随机交替出题（8 同 1 异找茬，或中文提示点对应图标），**0 延迟、真人 0.5 秒通过** | 错 1 次立刻换新题并打乱位置；连错 2 次自动静默冷却 10 分钟（次数与时长可自定义） |
-| **🎭 表情包看图猜题（私房趣味）** | 私聊 `/addverify` 录入你收藏的动图/静图 TG 贴纸与自定义问答（如「两条腿在晃还是两个胳膊在晃？」），**全网独一无二题库、文本协议号 0 破解率** | 支持多题轮换、答错换下一张贴纸、通过后自动清理贴纸 + 蜜罐与冷却保护 |
+| **🎭 表情包看图猜题（私房趣味）** | 私聊 `/add`（兼容 `/addverify`）录入你收藏的动图/静图 TG 贴纸与自定义问答，或在小程序内直接拉取贴纸包出题，**全网独一无二题库、文本协议号 0 破解率** | 支持多题轮换、答错换下一张贴纸、通过后自动清理贴纸 + 蜜罐与冷却保护 |
 | **📝 常识题库** | 本地 2×2 常识问答按钮，0 外部依赖 | 同样享有错 1 次换题、连错 2 次自动冷却保护 |
 | **🛡️ CF Turnstile 严格模式** | 面对大规模定向扫号攻击时一键开启，直接在 Telegram 内嵌 WebApp 中完成 Cloudflare Turnstile 服务端核验 | 服务端 `siteverify` 强校验；未配置 Turnstile 密钥时自动回退至 Emoji 模式防卡死 |
 

@@ -2,9 +2,10 @@
 
 [![Cloudflare Workers](https://img.shields.io/badge/Cloudflare-Workers-F38020?logo=cloudflare&logoColor=white)](https://workers.cloudflare.com/)
 [![Telegram Mini App](https://img.shields.io/badge/Telegram-Mini%20App-26A5E4?logo=telegram&logoColor=white)](https://core.telegram.org/bots/webapps)
+[![Release](https://img.shields.io/github/v/release/mango0114/rose-panel-bot?color=A32952&label=Release)](https://github.com/mango0114/rose-panel-bot/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-A32952.svg)](LICENSE)
 
-[🇨🇳 简体中文](README.md) | 🇺🇸 **English**
+[🇨🇳 简体中文](README.md) | 🇺🇸 **English** | [📋 Changelog](CHANGELOG.md)
 
 An all-in-one **Telegram Mini App Personal Panel**, **Public/Private Site Directory**, **Komari Server Probe Monitor**, **Bidirectional Anti-Spam PM Bot with Photo/Link Archive**, and **Optional Group Check-in & Badges System** running on **Cloudflare Workers**.
 
@@ -12,12 +13,12 @@ An all-in-one **Telegram Mini App Personal Panel**, **Public/Private Site Direct
 
 ## ✨ Key Features
 
-- **🎫 Ticket Stub Profile & Dual Mode**
-  - **Personal Card Mode (Default)**: Clean profile card with avatar, status badge, bio, social links, and optional notice banner.
+- **🪪 Rose-Porcelain Personal Card & Dual Mode**
+  - **Personal Card Mode (Default)**: Clean profile card with avatar, status badge, bio, social links, personal tags, customizable contact etiquette card, and optional notice banner — plus an **Admin-Only Overview** (blocked spam count, active visitors, recent contacts) visible exclusively to the owner.
   - **Group Community Mode (1-Click Toggle)**: Enables `/me`, `/panel`, `/checkin`, `/rank` in groups and Mini App with daily points, streak bonuses, 7-tier levels, 8 achievement badges, and leaderboard.
-- **✨ Telegram Stickers & Custom Emojis as Ticket Emblem**
+- **✨ Telegram Stickers & Custom Emojis as Main Emblem**
   - Supports static `.webp`, video `.webm`, animated `.tgs` (edge-decompressed 60fps Lottie JSON), and Telegram Premium Custom Emojis.
-  - Send `/setbadge` to the bot with any sticker, custom emoji, or pack link, or browse `t.me/addstickers/...` / `t.me/addemoji/...` visually inside Settings.
+  - Send `/set` (alias `/setbadge`) to the bot with any sticker, custom emoji, or pack link, or browse `t.me/addstickers/...` / `t.me/addemoji/...` visually inside Settings.
 - **🌐 Public Sites & Private Bookmarks (Server-Side Isolated)**
   - Categories, search, reordering, and 1-tap **`Public` vs `🔒 Private`** visibility toggle. Non-admin responses strictly omit private sites at the Worker layer.
 - **📡 Komari Server Probe Monitor**
@@ -34,7 +35,7 @@ Switch freely between **3 verification modes** inside **⚙️ Settings → Comm
 | Mode | Experience & Mechanism | Anti-Abuse Protection |
 | :--- | :--- | :--- |
 | **🎯 Emoji Odd-One-Out / Pick (Default)** | 3×3 pure-icon inline grid alternating odd-one-out and semantic pick. **Zero latency, ~0.5s for humans** | 1st wrong tap reshuffles a new challenge; 2 consecutive failures trigger silent 10-min cooldown (configurable) |
-| **🎭 Custom Sticker Quiz (Personal & Fun)** | Use `/addverify` to turn your own collected animated/static TG stickers into custom visual multiple-choice quizzes — **unique per owner, impossible for text scripts** | Auto-switches stickers on retry, auto-deletes sticker after passing, plus honeypot & cooldown |
+| **🎭 Custom Sticker Quiz (Personal & Fun)** | Use `/add` (alias `/addverify`) or the in-panel sticker pack builder to turn your own collected animated/static TG stickers into custom visual multiple-choice quizzes — **unique per owner, impossible for text scripts** | Auto-switches stickers on retry, auto-deletes sticker after passing, plus honeypot & cooldown |
 | **📝 Local Quiz** | 2×2 local commonsense buttons, zero external API calls | Same reshuffle-on-error + cooldown protection |
 | **🛡️ CF Turnstile Strict Mode** | 1-tap escalation during heavy bot raids; runs Cloudflare Turnstile natively inside Telegram WebApp overlay | Server-side `siteverify` validation; auto-falls back to Emoji mode if Turnstile keys aren't configured |
 
