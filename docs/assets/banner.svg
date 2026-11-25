@@ -59,22 +59,22 @@
   </text>
 
   <!-- Subtitle -->
-  <text x="640" y="216" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="18.5" font-weight="500" fill="#6F5F66">
-    高颜值 Telegram 双向防广告私聊 &amp; 个人面板小程序 · 表情包验证 + 四层护盾 · 小站与 Komari 探针
+  <text x="640" y="216" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="18" font-weight="500" fill="#6F5F66">
+    四层防广告 Telegram 双向私聊机器人 · CAS 黑名单联防 · 拦广告海报图 · 自定义表情包选择题 · 附玫瑰瓷面板
   </text>
 
   <!-- Feature Pills Row -->
   <g transform="translate(262, 244)" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif" font-size="13.5" font-weight="600">
     <rect x="0" y="0" width="166" height="34" rx="17" fill="#FFFFFF" fill-opacity="0.86" stroke="#A32952" stroke-opacity="0.16"/>
-    <text x="83" y="22" text-anchor="middle" fill="#A32952">⚡ Cloudflare 0 元托管</text>
+    <text x="83" y="22" text-anchor="middle" fill="#A32952">🛡️ CAS 黑名单零感知</text>
 
     <rect x="180" y="0" width="182" height="34" rx="17" fill="#FFFFFF" fill-opacity="0.86" stroke="#A32952" stroke-opacity="0.16"/>
-    <text x="271" y="22" text-anchor="middle" fill="#A32952">🎭 表情包看图防广告</text>
+    <text x="271" y="22" text-anchor="middle" fill="#A32952">🖼️ 拦截纯图广告海报</text>
 
     <rect x="376" y="0" width="180" height="34" rx="17" fill="#FFFFFF" fill-opacity="0.86" stroke="#A32952" stroke-opacity="0.16"/>
-    <text x="466" y="22" text-anchor="middle" fill="#A32952">📡 Komari 节点探针</text>
+    <text x="466" y="22" text-anchor="middle" fill="#A32952">🎭 自定义表情包猜题</text>
 
     <rect x="570" y="0" width="186" height="34" rx="17" fill="#FFFFFF" fill-opacity="0.86" stroke="#A32952" stroke-opacity="0.16"/>
-    <text x="663" y="22" text-anchor="middle" fill="#A32952">🔗 群内 /bind 秒绑通知</text>
+    <text x="663" y="22" text-anchor="middle" fill="#A32952">⚡ Cloudflare 0 元部署</text>
   </g>
 </svg>
