@@ -45,6 +45,7 @@ export const DEFAULT_CONFIG = {
     tagline: '欢迎来到我的个人面板，这里汇集了我的个人小站与节点探针。',
     statusText: '在线营业中',
     statusTone: 'online', // online | busy | away
+    avatarMode: 'bot', // bot | owner | custom
     avatarUrl: '',
     ownerTag: '个人名片',
     badgeTitle: '站长 · Owner',
@@ -214,6 +215,12 @@ export function normalizeSplash(baseSplash = DEFAULT_SPLASH, override = null) {
 }
 
 export const PROBE_PROVIDER_IDS = ['komari', 'nezha', 'nodeget', 'json'];
+const AVATAR_MODES = ['bot', 'owner', 'custom'];
+
+function resolveAvatarMode(rawMode, avatarUrl) {
+  if (AVATAR_MODES.includes(rawMode)) return rawMode;
+  return String(avatarUrl || '').trim() ? 'custom' : 'bot';
+}
 
 export function mergeConfig(base, override) {
   if (!override || typeof override !== 'object') {
@@ -221,6 +228,7 @@ export function mergeConfig(base, override) {
     cloned.sites = cloned.sites.map(normalizeSite);
     cloned.profile.emblem = normalizeEmblem(cloned.profile.emblem);
     cloned.profile.splash = normalizeSplash(cloned.profile.splash);
+    cloned.profile.avatarMode = resolveAvatarMode(cloned.profile.avatarMode, cloned.profile.avatarUrl);
     cloned.probe.visibility = cloned.probe.visibility === 'private' ? 'private' : 'public';
     cloned.probe.provider = PROBE_PROVIDER_IDS.includes(cloned.probe.provider) ? cloned.probe.provider : 'komari';
     return cloned;
@@ -232,16 +240,23 @@ export function mergeConfig(base, override) {
   };
   mergedProbe.visibility = mergedProbe.visibility === 'private' ? 'private' : 'public';
   mergedProbe.provider = PROBE_PROVIDER_IDS.includes(mergedProbe.provider) ? mergedProbe.provider : 'komari';
+  const mergedProfile = {
+    ...base.profile,
+    ...(override.profile || {}),
+    emblem: normalizeEmblem(base.profile?.emblem, override.profile?.emblem),
+    splash: normalizeSplash(base.profile?.splash, override.profile?.splash),
+    socials: Array.isArray(override.profile?.socials)
+      ? override.profile.socials
+      : structuredClone(base.profile.socials),
+  };
+  // Preserve custom mode for existing configs that had avatarUrl set before avatarMode existed
+  const explicitMode = override.profile?.avatarMode;
+  mergedProfile.avatarMode = resolveAvatarMode(
+    explicitMode !== undefined ? explicitMode : base.profile?.avatarMode && !override.profile?.avatarUrl ? base.profile.avatarMode : undefined,
+    mergedProfile.avatarUrl
+  );
   return {
-    profile: {
-      ...base.profile,
-      ...(override.profile || {}),
-      emblem: normalizeEmblem(base.profile?.emblem, override.profile?.emblem),
-      splash: normalizeSplash(base.profile?.splash, override.profile?.splash),
-      socials: Array.isArray(override.profile?.socials)
-        ? override.profile.socials
-        : structuredClone(base.profile.socials),
-    },
+    profile: mergedProfile,
     sites: rawSites.map(normalizeSite),
     probe: mergedProbe,
     community: {

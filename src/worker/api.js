@@ -1,7 +1,7 @@
 // Mini App REST API router (/api/*)
 
 import { getBlockedSpamCount } from './antispam.js';
-import { authenticateRequest, signMediaToken, verifyMediaToken } from './auth.js';
+import { authenticateRequest, parseAdminIds, signMediaToken, verifyMediaToken } from './auth.js';
 import { getLeaderboard, getMemberTicket, performCheckin } from './checkin.js';
 import {
   BADGE_CATALOG,
@@ -52,6 +52,21 @@ async function readJsonBody(request) {
 export async function handleApiRequest(request, env, url) {
   const path = url.pathname;
   const method = request.method.toUpperCase();
+
+  // Privacy-safe owner/bot card avatar proxy (never leaks numeric owner UID or BOT_TOKEN)
+  // Strictly obeys server-stored config.profile.avatarMode; ignores any client query override.
+  if (path === '/api/avatar/owner' && method === 'GET') {
+    const cfg = await loadPanelConfig(env);
+    const botUid = String(env.BOT_TOKEN || '').split(':')[0];
+    if (cfg.profile.avatarMode === 'owner') {
+      const ownerUid = Array.from(parseAdminIds(env))[0] || '';
+      if (ownerUid) {
+        const ownerRes = await handleAvatarProxy(env, ownerUid);
+        if (ownerRes.ok) return ownerRes;
+      }
+    }
+    return handleAvatarProxy(env, botUid);
+  }
 
   // Avatar proxy (safe public cache, never leaks BOT_TOKEN)
   const avatarMatch = path.match(/^\/api\/avatar\/(\d+)$/);

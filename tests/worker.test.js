@@ -1321,3 +1321,55 @@ describe('In-app version checker (Scheme A) & optional Fork syncer (Scheme B)', 
     }
   });
 });
+
+describe('Privacy-safe 3-way owner/bot card avatar proxy (/api/avatar/owner)', () => {
+  it('defaults to bot avatar (ignoring client query overrides), switches to owner avatar when configured, and preserves legacy custom avatarUrl', async () => {
+    const kv = createMemoryKV();
+    const env = {
+      TOPIC_MAP: kv,
+      BOT_TOKEN: '555000:AVATAR_TEST_TOKEN',
+      ADMIN_IDS: '999888',
+    };
+
+    const requestedUserIds = [];
+    const origFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn(async (url, init) => {
+      const u = String(url);
+      if (u.endsWith('/getUserProfilePhotos')) {
+        const body = JSON.parse(init.body);
+        requestedUserIds.push(body.user_id);
+        return new Response(
+          JSON.stringify({ ok: true, result: { photos: [[{ file_id: `photo_${body.user_id}` }]] } }),
+          { status: 200 }
+        );
+      }
+      if (u.endsWith('/getFile')) {
+        return new Response(JSON.stringify({ ok: true, result: { file_path: 'photos/a.jpg' } }), { status: 200 });
+      }
+      if (u.includes('/file/bot')) {
+        return new Response('fake-jpeg-bytes', { status: 200, headers: { 'Content-Type': 'image/jpeg' } });
+      }
+      throw new Error(`Unexpected fetch: ${u}`);
+    });
+
+    try {
+      // 1. Default mode = 'bot': fetches bot UID (555000), ignoring any ?mode=owner tamper attempt
+      const botRes = await worker.fetch(new Request('https://panel.test/api/avatar/owner?mode=owner'), env);
+      expect(botRes.status).toBe(200);
+      expect(requestedUserIds.at(-1)).toBe(555000);
+
+      // 2. Owner mode: fetches ADMIN_IDS[0] (999888) server-side without exposing UID to clients
+      await savePanelConfig(env, { profile: { avatarMode: 'owner' } });
+      const ownerRes = await worker.fetch(new Request('https://panel.test/api/avatar/owner'), env);
+      expect(ownerRes.status).toBe(200);
+      expect(requestedUserIds.at(-1)).toBe(999888);
+
+      // 3. Legacy config with avatarUrl and no avatarMode automatically preserves 'custom'
+      await kv.put('config:panel', JSON.stringify({ profile: { avatarUrl: 'https://cdn.test/me.png' } }));
+      const legacyCfg = await loadPanelConfig(env);
+      expect(legacyCfg.profile.avatarMode).toBe('custom');
+    } finally {
+      globalThis.fetch = origFetch;
+    }
+  });
+});

@@ -607,14 +607,28 @@ export default function SettingsDrawer({
                 />
               </div>
               <div className="field">
-                <label className="field-label">自定义头像图片链接（留空自动取站长 TG 头像）</label>
-                <input
+                <label className="field-label">名片头像来源（站长与访客看到一致，不暴露数字 UID）</label>
+                <select
                   className="input"
-                  value={draft.profile.avatarUrl}
-                  onChange={(e) => updateField('profile', 'avatarUrl', e.target.value)}
-                  placeholder="https://..."
-                />
+                  value={draft.profile.avatarMode || (draft.profile.avatarUrl ? 'custom' : 'bot')}
+                  onChange={(e) => updateField('profile', 'avatarMode', e.target.value)}
+                >
+                  <option value="bot">🤖 自动同步机器人头像（默认推荐，隐藏私人主号）</option>
+                  <option value="owner">👤 自动同步站长本人 TG 头像（服务端隐匿代理）</option>
+                  <option value="custom">🖼️ 自定义头像图片链接</option>
+                </select>
               </div>
+              {(draft.profile.avatarMode === 'custom' || (!draft.profile.avatarMode && draft.profile.avatarUrl)) && (
+                <div className="field">
+                  <label className="field-label">自定义头像图片链接（支持 https:// 图床直链）</label>
+                  <input
+                    className="input"
+                    value={draft.profile.avatarUrl}
+                    onChange={(e) => updateField('profile', 'avatarUrl', e.target.value)}
+                    placeholder="https://..."
+                  />
+                </div>
+              )}
               <div className="field">
                 <label className="field-label">置顶公告（留空则隐藏）</label>
                 <input
