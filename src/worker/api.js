@@ -12,6 +12,8 @@ import {
   savePanelConfig,
 } from './config.js';
 import { fetchProbeStatus } from './komari.js';
+import { checkLatestRelease, syncForkWithUpstream } from './updater.js';
+import { APP_VERSION } from './version.js';
 import {
   handleAvatarProxy,
   handleSignedMediaProxy,
@@ -118,6 +120,7 @@ export async function handleApiRequest(request, env, url) {
       visitorSummary,
       recentVisitors,
       blockedSpamCount,
+      appVersion: auth.isAdmin ? APP_VERSION : undefined,
     });
   }
 
@@ -341,6 +344,28 @@ export async function handleApiRequest(request, env, url) {
       }
       const result = await fetchProbeStatus(env, testProbeConfig, { forceRefresh: true });
       return json({ ok: !result.error, ...result }, result.error ? 400 : 200);
+    }
+
+    // GET /api/admin/update/check — Scheme A: check latest GitHub release (KV-cached 6h)
+    if (path === '/api/admin/update/check' && method === 'GET') {
+      const forceRefresh = url.searchParams.get('force') === '1';
+      const result = await checkLatestRelease(env, { forceRefresh });
+      return json(result, result.ok ? 200 : 502);
+    }
+
+    // POST /api/admin/update/sync — Scheme B (Optional): sync owner's Fork with upstream via GitHub API
+    if (path === '/api/admin/update/sync' && method === 'POST') {
+      const body = await readJsonBody(request);
+      const syncConfig = {
+        ...config.updater,
+        ...(body || {}),
+        githubToken:
+          body?.githubToken === '********'
+            ? config.updater?.githubToken || ''
+            : body?.githubToken ?? config.updater?.githubToken ?? '',
+      };
+      const result = await syncForkWithUpstream(env, syncConfig);
+      return json(result, result.status || (result.ok ? 200 : 400));
     }
   }
 

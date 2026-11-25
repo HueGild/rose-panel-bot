@@ -121,6 +121,11 @@ export const DEFAULT_CONFIG = {
     autoAckEnabled: true,
     verifiedDays: 30,
   },
+  updater: {
+    forkRepo: '', // e.g. "yourname/rose-panel-bot"
+    branch: 'main',
+    githubToken: '', // optional single-repo Fine-grained PAT for in-app 1-click fork sync
+  },
 };
 
 const CONFIG_KV_KEY = 'config:panel';
@@ -247,6 +252,10 @@ export function mergeConfig(base, override) {
       ...base.pmBot,
       ...(override.pmBot || {}),
     },
+    updater: {
+      ...base.updater,
+      ...(override.updater || {}),
+    },
   };
 }
 
@@ -277,6 +286,12 @@ export async function loadPanelConfig(env) {
   if (saved?.community?.enableCheckin === undefined && env.ENABLE_CHECKIN !== undefined) {
     merged.community.enableCheckin = String(env.ENABLE_CHECKIN).toLowerCase() === 'true';
   }
+  if (!merged.updater.forkRepo && env.UPDATE_FORK_REPO) {
+    merged.updater.forkRepo = String(env.UPDATE_FORK_REPO).trim();
+  }
+  if (!merged.updater.githubToken && env.GITHUB_UPDATE_TOKEN) {
+    merged.updater.githubToken = String(env.GITHUB_UPDATE_TOKEN).trim();
+  }
   return merged;
 }
 
@@ -284,10 +299,16 @@ export async function savePanelConfig(env, nextConfig) {
   const current = await loadPanelConfig(env);
   const merged = mergeConfig(current, nextConfig);
 
-  // Preserve stored API key if admin sent masked placeholder
+  // Preserve stored secrets if admin sent masked placeholder
   if (nextConfig?.probe?.apiKey === '********') {
     merged.probe.apiKey = current.probe.apiKey;
   }
+  if (nextConfig?.updater?.githubToken === '********') {
+    merged.updater.githubToken = current.updater.githubToken;
+  }
+  merged.updater.forkRepo = String(merged.updater.forkRepo || '').trim().slice(0, 120);
+  merged.updater.branch = String(merged.updater.branch || 'main').trim().slice(0, 64) || 'main';
+  merged.updater.githubToken = String(merged.updater.githubToken || '').trim().slice(0, 256);
 
   // Clamp numeric settings
   merged.probe.cacheTtlSeconds = Math.min(Math.max(Number(merged.probe.cacheTtlSeconds) || 15, 5), 300);
@@ -388,6 +409,12 @@ export function sanitizeAdminConfig(config, env = {}) {
     cloned.probe.hasApiKey = true;
   } else {
     cloned.probe.hasApiKey = false;
+  }
+  if (cloned.updater?.githubToken) {
+    cloned.updater.githubToken = '********';
+    cloned.updater.hasGithubToken = true;
+  } else if (cloned.updater) {
+    cloned.updater.hasGithubToken = false;
   }
   cloned.pmBot.turnstileReady = Boolean(env.TURNSTILE_SITE_KEY && env.TURNSTILE_SECRET);
   return cloned;

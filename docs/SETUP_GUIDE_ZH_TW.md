@@ -151,5 +151,6 @@ https://你的網域/setup?secret=你剛填的WEBHOOK_SECRET
 **解決**：Cloudflare 控制台 → 你的網域 → **Rules → Configuration Rules** 新建規則，條件符合探針網域和面板網域，把 **SSL** 單獨改為 **Full** 即可，不影響同網域下其他子站。
 
 ### Q3：後續專案發布新版本，怎麼更新？
-- **Cloudflare Git 自動部署**：在自己 Fork 的倉庫點 **`Sync fork → Update branch`**，Cloudflare 自動建置上線，你的 KV 資料和訪客紀錄 **100% 保留**。
+- **面板內檢查 & 一鍵同步（推薦 ✨）**：站長開啟面板 → **⚙️ 設定 → 版本更新**，系統會自動提示最新版本與更新日誌；點擊「前往我的 Fork 點 Sync fork」即可免金鑰同步，也可按需在設定內選填單倉庫 GitHub Token 實現站內一鍵同步 Fork（Cloudflare 約 30 秒自動重建上線，資料 **100% 保留**）。
+- **手動 Cloudflare Git 自動部署**：直接在自己 Fork 的倉庫點 **`Sync fork → Update branch`**。
 - **本機 CLI 部署**：執行 `git pull && npm install && npm run deploy`。

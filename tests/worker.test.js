@@ -18,6 +18,9 @@ import worker from '../src/worker/index.js';
 import { fetchKomariStatus, normalizeNodeMetrics } from '../src/worker/komari.js';
 import { normalizeStickerObject, parseStickerPackName } from '../src/worker/telegram.js';
 import { renderTurnstileVerifyPage } from '../src/worker/turnstile.js';
+import { checkLatestRelease, compareSemver, syncForkWithUpstream } from '../src/worker/updater.js';
+import { APP_VERSION } from '../src/worker/version.js';
+import pkg from '../package.json' with { type: 'json' };
 import {
   applyVisitorAction,
   clearVisitorHistory,
@@ -1196,6 +1199,123 @@ describe('Pluggable probe providers (Nezha v1 WS/REST & v0, NodeGet, generic JSO
       );
       expect(emptyTestRes.status).toBe(400);
       expect((await emptyTestRes.json()).ok).toBe(false);
+    } finally {
+      globalThis.fetch = origFetch;
+    }
+  });
+});
+
+describe('In-app version checker (Scheme A) & optional Fork syncer (Scheme B)', () => {
+  it('keeps APP_VERSION in sync with package.json and compares SemVer accurately', () => {
+    expect(APP_VERSION).toBe(pkg.version);
+    expect(compareSemver('v1.4.0', '1.3.0')).toBe(1);
+    expect(compareSemver('1.10.0', '1.9.9')).toBe(1);
+    expect(compareSemver('v1.3.0', '1.3.0')).toBe(0);
+    expect(compareSemver('1.2.9', '1.3.0')).toBe(-1);
+    expect(compareSemver('v1.4.0-beta.1', '1.3.0')).toBe(1);
+  });
+
+  it('checks latest GitHub release with 6h KV caching and supports forceRefresh', async () => {
+    const kv = createMemoryKV();
+    const env = { TOPIC_MAP: kv };
+    const origFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn(async (url) => {
+      expect(String(url)).toBe('https://api.github.com/repos/mango0114/rose-panel-bot/releases/latest');
+      return new Response(
+        JSON.stringify({
+          tag_name: 'v9.9.9',
+          name: 'v9.9.9 — Future',
+          html_url: 'https://github.com/mango0114/rose-panel-bot/releases/tag/v9.9.9',
+          published_at: '2026-12-01T00:00:00Z',
+          body: 'New features!',
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      );
+    });
+
+    try {
+      const r1 = await checkLatestRelease(env);
+      expect(r1.ok).toBe(true);
+      expect(r1.hasUpdate).toBe(true);
+      expect(r1.latestVersion).toBe('9.9.9');
+      expect(r1.cached).toBe(false);
+
+      // Second call hits KV cache without calling fetch again
+      const r2 = await checkLatestRelease(env);
+      expect(r2.cached).toBe(true);
+      expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+
+      // forceRefresh bypasses cache
+      const r3 = await checkLatestRelease(env, { forceRefresh: true });
+      expect(r3.cached).toBe(false);
+      expect(globalThis.fetch).toHaveBeenCalledTimes(2);
+    } finally {
+      globalThis.fetch = origFetch;
+    }
+  });
+
+  it('validates fork repo strictly, syncs via GitHub merge-upstream, and masks/isolates token in API', async () => {
+    const kv = createMemoryKV();
+    const env = {
+      TOPIC_MAP: kv,
+      BOT_TOKEN: '123:UPD_TEST',
+      ADMIN_IDS: '10001',
+      DEV_PREVIEW: 'true',
+    };
+
+    // Rejects invalid repo, path traversal, and upstream self-sync
+    expect((await syncForkWithUpstream(env, { forkRepo: '../evil', githubToken: 'tok' })).ok).toBe(false);
+    expect((await syncForkWithUpstream(env, { forkRepo: 'mango0114/rose-panel-bot', githubToken: 'tok' })).ok).toBe(false);
+    expect((await syncForkWithUpstream(env, { forkRepo: 'alice/rose-panel-bot', githubToken: '' })).ok).toBe(false);
+
+    // Non-admin cannot access /api/admin/update/*
+    const guestCheck = await worker.fetch(new Request('http://localhost:8787/api/admin/update/check'), env);
+    expect(guestCheck.status).toBe(403);
+    const guestSync = await worker.fetch(
+      new Request('http://localhost:8787/api/admin/update/sync', { method: 'POST', body: '{}' }),
+      env
+    );
+    expect(guestSync.status).toBe(403);
+
+    // Save updater config with token, verify public config strips updater and admin masks token
+    await savePanelConfig(env, {
+      updater: { forkRepo: 'alice/rose-panel-bot', branch: 'main', githubToken: 'github_pat_secret123' },
+    });
+    const publicBoot = await (await worker.fetch(new Request('http://localhost:8787/api/bootstrap'), env)).json();
+    expect(publicBoot.config.updater).toBeUndefined();
+
+    const adminBoot = await (
+      await worker.fetch(new Request('http://localhost:8787/api/bootstrap', { headers: { 'X-Dev-Role': 'admin' } }), env)
+    ).json();
+    expect(adminBoot.adminConfig.updater.githubToken).toBe('********');
+    expect(adminBoot.adminConfig.updater.hasGithubToken).toBe(true);
+
+    // Admin sync with masked placeholder reuses stored secret and calls merge-upstream
+    const origFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn(async (url, init) => {
+      expect(String(url)).toBe('https://api.github.com/repos/alice/rose-panel-bot/merge-upstream');
+      expect(init.method).toBe('POST');
+      expect(init.headers.Authorization).toBe('Bearer github_pat_secret123');
+      expect(JSON.parse(init.body)).toEqual({ branch: 'main' });
+      return new Response(JSON.stringify({ merge_type: 'fast-forward' }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    });
+
+    try {
+      const syncRes = await worker.fetch(
+        new Request('http://localhost:8787/api/admin/update/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Dev-Role': 'admin' },
+          body: JSON.stringify({ forkRepo: 'https://github.com/alice/rose-panel-bot', branch: 'main', githubToken: '********' }),
+        }),
+        env
+      );
+      expect(syncRes.status).toBe(200);
+      const syncData = await syncRes.json();
+      expect(syncData.ok).toBe(true);
+      expect(syncData.alreadyLatest).toBe(false);
     } finally {
       globalThis.fetch = origFetch;
     }

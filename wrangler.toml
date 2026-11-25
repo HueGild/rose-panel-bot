@@ -24,6 +24,8 @@ binding = "TOPIC_MAP"
 # - PROBE_PROVIDER     (可选) 探针类型：komari | nezha | nodeget | json（默认 komari）
 # - PROBE_URL          (可选) 探针地址（旧名 KOMARI_URL 仍兼容，也可部署后在小程序内直接填写）
 # - PROBE_API_KEY      (可选 Secret) 私有探针 Token 或 Cookie（旧名 KOMARI_API_KEY 仍兼容）
+# - UPDATE_FORK_REPO   (可选) 自己 Fork 的仓库名（owner/repo），用于小程序内版本更新跳转/一键同步
+# - GITHUB_UPDATE_TOKEN (可选 Secret) 仅限单仓库 Contents 读写权限的 GitHub Fine-grained Token，用于小程序内一键同步 Fork
 # - ENABLE_CHECKIN     (可选) "true" 开启群签到积分徽章模式，默认 "false"（极简个人名片）
 [vars]
 ENABLE_CHECKIN = "false"
