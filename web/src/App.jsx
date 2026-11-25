@@ -54,8 +54,11 @@ export default function App() {
       const res = await apiRequest('/api/bootstrap');
       setBootstrap(res);
 
-      // Handle Telegram start_param deep links (e.g. visitor_123456)
+      // Handle Telegram start_param / query deep links (e.g. visitor_123456 or settings=modes)
       const target = getLaunchTarget();
+      if (target.settings && res.isAdmin) {
+        setSettingsSection(target.settings);
+      }
       if (target.tab === 'visitors' && res.isAdmin) {
         setActiveTab('visitors');
         if (target.visitorId) setDeepVisitorId(target.visitorId);

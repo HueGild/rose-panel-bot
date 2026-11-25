@@ -38,15 +38,19 @@ export function getLaunchTarget() {
   const params = new URLSearchParams(window.location.search);
 
   if (startParam.startsWith('visitor_')) {
-    return { tab: 'visitors', visitorId: startParam.slice('visitor_'.length) };
+    return { tab: 'visitors', visitorId: startParam.slice('visitor_'.length), settings: '' };
   }
-  if (startParam === 'visitors') return { tab: 'visitors', visitorId: '' };
-  if (startParam === 'probe') return { tab: 'probe', visitorId: '' };
-  if (startParam === 'sites') return { tab: 'sites', visitorId: '' };
+  if (startParam.startsWith('settings_')) {
+    return { tab: 'profile', visitorId: '', settings: startParam.slice('settings_'.length) };
+  }
+  if (startParam === 'visitors') return { tab: 'visitors', visitorId: '', settings: '' };
+  if (startParam === 'probe') return { tab: 'probe', visitorId: '', settings: '' };
+  if (startParam === 'sites') return { tab: 'sites', visitorId: '', settings: '' };
 
   const tab = params.get('tab') || 'profile';
   const visitorId = params.get('uid') || '';
-  return { tab, visitorId };
+  const settings = params.get('settings') || '';
+  return { tab, visitorId, settings };
 }
 
 export function haptic(type = 'light') {

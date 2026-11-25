@@ -1329,7 +1329,7 @@ export async function handleTelegramUpdate(update, env, requestOrigin) {
           reply_markup: {
             inline_keyboard: [
               [{ text: '🎭 立即启用「表情包看图猜题」模式', callback_data: 'cfg:mode:sticker_quiz' }],
-              [buildPanelButton(env, requestOrigin, '⚙️ 打开小程序管理题库', { isGroup: false })],
+              [buildPanelButton(env, requestOrigin, '⚙️ 打开小程序管理题库', { isGroup: false, query: 'settings=modes' })],
             ],
           },
         });
@@ -1413,7 +1413,7 @@ export async function handleTelegramUpdate(update, env, requestOrigin) {
           reply_markup: {
             inline_keyboard: [
               [{ text: '🎭 立即启用「表情包看图猜题」模式', callback_data: 'cfg:mode:sticker_quiz' }],
-              [buildPanelButton(env, requestOrigin, '⚙️ 打开小程序管理题库', { isGroup: false })],
+              [buildPanelButton(env, requestOrigin, '⚙️ 打开小程序管理题库', { isGroup: false, query: 'settings=modes' })],
             ],
           },
         });
