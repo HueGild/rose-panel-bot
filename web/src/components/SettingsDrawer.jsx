@@ -304,7 +304,7 @@ export default function SettingsDrawer({
             <div className="card">
               <div className="card-header" style={{ marginBottom: 10 }}>
                 <span className="card-title" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <Sparkles size={15} color="var(--accent)" /> 票根主徽章（支持 TG 贴纸 / 收藏表情）
+                  <Sparkles size={15} color="var(--accent)" /> 名片主徽章（支持 TG 贴纸 / 收藏表情）
                 </span>
               </div>
 
@@ -511,6 +511,33 @@ export default function SettingsDrawer({
                   value={draft.profile.notice}
                   onChange={(e) => updateField('profile', 'notice', e.target.value)}
                   placeholder="可选：向访客展示一条置顶公告"
+                />
+              </div>
+              <div className="field">
+                <label className="field-label">个人标签（可选，逗号或空格分隔）</label>
+                <input
+                  className="input"
+                  value={draft.profile.tags || ''}
+                  onChange={(e) => updateField('profile', 'tags', e.target.value)}
+                  placeholder="例如：VPS 折腾, 自托管, 开源, ACG"
+                />
+              </div>
+              <div className="field">
+                <label className="field-label">下方说明卡标题（如「来信礼仪」「关于我」）</label>
+                <input
+                  className="input"
+                  value={draft.profile.noteTitle ?? '来信礼仪'}
+                  onChange={(e) => updateField('profile', 'noteTitle', e.target.value)}
+                  placeholder="来信礼仪"
+                />
+              </div>
+              <div className="field">
+                <label className="field-label">下方说明卡内容（每行一条，全部留空则隐藏）</label>
+                <textarea
+                  className="textarea"
+                  value={draft.profile.noteLines ?? ''}
+                  onChange={(e) => updateField('profile', 'noteLines', e.target.value)}
+                  placeholder="例如：初次私聊请直接说明来意，不用只发「在吗」"
                 />
               </div>
 

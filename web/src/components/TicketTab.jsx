@@ -6,16 +6,22 @@ import {
   Copy,
   ExternalLink,
   Flame,
+  HeartHandshake,
+  Lock,
   MessageCircle,
+  ShieldCheck,
   Sparkles,
+  Users,
   X,
 } from 'lucide-react';
 import { Avatar, StubEmblem, TicketEmblem } from './Emblems.jsx';
+import { formatTimeAgo } from '../lib/api.js';
 import { copyText, haptic, openExternalUrl } from '../lib/telegram.js';
 
 export default function TicketTab({
   data,
   onNavigate,
+  onOpenVisitor,
   onCheckin,
   checkinLoading,
   onToast,
@@ -23,9 +29,30 @@ export default function TicketTab({
   const [showLevels, setShowLevels] = useState(false);
   const [showLogs, setShowLogs] = useState(false);
 
-  const { config, user, isAdmin, checkin, levels = [] } = data;
+  const {
+    config,
+    user,
+    isAdmin,
+    checkin,
+    levels = [],
+    visitorSummary = null,
+    recentVisitors = [],
+    blockedSpamCount = 0,
+  } = data;
   const { profile, community, bot } = config;
   const enableCheckin = Boolean(community.enableCheckin);
+
+  const parsedTags = String(profile.tags || '')
+    .split(/[,，、;\n]+/)
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .slice(0, 12);
+
+  const etiquetteLines = String(profile.noteLines || '')
+    .split(/\r?\n/)
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .slice(0, 8);
 
   const statusToneClass =
     profile.statusTone === 'busy'
@@ -413,6 +440,171 @@ export default function TicketTab({
               )}
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Personal Tags & Contact Etiquette Card (Visible to everyone when filled) */}
+      {(parsedTags.length > 0 || etiquetteLines.length > 0) && (
+        <div className="card">
+          <div className="card-header" style={{ marginBottom: 10 }}>
+            <span className="card-title" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <HeartHandshake size={15} color="var(--accent)" />
+              {profile.noteTitle || '来信礼仪'}
+            </span>
+          </div>
+
+          {parsedTags.length > 0 && (
+            <div className="tag-cloud" style={{ marginBottom: etiquetteLines.length > 0 ? 12 : 0 }}>
+              {parsedTags.map((tag, i) => (
+                <span key={`${tag}-${i}`} className="pill rose">
+                  # {tag}
+                </span>
+              ))}
+            </div>
+          )}
+
+          {etiquetteLines.length > 0 && (
+            <div className="etiquette-list">
+              {etiquetteLines.map((line, i) => (
+                <div className="etiquette-item" key={i}>
+                  <span className="etiquette-num">{i + 1}</span>
+                  <span>{line}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Admin-Only Owner Overview: Blocked Spam, Active Visitors & Recent Contacts */}
+      {isAdmin && visitorSummary && (
+        <div className="card">
+          <div className="card-header" style={{ marginBottom: 10 }}>
+            <span className="card-title" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <ShieldCheck size={15} color="var(--accent)" /> 站长速览
+              <span className="pill" style={{ padding: '2px 8px', fontSize: 10 }}>
+                <Lock size={10} /> 仅自己可见
+              </span>
+            </span>
+            <button
+              type="button"
+              onClick={() => onNavigate('visitors')}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                padding: 0,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 2,
+                fontSize: 12,
+                fontWeight: 600,
+                color: 'var(--accent)',
+                cursor: 'pointer',
+              }}
+            >
+              全部 {visitorSummary.total || 0} <ChevronRight size={14} />
+            </button>
+          </div>
+
+          <div className="owner-stat-grid">
+            <button
+              type="button"
+              className="owner-stat-tile rose"
+              onClick={() => onNavigate('visitors')}
+            >
+              <div className="owner-stat-label">
+                <ShieldCheck size={13} /> 已拦截广告
+              </div>
+              <div className="owner-stat-value">
+                <span className="owner-stat-num">{blockedSpamCount || 0}</span>
+                <span className="owner-stat-unit">次</span>
+              </div>
+              <div className="owner-stat-sub">四层防骚扰实时守护</div>
+            </button>
+
+            <button
+              type="button"
+              className="owner-stat-tile"
+              onClick={() => onNavigate('visitors')}
+            >
+              <div className="owner-stat-label">
+                <Users size={13} /> 活跃访客
+              </div>
+              <div className="owner-stat-value">
+                <span className="owner-stat-num">{visitorSummary.active ?? visitorSummary.total ?? 0}</span>
+                <span className="owner-stat-unit">位</span>
+              </div>
+              <div className="owner-stat-sub">
+                信任 {visitorSummary.trusted || 0} · 封禁 {visitorSummary.banned || 0}
+              </div>
+            </button>
+          </div>
+
+          <div className="recent-subhead">
+            <span>最近联系</span>
+            <span>点击查看记录</span>
+          </div>
+
+          {recentVisitors.length > 0 ? (
+            recentVisitors.slice(0, 4).map((v) => (
+              <div
+                className="list-row"
+                key={v.userId}
+                style={{ cursor: 'pointer' }}
+                onClick={() => (onOpenVisitor ? onOpenVisitor(v.userId) : onNavigate('visitors'))}
+              >
+                <Avatar userId={v.userId} name={v.displayName} size="sm" />
+                <div className="row-main">
+                  <div className="row-title" style={{ fontSize: 14 }}>
+                    <span
+                      style={{
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                      }}
+                    >
+                      {v.displayName}
+                    </span>
+                    {v.isBanned && (
+                      <span className="pill red" style={{ padding: '1px 6px', fontSize: 10 }}>
+                        封禁
+                      </span>
+                    )}
+                    {!v.isBanned && v.isTrusted && (
+                      <span className="pill green" style={{ padding: '1px 6px', fontSize: 10 }}>
+                        信任
+                      </span>
+                    )}
+                  </div>
+                  <div className="row-desc">
+                    {v.last_preview || (v.username ? `@${v.username}` : `UID ${v.userId}`)}
+                  </div>
+                </div>
+                <div
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'flex-end',
+                    gap: 3,
+                    flexShrink: 0,
+                  }}
+                >
+                  <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                    {formatTimeAgo(v.last_seen_at)}
+                  </span>
+                  {v.msg_count > 0 && (
+                    <span className="pill" style={{ padding: '1px 7px', fontSize: 10 }}>
+                      {v.msg_count} 条
+                    </span>
+                  )}
+                </div>
+              </div>
+            ))
+          ) : (
+            <div className="empty-state" style={{ padding: '12px 0' }}>
+              暂无访客来信记录
+            </div>
+          )}
         </div>
       )}
     </>

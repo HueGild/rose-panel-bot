@@ -44,6 +44,10 @@ export const DEFAULT_CONFIG = {
     badgeTitle: '站长 · Owner',
     joinedText: 'Cloudflare Edge',
     notice: '',
+    tags: '',
+    noteTitle: '来信礼仪',
+    noteLines:
+      '初次私聊请直接说明来意，不用只发「在吗」\n欢迎技术交流、友链与合作，谢绝广告推销\n看到消息后会尽快回复，请稍作等待 🌙',
     emblem: { ...DEFAULT_EMBLEM },
     socials: [
       { id: 'tg', label: 'Telegram 私聊', value: '直接发送消息即可联系我', url: '', icon: 'message' },

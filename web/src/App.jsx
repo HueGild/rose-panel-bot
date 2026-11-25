@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   Globe,
+  IdCard,
   Moon,
   RefreshCw,
   Server,
@@ -142,7 +143,11 @@ export default function App() {
   const showProbeTab = isAdmin || Boolean(bootstrap?.config?.probe?.configured);
 
   const navItems = [
-    { id: 'profile', label: '票根', icon: Ticket },
+    {
+      id: 'profile',
+      label: enableCheckin ? '票根' : '名片',
+      icon: enableCheckin ? Ticket : IdCard,
+    },
     { id: 'sites', label: '小站', icon: Globe },
   ];
 
@@ -220,6 +225,11 @@ export default function App() {
             onNavigate={(tab) => {
               haptic('light');
               setActiveTab(tab);
+            }}
+            onOpenVisitor={(visitorId) => {
+              haptic('light');
+              setDeepVisitorId(String(visitorId || ''));
+              setActiveTab('visitors');
             }}
             onCheckin={handleCheckin}
             checkinLoading={checkinLoading}

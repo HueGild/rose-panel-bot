@@ -463,7 +463,7 @@ describe('Worker API authorization & config masking', () => {
       token
     );
 
-    // Guest bootstrap MUST NOT leak private sites
+    // Guest bootstrap MUST NOT leak private sites or admin visitor data
     const guestBoot = await (
       await worker.fetch(
         new Request('https://example.workers.dev/api/bootstrap', {
@@ -473,8 +473,11 @@ describe('Worker API authorization & config masking', () => {
       )
     ).json();
     expect(guestBoot.config.sites.map((s) => s.id)).toEqual(['pub-1']);
+    expect(guestBoot.visitorSummary).toBeNull();
+    expect(guestBoot.recentVisitors).toEqual([]);
+    expect(guestBoot.blockedSpamCount).toBe(0);
 
-    // Admin bootstrap sees both public & private sites
+    // Admin bootstrap sees both public & private sites plus owner dashboard summary
     const adminBoot = await (
       await worker.fetch(
         new Request('https://example.workers.dev/api/bootstrap', {
@@ -484,6 +487,9 @@ describe('Worker API authorization & config masking', () => {
       )
     ).json();
     expect(adminBoot.config.sites.map((s) => s.id)).toEqual(['pub-1', 'priv-1']);
+    expect(adminBoot.visitorSummary).toBeTruthy();
+    expect(Array.isArray(adminBoot.recentVisitors)).toBe(true);
+    expect(typeof adminBoot.blockedSpamCount).toBe('number');
 
     // Admin toggles pub-1 -> private via quick toggle endpoint
     const toggled = await (

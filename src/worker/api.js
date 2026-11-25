@@ -91,9 +91,16 @@ export async function handleApiRequest(request, env, url) {
     }
 
     let visitorSummary = null;
+    let recentVisitors = [];
+    let blockedSpamCount = 0;
     if (auth.isAdmin) {
-      const listed = await listVisitors(env, { limit: 1 });
+      const [listed, spamCount] = await Promise.all([
+        listVisitors(env, { limit: 5 }),
+        getBlockedSpamCount(env),
+      ]);
       visitorSummary = listed.stats;
+      recentVisitors = (listed.items || []).slice(0, 5);
+      blockedSpamCount = spamCount;
     }
 
     return json({
@@ -108,6 +115,8 @@ export async function handleApiRequest(request, env, url) {
       levels: LEVELS,
       badges: BADGE_CATALOG,
       visitorSummary,
+      recentVisitors,
+      blockedSpamCount,
     });
   }
 
