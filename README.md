@@ -13,7 +13,6 @@
 
 <p>
   <b>🇨🇳 简体中文</b> ·
-  <a href="README_ZH_TW.md">🇭🇰 繁體中文</a> ·
   <a href="README_EN.md">🇺🇸 English</a> ·
   <a href="docs/SETUP_GUIDE.md">🐣 零基础 5 分钟教程</a> ·
   <a href="AGENTS.md">🤖 AI 一键部署协议</a> ·
