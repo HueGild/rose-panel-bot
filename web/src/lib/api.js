@@ -20,14 +20,17 @@ export async function apiRequest(path, options = {}) {
   } else {
     headers['X-Dev-Role'] = devRole;
   }
-  if (options.body && !(options.body instanceof FormData)) {
+  const isForm = typeof FormData !== 'undefined' && options.body instanceof FormData;
+  if (options.body && !isForm) {
     headers['Content-Type'] = 'application/json';
   }
 
+  // FormData must be passed through untouched so the browser sets the multipart boundary itself
   const res = await fetch(path, {
     ...options,
     headers,
-    body: options.body && typeof options.body !== 'string' ? JSON.stringify(options.body) : options.body,
+    body:
+      options.body && !isForm && typeof options.body !== 'string' ? JSON.stringify(options.body) : options.body,
   });
 
   const data = await res.json().catch(() => ({ ok: false, error: `HTTP ${res.status}` }));

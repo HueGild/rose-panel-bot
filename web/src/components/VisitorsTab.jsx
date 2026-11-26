@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   ArrowLeft,
   Ban,
@@ -6,6 +6,7 @@ import {
   Copy,
   ExternalLink,
   Image as ImageIcon,
+  ImagePlus,
   Link2,
   Lock,
   MessageSquare,
@@ -13,14 +14,18 @@ import {
   RotateCcw,
   Save,
   Search,
+  Send,
   Star,
   Trash2,
   Unlock,
   X,
 } from 'lucide-react';
 import { apiRequest, formatTimeAgo } from '../lib/api.js';
-import { copyText, haptic, openExternalUrl } from '../lib/telegram.js';
+import { confirmDialog, copyText, haptic, openExternalUrl } from '../lib/telegram.js';
 import { Avatar } from './Emblems.jsx';
+
+const MAX_REPLY_PHOTO_BYTES = 10 * 1024 * 1024;
+const REPLY_PHOTO_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
 
 const STATUS_META = {
   banned: { label: '已拉黑', tone: 'red' },
@@ -42,13 +47,26 @@ export default function VisitorsTab({ initialVisitorId = '', onClearInitial, onT
   const [noteDraft, setNoteDraft] = useState('');
   const [actionBusy, setActionBusy] = useState(false);
 
-  // Sub-views inside Visitor Sheet: 'profile' | 'photos' | 'links'
+  // Sub-views inside Visitor Sheet: 'profile' | 'chat' | 'photos' | 'links'
   const [drawerView, setDrawerView] = useState('profile');
-  const [historyData, setHistoryData] = useState({ photos: [], links: [] });
+  const [historyData, setHistoryData] = useState({ photos: [], links: [], messages: [] });
   const [historyLoading, setHistoryLoading] = useState(false);
   const [senderFilter, setSenderFilter] = useState('all'); // all | visitor | admin
   const [lightboxPhoto, setLightboxPhoto] = useState(null);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
+
+  // In-panel direct chat composer state
+  const [replyText, setReplyText] = useState('');
+  const [replyPhoto, setReplyPhoto] = useState(null);
+  const [sendingReply, setSendingReply] = useState(false);
+  const [recallingId, setRecallingId] = useState(null);
+  const chatEndRef = useRef(null);
+  const fileInputRef = useRef(null);
+  // Race guards: the uid the drawer currently shows, a monotonically increasing history request
+  // sequence (stale responses are dropped), and an in-flight counter so polls never stack up.
+  const activeUidRef = useRef('');
+  const historySeqRef = useRef(0);
+  const historyInFlightRef = useRef(0);
 
   const loadList = async (q = search, f = filter) => {
     try {
@@ -74,36 +92,172 @@ export default function VisitorsTab({ initialVisitorId = '', onClearInitial, onT
     return () => clearTimeout(timer);
   }, [search, filter]);
 
-  const loadVisitorHistory = async (uid) => {
+  const loadVisitorHistory = async (uid, { silent = false } = {}) => {
+    const targetUid = String(uid);
+    if (silent && historyInFlightRef.current > 0) return;
+    const seq = ++historySeqRef.current;
+    historyInFlightRef.current += 1;
     try {
-      setHistoryLoading(true);
-      const res = await apiRequest(`/api/admin/visitors/${encodeURIComponent(uid)}/history`);
-      setHistoryData({ photos: res.photos || [], links: res.links || [] });
+      if (!silent) setHistoryLoading(true);
+      const res = await apiRequest(`/api/admin/visitors/${encodeURIComponent(targetUid)}/history`);
+      // Drop responses for a visitor the admin already switched away from, or superseded by a newer load/mutation
+      if (seq !== historySeqRef.current || activeUidRef.current !== targetUid) return;
+      setHistoryData({
+        photos: res.photos || [],
+        links: res.links || [],
+        messages: res.messages || [],
+      });
       if (res.visitor) {
         setActiveVisitor(res.visitor);
       }
     } catch (err) {
-      onToast(err.message);
+      if (!silent && seq === historySeqRef.current && activeUidRef.current === targetUid) onToast(err.message);
     } finally {
-      setHistoryLoading(false);
+      historyInFlightRef.current -= 1;
+      if (!silent) setHistoryLoading(false);
     }
   };
 
   const openDetail = (v) => {
+    activeUidRef.current = String(v?.userId || '');
+    historySeqRef.current += 1;
     setActiveVisitor(v);
     setNoteDraft(v.note || '');
     setDrawerView('profile');
     setSenderFilter('all');
     setShowClearConfirm(false);
-    setHistoryData({ photos: [], links: [] });
+    setReplyText('');
+    setReplyPhoto(null);
+    setHistoryData({ photos: [], links: [], messages: [] });
     haptic('light');
   };
 
+  const clearReplyPhoto = () => {
+    setReplyPhoto(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
   const closeDetail = () => {
+    activeUidRef.current = '';
+    historySeqRef.current += 1;
     setActiveVisitor(null);
     setDrawerView('profile');
     setShowClearConfirm(false);
     setLightboxPhoto(null);
+    setReplyText('');
+    setReplyPhoto(null);
+  };
+
+  // Auto-scroll chat to newest message & lightweight live refresh while chat view is open
+  useEffect(() => {
+    if (drawerView === 'chat') {
+      chatEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    }
+  }, [drawerView, historyData.messages.length]);
+
+  useEffect(() => {
+    if (drawerView !== 'chat' || !activeVisitor?.userId) return undefined;
+    const iv = setInterval(() => {
+      if (typeof document === 'undefined' || document.visibilityState === 'visible') {
+        loadVisitorHistory(activeVisitor.userId, { silent: true });
+      }
+    }, 6000);
+    return () => clearInterval(iv);
+  }, [drawerView, activeVisitor?.userId]);
+
+  const handleSendReply = async () => {
+    if (!activeVisitor || sendingReply) return;
+    const uid = String(activeVisitor.userId);
+    const trimmed = replyText.trim();
+    const photo = replyPhoto;
+    if (!trimmed && !photo) return;
+
+    try {
+      setSendingReply(true);
+      haptic('light');
+      // Invalidate any poll already in flight: its snapshot predates this message
+      historySeqRef.current += 1;
+      let body;
+      if (photo) {
+        body = new FormData();
+        body.append('photo', photo, photo.name || 'photo.jpg');
+        if (trimmed) body.append('text', trimmed);
+      } else {
+        body = { text: trimmed };
+      }
+      const res = await apiRequest(`/api/admin/visitors/${encodeURIComponent(uid)}/reply`, {
+        method: 'POST',
+        body,
+      });
+      historySeqRef.current += 1;
+      loadList(search, filter);
+      // Admin switched to another visitor while the upload was in flight: don't touch the new drawer
+      if (activeUidRef.current !== uid) return;
+      setReplyText('');
+      clearReplyPhoto();
+      if (res.visitor) setActiveVisitor(res.visitor);
+      if (res.message) {
+        setHistoryData((prev) => {
+          const list = prev.messages || [];
+          if (list.some((m) => m.id === res.message.id)) return prev;
+          return { ...prev, messages: [...list, res.message] };
+        });
+      } else {
+        await loadVisitorHistory(uid, { silent: true });
+      }
+    } catch (err) {
+      if (activeUidRef.current === uid) onToast(err.message);
+    } finally {
+      setSendingReply(false);
+    }
+  };
+
+  const handleRecallBubble = async (pmMessageId) => {
+    if (!activeVisitor || !pmMessageId || recallingId) return;
+    const uid = String(activeVisitor.userId);
+    const ok = await confirmDialog('撤回后对方私聊与通知群话题中的这条消息都会被删除，确定撤回吗？');
+    if (!ok || activeUidRef.current !== uid) return;
+    try {
+      setRecallingId(pmMessageId);
+      haptic('warning');
+      historySeqRef.current += 1;
+      await apiRequest(`/api/admin/visitors/${encodeURIComponent(uid)}/recall`, {
+        method: 'POST',
+        body: { pmMessageId },
+      });
+      historySeqRef.current += 1;
+      if (activeUidRef.current !== uid) return;
+      setHistoryData((prev) => ({
+        ...prev,
+        messages: (prev.messages || []).filter(
+          (m) => !(m.sender === 'admin' && Number(m.pmMessageId) === Number(pmMessageId))
+        ),
+      }));
+      loadVisitorHistory(uid, { silent: true });
+      loadList(search, filter);
+      onToast('🗑️ 已撤回发给对方的该条消息');
+    } catch (err) {
+      if (activeUidRef.current === uid) onToast(err.message);
+    } finally {
+      setRecallingId(null);
+    }
+  };
+
+  const handlePickReplyPhoto = (e) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    const type = String(f.type || '').toLowerCase();
+    if (type && !REPLY_PHOTO_TYPES.has(type)) {
+      onToast('仅支持发送 JPG / PNG / WebP / GIF 图片');
+      e.target.value = '';
+      return;
+    }
+    if (f.size <= 0 || f.size > MAX_REPLY_PHOTO_BYTES) {
+      onToast('单张图片不能超过 10 MB');
+      e.target.value = '';
+      return;
+    }
+    setReplyPhoto(f);
   };
 
   // Deep-link directly from Telegram Forum Topic button (?startapp=visitor_<uid>)
@@ -170,7 +324,7 @@ export default function VisitorsTab({ initialVisitorId = '', onClearInitial, onT
         body: { mode },
       });
       setActiveVisitor(res.visitor);
-      setHistoryData({ photos: [], links: [] });
+      setHistoryData({ photos: [], links: [], messages: [] });
       setShowClearConfirm(false);
       setDrawerView('profile');
       if (mode === 'full') {
@@ -339,17 +493,160 @@ export default function VisitorsTab({ initialVisitorId = '', onClearInitial, onT
                   </button>
                 )}
                 <div className="sheet-title">
-                  {drawerView === 'photos'
-                    ? `往来图片 (${historyData.photos.length})`
-                    : drawerView === 'links'
-                      ? `往来链接 (${historyData.links.length})`
-                      : '访客资料与聊天记录'}
+                  {drawerView === 'chat'
+                    ? `与 ${activeVisitor.displayName} 对话`
+                    : drawerView === 'photos'
+                      ? `往来图片 (${historyData.photos.length})`
+                      : drawerView === 'links'
+                        ? `往来链接 (${historyData.links.length})`
+                        : '访客资料与聊天记录'}
                 </div>
               </div>
-              <button className="icon-btn" onClick={closeDetail}>
-                <X size={16} />
-              </button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                {drawerView === 'chat' && (
+                  <button
+                    className="icon-btn"
+                    title="刷新对话"
+                    onClick={() => loadVisitorHistory(activeVisitor.userId)}
+                  >
+                    <RefreshCw size={14} className={historyLoading ? 'spin' : ''} />
+                  </button>
+                )}
+                <button className="icon-btn" onClick={closeDetail}>
+                  <X size={16} />
+                </button>
+              </div>
             </div>
+
+            {/* SUB-VIEW 3: DIRECT IN-PANEL CHAT & MESSAGE LOG */}
+            {drawerView === 'chat' && (
+              <div className="chat-box">
+                <div className="chat-stream">
+                  {historyLoading && historyData.messages.length === 0 ? (
+                    <div className="empty-state" style={{ margin: 'auto 0' }}>
+                      <RefreshCw size={20} className="spin" color="var(--accent)" />
+                      <div style={{ marginTop: 8 }}>正在加载最近对话…</div>
+                    </div>
+                  ) : historyData.messages.length === 0 ? (
+                    <div className="empty-state" style={{ margin: 'auto 0' }}>
+                      <div style={{ fontSize: 26, marginBottom: 6 }}>💬</div>
+                      <div style={{ fontWeight: 600, color: 'var(--text)' }}>直接在下方打字或发图给 TA</div>
+                      <div style={{ marginTop: 6, lineHeight: 1.5 }}>
+                        {activeVisitor.last_preview
+                          ? `最近一条摘要：「${activeVisitor.last_preview}」· 新收发的消息会实时保存在这里（同步抄送通知群话题）`
+                          : '发出的消息会通过机器人立即送达对方，并自动同步到你的通知群话题'}
+                      </div>
+                    </div>
+                  ) : (
+                    historyData.messages.map((m) => {
+                      const isMe = m.sender === 'admin';
+                      return (
+                        <div key={m.id} className={`chat-row ${isMe ? 'me' : 'them'}`}>
+                          <div className="chat-bubble">
+                            {(m.thumbUrl || m.photoUrl) && (
+                              <img
+                                className="chat-photo"
+                                src={m.thumbUrl || m.photoUrl}
+                                alt={m.text || 'chat photo'}
+                                onClick={() =>
+                                  setLightboxPhoto({
+                                    url: m.photoUrl || m.thumbUrl,
+                                    caption: m.text || '',
+                                    sender: m.sender,
+                                    at: m.at,
+                                  })
+                                }
+                              />
+                            )}
+                            {m.text ? (
+                              <div>{m.text}</div>
+                            ) : m.mediaTag ? (
+                              <div style={{ opacity: 0.85 }}>{m.mediaTag}</div>
+                            ) : null}
+                          </div>
+                          <div className="chat-meta">
+                            <span>{formatTimeAgo(m.at)}</span>
+                            {isMe && m.pmMessageId && (
+                              <button
+                                type="button"
+                                className="chat-recall-btn"
+                                disabled={Boolean(recallingId)}
+                                onClick={() => handleRecallBubble(m.pmMessageId)}
+                              >
+                                {recallingId === m.pmMessageId ? '撤回中…' : '撤回'}
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                  <div ref={chatEndRef} />
+                </div>
+
+                <div className="chat-composer-wrap">
+                  {replyPhoto && (
+                    <div className="chat-pending-img">
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        🖼️ 已选图片：{replyPhoto.name || '相册图片'}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={clearReplyPhoto}
+                        style={{ background: 'transparent', border: 'none', color: 'var(--accent)', cursor: 'pointer' }}
+                      >
+                        <X size={15} />
+                      </button>
+                    </div>
+                  )}
+
+                  <div className="chat-composer">
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp,image/gif"
+                      style={{ display: 'none' }}
+                      onChange={handlePickReplyPhoto}
+                    />
+                    <button
+                      type="button"
+                      className="icon-btn accent"
+                      title="发送图片"
+                      disabled={sendingReply}
+                      onClick={() => fileInputRef.current?.click()}
+                    >
+                      <ImagePlus size={16} />
+                    </button>
+
+                    <textarea
+                      className="chat-input"
+                      rows={1}
+                      value={replyText}
+                      disabled={sendingReply}
+                      onChange={(e) => setReplyText(e.target.value)}
+                      onKeyDown={(e) => {
+                        // Don't send while a CJK IME is still composing (Enter confirms the candidate)
+                        if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing && e.keyCode !== 229) {
+                          e.preventDefault();
+                          handleSendReply();
+                        }
+                      }}
+                      placeholder={replyPhoto ? '可选：添加图片说明…' : `回复 ${activeVisitor.displayName}…`}
+                    />
+
+                    <button
+                      type="button"
+                      className="btn btn-primary btn-sm"
+                      style={{ height: 36, padding: '0 14px', flexShrink: 0 }}
+                      disabled={sendingReply || (!replyText.trim() && !replyPhoto)}
+                      onClick={handleSendReply}
+                    >
+                      <Send size={14} /> {sendingReply ? '发送中' : '发送'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* SUB-VIEW 1: PHOTOS GALLERY */}
             {drawerView === 'photos' && (
@@ -537,19 +834,22 @@ export default function VisitorsTab({ initialVisitorId = '', onClearInitial, onT
                   </div>
                 </div>
 
-                {/* Bidirectional Chat Stats + Quick Photos / Links Buttons */}
+                {/* Bidirectional Chat Stats + Quick Chat / Photos / Links Buttons */}
                 <div className="stat-action-grid">
-                  <div className="stat-action-card">
+                  <button
+                    type="button"
+                    className="stat-action-card clickable"
+                    onClick={() => openHistorySubView('chat')}
+                  >
                     <div className="stat-action-top">
                       <MessageSquare size={15} color="var(--accent)" />
                       <span>聊过</span>
                     </div>
                     <div className="stat-action-num">{activeVisitor.msg_count} 条</div>
-                    <div className="stat-action-sub">
-                      对方 {activeVisitor.visitor_msg_count ?? activeVisitor.msg_count} · 我{' '}
-                      {activeVisitor.admin_msg_count ?? 0}
+                    <div className="stat-action-sub" style={{ color: 'var(--accent)' }}>
+                      查看 / 回复 →
                     </div>
-                  </div>
+                  </button>
 
                   <button
                     type="button"

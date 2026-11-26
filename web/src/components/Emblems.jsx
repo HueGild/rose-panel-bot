@@ -3,7 +3,7 @@ import React, { useEffect, useRef, useState } from 'react';
 export function Avatar({ src, userId, name = 'R', size = '' }) {
   const [failed, setFailed] = useState(false);
   const resolvedSrc = src || (userId ? `/api/avatar/${userId}` : '');
-  const initials = String(name || 'R').trim().slice(0, 1).toUpperCase();
+  const initials = (String(name || '').trim().replace(/^@+/, '') || 'R').slice(0, 1).toUpperCase();
 
   useEffect(() => {
     setFailed(false);

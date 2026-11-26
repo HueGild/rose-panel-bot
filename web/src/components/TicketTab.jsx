@@ -15,8 +15,15 @@ import {
   X,
 } from 'lucide-react';
 import { Avatar, StubEmblem, TicketEmblem } from './Emblems.jsx';
-import { formatTimeAgo } from '../lib/api.js';
-import { copyText, haptic, openExternalUrl } from '../lib/telegram.js';
+import { apiRequest, formatTimeAgo } from '../lib/api.js';
+import {
+  closeMiniApp,
+  copyText,
+  getTelegramInitData,
+  haptic,
+  isOpenedFromGroup,
+  openExternalUrl,
+} from '../lib/telegram.js';
 
 export default function TicketTab({
   data,
@@ -24,6 +31,7 @@ export default function TicketTab({
   onOpenVisitor,
   onCheckin,
   checkinLoading,
+  onOpenWhatsNew,
   onToast,
 }) {
   const [showLevels, setShowLevels] = useState(false);
@@ -41,6 +49,11 @@ export default function TicketTab({
   } = data;
   const { profile, community, bot } = config;
   const enableCheckin = Boolean(community.enableCheckin);
+  // The top bar already shows displayName, so the card leads with the @handle instead of repeating it.
+  // Falls back to displayName when the handle is empty or still the template placeholder.
+  const rawHandle = String(profile.handle || '').trim();
+  const cardTitle =
+    (rawHandle && rawHandle !== '@your_bot' ? rawHandle : '') || String(profile.displayName || '').trim();
   const avatarMode = profile.avatarMode || (profile.avatarUrl ? 'custom' : 'bot');
   const ownerAvatarSrc =
     avatarMode === 'custom' && profile.avatarUrl
@@ -71,12 +84,51 @@ export default function TicketTab({
     onToast(ok ? `已复制 ${label}` : '复制失败');
   };
 
-  const openBotPm = () => {
-    const uname = (bot?.username || profile.handle || '').replace(/^@/, '');
+  const [openingPm, setOpeningPm] = useState(false);
+
+  const openBotPm = async () => {
+    const rawBot = String(bot?.username || '').replace(/^@/, '').trim();
+    const cleanHandle = String(profile.handle || '').replace(/^@/, '').trim();
+    const uname = rawBot || (cleanHandle && cleanHandle !== 'your_bot' && /bot$/i.test(cleanHandle) ? cleanHandle : '');
+    haptic('medium');
+
+    // Inside Telegram Mini App:
+    // - From a group: deep-link straight to `?start=pm` (auto-triggers verification!) and close WebApp
+    // - From private chat: ask backend to pop verification/prompt into the chat & collapse the WebApp sheet!
+    if (getTelegramInitData()) {
+      if (isOpenedFromGroup()) {
+        if (uname) {
+          openExternalUrl(`https://t.me/${uname}?start=pm`);
+          closeMiniApp();
+        } else {
+          onToast('请直接私聊机器人发送消息');
+        }
+        return;
+      }
+      try {
+        setOpeningPm(true);
+        const res = await apiRequest('/api/chat/start', { method: 'POST' });
+        if (res?.needsDeepLink && uname) {
+          openExternalUrl(`https://t.me/${uname}?start=pm`);
+        }
+        closeMiniApp();
+      } catch {
+        if (uname) {
+          openExternalUrl(`https://t.me/${uname}?start=pm`);
+          closeMiniApp();
+        } else {
+          onToast('请点击右上角关闭面板，直接在下方聊天框打字发消息');
+        }
+      } finally {
+        setOpeningPm(false);
+      }
+      return;
+    }
+
     if (uname) {
       openExternalUrl(`https://t.me/${uname}`);
     } else {
-      onToast('直接在机器人私聊窗口发消息即可联系');
+      onToast('直接在机器人私聊窗口打字发消息即可联系');
     }
   };
 
@@ -293,9 +345,9 @@ export default function TicketTab({
 
         {/* Compact Owner Card */}
         <div className="card" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <Avatar src={ownerAvatarSrc} name={profile.displayName} size="sm" />
+          <Avatar src={ownerAvatarSrc} name={cardTitle} size="sm" />
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 14, fontWeight: 700 }}>{profile.displayName}</div>
+            <div style={{ fontSize: 14, fontWeight: 700 }}>{cardTitle}</div>
             <div className="row-desc">{profile.tagline}</div>
           </div>
           <button className="btn btn-soft btn-sm" onClick={() => onNavigate('sites')}>
@@ -348,16 +400,16 @@ export default function TicketTab({
   }
 
   // --- Mode A: Clean Personal Card Ticket Stub (Default for @Rose202_bot) ---
+
   return (
     <>
       <div className="ticket-card">
         <div className="ticket-left">
           <div>
             <div className="ticket-user-row">
-              <Avatar src={ownerAvatarSrc} name={profile.displayName} />
+              <Avatar src={ownerAvatarSrc} name={cardTitle} />
               <div style={{ minWidth: 0 }}>
-                <div className="ticket-name">{profile.displayName}</div>
-                <div className="ticket-handle">{profile.handle}</div>
+                <div className="ticket-name">{cardTitle}</div>
               </div>
             </div>
 
@@ -374,13 +426,13 @@ export default function TicketTab({
           </div>
 
           <div style={{ display: 'flex', gap: 8, marginTop: 14, flexWrap: 'wrap' }}>
-            <button className="btn btn-primary btn-sm" onClick={openBotPm}>
-              <MessageCircle size={14} /> 发私信
+            <button className="btn btn-primary btn-sm" disabled={openingPm} onClick={openBotPm}>
+              <MessageCircle size={14} /> {openingPm ? '正在打开对话…' : '发私信'}
             </button>
-            {profile.handle && (
+            {rawHandle && rawHandle !== '@your_bot' && (
               <button
                 className="btn btn-soft btn-sm"
-                onClick={() => handleCopy(profile.handle, '账号')}
+                onClick={() => handleCopy(rawHandle, '账号')}
               >
                 <Copy size={13} /> 复制账号
               </button>
@@ -487,11 +539,24 @@ export default function TicketTab({
       {isAdmin && visitorSummary && (
         <div className="card">
           <div className="card-header" style={{ marginBottom: 10 }}>
-            <span className="card-title" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span className="card-title" style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
               <ShieldCheck size={15} color="var(--accent)" /> 站长速览
               <span className="pill" style={{ padding: '2px 8px', fontSize: 10 }}>
                 <Lock size={10} /> 仅自己可见
               </span>
+              {onOpenWhatsNew && (
+                <button
+                  type="button"
+                  className="pill rose"
+                  style={{ padding: '2px 8px', fontSize: 10, border: 'none', cursor: 'pointer' }}
+                  onClick={() => {
+                    haptic('light');
+                    onOpenWhatsNew();
+                  }}
+                >
+                  <Sparkles size={10} /> 近期更新
+                </button>
+              )}
             </span>
             <button
               type="button"

@@ -38,6 +38,24 @@ export const DEFAULT_SPLASH = {
   emoji: '🌹',
 };
 
+// Card labels that used to ship as defaults. Configs saved before labelsRev 2 still carry them
+// verbatim in KV, so they are cleared once on load; anything the owner typed is left untouched.
+export const PROFILE_LABELS_REV = 2;
+export const SOCIALS_CLEANUP_REV = 1;
+const LEGACY_DEFAULT_LABELS = {
+  badgeTitle: ['站长 · Owner'],
+  joinedText: ['Cloudflare Edge'],
+};
+
+function isLegacyDefaultTgSocial(item) {
+  return (
+    item &&
+    String(item.label || '').trim() === 'Telegram 私聊' &&
+    String(item.value || '').trim() === '直接发送消息即可联系我' &&
+    !String(item.url || '').trim()
+  );
+}
+
 export const DEFAULT_CONFIG = {
   profile: {
     displayName: 'RosePanel',
@@ -48,8 +66,10 @@ export const DEFAULT_CONFIG = {
     avatarMode: 'bot', // bot | owner | custom
     avatarUrl: '',
     ownerTag: '个人名片',
-    badgeTitle: '站长 · Owner',
+    badgeTitle: '',
     joinedText: '',
+    // Bumped when legacy default card labels are cleaned up; see loadPanelConfig
+    labelsRev: PROFILE_LABELS_REV,
     notice: '',
     tags: '',
     noteTitle: '来信礼仪',
@@ -57,8 +77,8 @@ export const DEFAULT_CONFIG = {
       '初次私聊请直接说明来意，不用只发「在吗」\n欢迎技术交流、友链与合作，谢绝广告推销\n看到消息后会尽快回复，请稍作等待 🌙',
     emblem: { ...DEFAULT_EMBLEM },
     splash: { ...DEFAULT_SPLASH },
+    socialsRev: SOCIALS_CLEANUP_REV,
     socials: [
-      { id: 'tg', label: 'Telegram 私聊', value: '直接发送消息即可联系我', url: '', icon: 'message' },
       { id: 'github', label: 'GitHub', value: 'github.com/mango0114', url: 'https://github.com/mango0114', icon: 'github' },
     ],
   },
@@ -116,9 +136,13 @@ export const DEFAULT_CONFIG = {
     smartEscalation: true,
     blockUnverifiedMedia: true,
     enableHoneypot: true,
+    honeypotAction: 'cooldown', // cooldown | ban (default cooldown prevents permanent lockout on human misclick)
     blockedKeywords: '',
     stickerChallenges: [],
-    welcomeText: '你好呀 🌸 这里是我的私聊助手。直接发送消息即可联系我，也可以点击下方按钮打开我的个人面板查看小站与探针。',
+    welcomeText: '你好呀 🌸 这里是我的私聊助手。\n点击下方「开始」完成简单人机验证后，即可直接发消息联系我。',
+    welcomeImageUrl: '',
+    syncBotDescription: true,
+    showChatMenuButton: true,
     enableStartWelcome: true,
     showPanelButtonInWelcome: true,
     autoAckEnabled: true,
@@ -290,6 +314,12 @@ export function mergeConfig(base, override) {
     pmBot: {
       ...base.pmBot,
       ...(override.pmBot || {}),
+      honeypotAction:
+        (override.pmBot?.honeypotAction ?? base.pmBot?.honeypotAction) === 'ban' ? 'ban' : 'cooldown',
+      syncBotDescription:
+        (override.pmBot?.syncBotDescription ?? base.pmBot?.syncBotDescription) !== false,
+      showChatMenuButton:
+        (override.pmBot?.showChatMenuButton ?? base.pmBot?.showChatMenuButton) !== false,
       enableStartWelcome:
         (override.pmBot?.enableStartWelcome ?? base.pmBot?.enableStartWelcome) !== false,
       showPanelButtonInWelcome:
@@ -312,6 +342,9 @@ export function mergeConfig(base, override) {
       ...base.updater,
       ...(override.updater || {}),
     },
+    botUsername: String(override.botUsername ?? base.botUsername ?? '')
+      .trim()
+      .replace(/^@/, ''),
   };
 }
 
@@ -319,9 +352,26 @@ export async function loadPanelConfig(env) {
   const saved = await safeGetJSON(env.TOPIC_MAP, CONFIG_KV_KEY, null);
   const merged = mergeConfig(DEFAULT_CONFIG, saved);
 
+  // One-time cleanup of legacy default card labels for configs saved before labelsRev 2
+  if (saved && !(Number(saved.profile?.labelsRev) >= PROFILE_LABELS_REV)) {
+    for (const [field, legacyValues] of Object.entries(LEGACY_DEFAULT_LABELS)) {
+      if (legacyValues.includes(String(merged.profile[field] ?? '').trim())) {
+        merged.profile[field] = '';
+      }
+    }
+  }
+  merged.profile.labelsRev = PROFILE_LABELS_REV;
+
+  // One-time cleanup of legacy non-clickable "直接发送消息即可联系我" duplicate social row
+  if (saved && !(Number(saved.profile?.socialsRev) >= SOCIALS_CLEANUP_REV) && Array.isArray(merged.profile.socials)) {
+    merged.profile.socials = merged.profile.socials.filter((item) => !isLegacyDefaultTgSocial(item));
+  }
+  merged.profile.socialsRev = SOCIALS_CLEANUP_REV;
+
   // Environment variable fallbacks when KV fields are unset
-  if (!saved?.profile?.handle && env.BOT_USERNAME) {
-    merged.profile.handle = `@${env.BOT_USERNAME.replace(/^@/, '')}`;
+  const fallbackBotUname = String(env.BOT_USERNAME || merged.botUsername || '').trim().replace(/^@/, '');
+  if ((!saved?.profile?.handle || saved?.profile?.handle === '@your_bot') && fallbackBotUname) {
+    merged.profile.handle = `@${fallbackBotUname}`;
   }
   // PROBE_* are the generic names; KOMARI_* are kept for backward compatibility
   const envProbeUrl = env.PROBE_URL || env.KOMARI_URL;
@@ -365,6 +415,8 @@ export async function savePanelConfig(env, nextConfig) {
   merged.updater.branch = String(merged.updater.branch || 'main').trim().slice(0, 64) || 'main';
   merged.updater.githubToken = String(merged.updater.githubToken || '').trim().slice(0, 256);
 
+  merged.profile.labelsRev = PROFILE_LABELS_REV;
+  merged.profile.socialsRev = SOCIALS_CLEANUP_REV;
   merged.profile.ownerTag = String(merged.profile.ownerTag ?? '').trim().slice(0, 32);
   merged.profile.badgeTitle = String(merged.profile.badgeTitle ?? '').trim().slice(0, 32);
   merged.profile.joinedText = String(merged.profile.joinedText ?? '').trim().slice(0, 48);
@@ -388,6 +440,12 @@ export async function savePanelConfig(env, nextConfig) {
   merged.pmBot.smartEscalation = merged.pmBot.smartEscalation !== false;
   merged.pmBot.blockUnverifiedMedia = merged.pmBot.blockUnverifiedMedia !== false;
   merged.pmBot.enableHoneypot = merged.pmBot.enableHoneypot !== false;
+  merged.pmBot.honeypotAction = merged.pmBot.honeypotAction === 'ban' ? 'ban' : 'cooldown';
+  merged.pmBot.verifiedDays = Math.min(Math.max(Number(merged.pmBot.verifiedDays) || 30, 1), 3650);
+  merged.pmBot.syncBotDescription = merged.pmBot.syncBotDescription !== false;
+  merged.pmBot.showChatMenuButton = merged.pmBot.showChatMenuButton !== false;
+  const rawWelcomeImg = String(merged.pmBot.welcomeImageUrl || '').trim();
+  merged.pmBot.welcomeImageUrl = /^https:\/\/\S+/i.test(rawWelcomeImg) ? rawWelcomeImg.slice(0, 500) : '';
   merged.pmBot.enableStartWelcome = merged.pmBot.enableStartWelcome !== false;
   merged.pmBot.showPanelButtonInWelcome = merged.pmBot.showPanelButtonInWelcome !== false;
   merged.pmBot.autoReplyEnabled = Boolean(merged.pmBot.autoReplyEnabled);
@@ -471,7 +529,13 @@ export function sanitizePublicConfig(config, env, isAdmin = false) {
       milestone30Bonus: config.community.milestone30Bonus,
     },
     bot: {
-      username: (env.BOT_USERNAME || '').replace(/^@/, ''),
+      username:
+        (env.BOT_USERNAME || '').replace(/^@/, '') ||
+        (config.botUsername || '').replace(/^@/, '') ||
+        (() => {
+          const h = String(config.profile?.handle || '').trim().replace(/^@/, '');
+          return h && h !== 'your_bot' && /bot$/i.test(h) ? h : '';
+        })(),
       appShortName: env.APP_SHORT_NAME || '',
     },
   };
